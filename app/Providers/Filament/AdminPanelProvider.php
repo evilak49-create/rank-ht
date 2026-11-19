@@ -3,7 +3,9 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\AdminLogin;
+use App\Filament\Pages\AiSettings;
 use App\Filament\Pages\OssSettings;
+use App\Filament\Pages\SupportSettings;
 use App\Filament\Resources\AdminAccessAuditResource;
 use App\Filament\Resources\AdminAccountResource;
 use App\Filament\Resources\AdminRoleResource;
@@ -26,6 +28,7 @@ use App\Filament\Resources\RedPacketInviteResource;
 use App\Filament\Resources\RedPacketRoundResource;
 use App\Filament\Resources\ShopOrderResource;
 use App\Filament\Resources\SiteBannerResource;
+use App\Filament\Resources\SupportFaqResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -51,7 +54,7 @@ class AdminPanelProvider extends PanelProvider
             ->login(AdminLogin::class)
             ->authGuard('web')
             ->brandName('返利网运营后台')
-            ->pages([Dashboard::class, OssSettings::class])
+            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PointEntryResource::class,
                 PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
@@ -60,6 +63,7 @@ class AdminPanelProvider extends PanelProvider
                 RedPacketRoundResource::class, RedPacketInviteResource::class, PixWithdrawalResource::class,
                 ProtectionTermResource::class, ProtectionEligibilityResource::class, ProtectionClaimResource::class,
                 AdminAccountResource::class, AdminRoleResource::class, AdminAccessAuditResource::class,
+                SupportFaqResource::class,
             ])
             ->middleware([
                 EncryptCookies::class,
