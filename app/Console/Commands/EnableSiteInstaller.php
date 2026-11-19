@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Validator;
 
 class EnableSiteInstaller extends Command
 {
-    protected $signature = 'install:enable {--ip= : Public IP of the browser that will run installation}';
+    protected $signature = 'install:enable';
 
     protected $description = 'Enable the website installation wizard for 30 minutes';
 
@@ -25,14 +25,6 @@ class EnableSiteInstaller extends Command
 
             return self::FAILURE;
         }
-
-        $address = $this->option('ip');
-        if (! is_string($address) || ! filter_var($address, FILTER_VALIDATE_IP)) {
-            $this->error('通过 --ip 指定访问安装页的浏览器 IP 地址。');
-
-            return self::FAILURE;
-        }
-        $ip = inet_ntop(inet_pton($address));
 
         $settings = [
             'app_url' => trim((string) $this->ask('网站完整地址（例如 https://example.com）')),
@@ -56,13 +48,15 @@ class EnableSiteInstaller extends Command
             return self::FAILURE;
         }
 
-        if (! $access->enable($ip, $validator->validated())) {
+        $link = $access->enable($validator->validated());
+        if ($link === null) {
             $this->error('检测到现有 .env 或配置缓存，网站安装向导未开启。');
 
             return self::FAILURE;
         }
 
-        $this->info('请在 30 分钟内从指定 IP 打开 '.rtrim($settings['app_url'], '/').'/install，输入后台账号和密码。');
+        $this->info('请在 30 分钟内用浏览器打开以下安装链接，然后输入后台账号和密码。');
+        $this->line(rtrim($settings['app_url'], '/').'/install/activate#'.$link);
 
         return self::SUCCESS;
     }

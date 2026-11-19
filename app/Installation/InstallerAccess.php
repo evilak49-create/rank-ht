@@ -15,43 +15,69 @@ class InstallerAccess
             && ! is_link(app()->environmentFilePath());
     }
 
-    public function forVisitor(?string $ip): ?array
+    public function forVisitor(mixed $nonce): ?array
     {
         if (! $this->canConfigure()) {
             return null;
         }
 
         return $this->withState(
-            fn (array $state): ?array => $this->allows($state, $ip) ? $state : null,
+            fn (array $state): ?array => $this->allows($state, $nonce) ? $state : null,
             write: false,
         );
     }
 
-    public function enable(string $ip, array $settings): bool
+    public function linkIsPending(): bool
     {
-        return $this->withState(function (array $state, Closure $save) use ($ip, $settings): bool {
+        return $this->canConfigure() && $this->withState(
+            fn (array $state): bool => $this->isCurrent($state) && isset($state['activation_digest']),
+            write: false,
+        );
+    }
+
+    public function enable(array $settings): ?string
+    {
+        return $this->withState(function (array $state, Closure $save) use ($settings): ?string {
             if (! $this->canConfigure()) {
-                return false;
+                return null;
             }
 
+            $link = bin2hex(random_bytes(32));
             $save([
-                'ip' => $ip,
+                'activation_digest' => hash('sha256', $link),
                 'expires_at' => now()->addMinutes(30)->timestamp,
                 'csrf_secret' => bin2hex(random_bytes(32)),
                 'settings' => $settings,
                 'target' => $state['target'] ?? null,
             ]);
 
-            return true;
+            return $link;
         }, create: true);
     }
 
-    public function authorized(?string $ip, mixed $nonce, mixed $csrf, Closure $install): mixed
+    public function claim(mixed $link): array
     {
-        return $this->withState(function (array $state, Closure $save) use ($ip, $nonce, $csrf, $install): mixed {
-            abort_unless($this->canConfigure() && $this->allows($state, $ip), 404);
-            abort_unless(is_string($nonce) && preg_match('/\A[a-f0-9]{64}\z/', $nonce)
-                && is_string($csrf) && hash_equals($this->csrf($state, $nonce), $csrf), 419);
+        abort_unless(is_string($link) && preg_match('/\A[a-f0-9]{64}\z/', $link), 404);
+
+        return $this->withState(function (array $state, Closure $save) use ($link): array {
+            abort_unless($this->canConfigure() && $this->isCurrent($state)
+                && isset($state['activation_digest'])
+                && hash_equals($state['activation_digest'], hash('sha256', $link)), 404);
+
+            $nonce = bin2hex(random_bytes(32));
+            unset($state['activation_digest']);
+            $state['browser_digest'] = hash('sha256', $nonce);
+            $save($state);
+
+            return [$nonce, $state['settings']['app_url']];
+        });
+    }
+
+    public function authorized(mixed $nonce, mixed $csrf, Closure $install): mixed
+    {
+        return $this->withState(function (array $state, Closure $save) use ($nonce, $csrf, $install): mixed {
+            abort_unless($this->canConfigure() && $this->allows($state, $nonce), 404);
+            abort_unless(is_string($csrf) && hash_equals($this->csrf($state, $nonce), $csrf), 419);
 
             return $install($state, $save);
         });
@@ -62,11 +88,17 @@ class InstallerAccess
         return hash_hmac('sha256', $nonce, $state['csrf_secret']);
     }
 
-    private function allows(array $state, ?string $ip): bool
+    private function allows(array $state, mixed $nonce): bool
     {
-        return $ip !== null && filter_var($ip, FILTER_VALIDATE_IP)
-            && ($state['ip'] ?? null) === inet_ntop(inet_pton($ip))
-            && ($state['expires_at'] ?? 0) > now()->timestamp
+        return $this->isCurrent($state)
+            && is_string($nonce) && preg_match('/\A[a-f0-9]{64}\z/', $nonce)
+            && isset($state['browser_digest'])
+            && hash_equals($state['browser_digest'], hash('sha256', $nonce));
+    }
+
+    private function isCurrent(array $state): bool
+    {
+        return ($state['expires_at'] ?? 0) > now()->timestamp
             && is_string($state['csrf_secret'] ?? null)
             && is_array($state['settings'] ?? null);
     }

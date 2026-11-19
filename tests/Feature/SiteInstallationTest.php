@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Installation\InstallerAccess;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
@@ -27,24 +28,40 @@ class SiteInstallationTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_wizard_requires_an_explicitly_allowed_visitor_ip(): void
+    public function test_install_link_authorizes_one_browser_without_requiring_an_ip(): void
+    {
+        $link = app(InstallerAccess::class)->enable(['app_url' => 'https://example.test']);
+        $this->assertIsString($link);
+        $this->get('/install')->assertNotFound();
+        $this->get('/install/activate')->assertOk()->assertDontSee($link);
+
+        $response = $this->post('/install/activate', ['link' => $link])->assertNoContent();
+        $cookie = $response->getCookie('site_install_browser', decrypt: false);
+        $this->assertNotNull($cookie);
+        $this->post('/install/activate', ['link' => $link])->assertNotFound();
+        $this->withUnencryptedCookie('site_install_browser', $cookie->getValue())
+            ->withServerVariables(['REMOTE_ADDR' => '192.0.2.55'])
+            ->get('/install')->assertOk()->assertSee('账号');
+    }
+
+    public function test_public_visitors_cannot_open_or_submit_the_install_form(): void
     {
         $this->get('/install')->assertNotFound();
-        $this->enableWizard();
-        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.10'])
-            ->get('/install', ['X-Forwarded-For' => '127.0.0.1'])
-            ->assertNotFound();
+        $link = $this->enableWizard();
+        $this->get('/install')->assertNotFound();
+        $this->post('/install/activate?link='.$link)->assertNotFound();
+        $this->post('/install/activate', ['link' => str_repeat('a', 64)])->assertNotFound();
         $this->post('/install', ['username' => 'operator', 'password' => 'abc123'])->assertNotFound();
         $this->assertFileDoesNotExist($this->sandbox.'/.env');
     }
 
     public function test_wizard_requests_only_username_and_password_and_requires_its_browser_cookie(): void
     {
-        $this->enableWizard();
+        $this->claimWizard();
         $csrf = $this->loadForm();
-        $this->withUnencryptedCookie('site_install_csrf', str_repeat('a', 64))
-            ->post('/install', ['_token' => $csrf, 'username' => 'operator', 'password' => 'abc123'])
+        $this->post('/install', ['_token' => str_repeat('a', 64), 'username' => 'operator', 'password' => 'abc123'])
             ->assertStatus(419);
+        $this->assertSame(64, strlen($csrf));
         $this->assertFileDoesNotExist($this->sandbox.'/.env');
     }
 
@@ -53,7 +70,7 @@ class SiteInstallationTest extends TestCase
         config(['app.key' => null]);
 
         $this->get('/')->assertServiceUnavailable()->assertSee('php artisan install:enable');
-        $this->enableWizard();
+        $this->claimWizard();
         $this->get('/')->assertRedirect('/install');
         $this->get('/install')->assertOk();
     }
@@ -64,7 +81,7 @@ class SiteInstallationTest extends TestCase
         File::put($this->sandbox.'/.env', "APP_KEY=existing\n");
 
         $this->get('/install')->assertNotFound();
-        $this->artisan('install:enable', ['--ip' => '127.0.0.1'])->assertFailed();
+        $this->artisan('install:enable')->assertFailed();
         $this->assertSame("APP_KEY=existing\n", File::get($this->sandbox.'/.env'));
     }
 
@@ -79,7 +96,7 @@ class SiteInstallationTest extends TestCase
 
     public function test_five_character_password_is_rejected_without_echoing_it(): void
     {
-        $this->enableWizard();
+        $this->claimWizard();
         $csrf = $this->loadForm();
         $this->post('/install', ['_token' => $csrf, 'username' => 'operator', 'password' => 'p4555'])
             ->assertUnprocessable()
@@ -87,9 +104,13 @@ class SiteInstallationTest extends TestCase
             ->assertDontSee('p4555');
     }
 
-    public function test_expired_allowlist_closes_the_wizard(): void
+    public function test_an_expired_install_link_and_browser_session_are_rejected(): void
     {
-        $this->enableWizard();
+        $unused = $this->enableWizard();
+        $this->travel(31)->minutes();
+        $this->post('/install/activate', ['link' => $unused])->assertNotFound();
+
+        $this->claimWizard();
         $csrf = $this->loadForm();
         $this->travel(31)->minutes();
 
@@ -99,7 +120,7 @@ class SiteInstallationTest extends TestCase
 
     public function test_installation_reports_an_unwritable_public_path_before_using_mysql(): void
     {
-        $this->enableWizard();
+        $this->claimWizard();
         $this->app->usePublicPath($this->sandbox.'/missing-public');
 
         $csrf = $this->loadForm();
@@ -111,16 +132,37 @@ class SiteInstallationTest extends TestCase
         $this->assertFileDoesNotExist($this->sandbox.'/.env');
     }
 
-    private function enableWizard(): void
+    public function test_enable_command_collects_database_settings_without_an_ip(): void
     {
-        $this->artisan('install:enable', ['--ip' => '127.0.0.1'])
+        $this->artisan('install:enable')
             ->expectsQuestion('网站完整地址（例如 https://example.com）', 'https://example.test')
             ->expectsQuestion('MySQL 主机', '127.0.0.1')
             ->expectsQuestion('MySQL 端口', '1')
             ->expectsQuestion('MySQL 数据库名称', 'rebates_test')
             ->expectsQuestion('MySQL 用户名', 'rebates')
             ->expectsQuestion('MySQL 密码（可留空）', 'secret-database-value')
+            ->expectsOutput('请在 30 分钟内用浏览器打开以下安装链接，然后输入后台账号和密码。')
             ->assertSuccessful();
+    }
+
+    private function enableWizard(): string
+    {
+        return app(InstallerAccess::class)->enable([
+            'app_url' => 'https://example.test',
+            'db_host' => '127.0.0.1',
+            'db_port' => '1',
+            'db_name' => 'rebates_test',
+            'db_user' => 'rebates',
+            'db_password' => 'secret-database-value',
+        ]);
+    }
+
+    private function claimWizard(): void
+    {
+        $response = $this->post('/install/activate', ['link' => $this->enableWizard()])->assertNoContent();
+        $cookie = $response->getCookie('site_install_browser', decrypt: false);
+        $this->assertNotNull($cookie);
+        $this->withUnencryptedCookie('site_install_browser', $cookie->getValue());
     }
 
     private function loadForm(): string
@@ -135,9 +177,6 @@ class SiteInstallationTest extends TestCase
             ->assertDontSee('一次性安装码')
             ->assertDontSee('secret-database-value');
 
-        $cookie = $page->getCookie('site_install_csrf', decrypt: false);
-        $this->assertNotNull($cookie);
-        $this->withUnencryptedCookie('site_install_csrf', $cookie->getValue());
         $this->assertSame(1, preg_match('/name="_token" value="([a-f0-9]{64})"/', $page->getContent(), $matches));
 
         return $matches[1];
