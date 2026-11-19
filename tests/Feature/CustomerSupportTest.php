@@ -11,10 +11,13 @@ use App\Models\SupportFaq;
 use App\Models\User;
 use App\SupportDesk\AiConfiguration;
 use App\SupportDesk\CustomerSupport;
+use App\Storage\PublicImages;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -29,14 +32,15 @@ class CustomerSupportTest extends TestCase
         $this->getJson('/api/v1/support')->assertOk()->assertJsonPath('data.mode', 'human');
         Http::preventStrayRequests();
         Http::fake(['https://api.deepseek.com/chat/completions' => Http::sequence()
-            ->push($this->reply('OK'))->push($this->reply('Use a página de vínculo.'))]);
+            ->push($this->reply('OK'))->push($this->reply('Resposta direta do modelo.'))
+            ->push($this->reply('Use a página de vínculo.'))->pushStatus(503)]);
         app(AiConfiguration::class)->save(['model' => 'deepseek-flash', 'api_key' => 'test-only-key'], $staff);
         $support = app(CustomerSupport::class);
         $faq = $support->saveFaq(null, [
             'question' => 'Como vincular minha plataforma?', 'aliases' => ['ligar plataforma'],
             'answer' => 'Abra a página de vínculo.', 'published' => true,
         ], $staff);
-        $support->saveFaq(null, ['question' => 'Segredo em rascunho', 'answer' => 'Draft', 'published' => false], $staff);
+        $support->saveFaq(null, ['question' => 'Segredo em rascunho', 'answer' => 'Unpublished answer sentinel', 'published' => false], $staff);
         $settings = [
             'ai_enabled' => true, 'welcome' => 'Olá', 'recommended_ids' => [$faq->id],
             'channels' => [
@@ -48,19 +52,56 @@ class CustomerSupportTest extends TestCase
         $this->getJson('/api/v1/support')->assertOk()->assertJsonPath('data.mode', 'chat')
             ->assertJsonPath('data.suggestions.0.id', $faq->id)->assertJsonCount(1, 'data.channels');
         $this->postJson('/api/v1/support/chat', ['question' => 'Segredo em rascunho'])->assertOk()
-            ->assertJsonPath('data.type', 'human');
+            ->assertJsonPath('data.type', 'ai')->assertJsonPath('data.answer', 'Resposta direta do modelo.');
         $this->postJson('/api/v1/support/chat', ['question' => 'Qual é o saldo dos meus pontos?'])->assertOk()
             ->assertJsonPath('data.link', '/wallet');
         $this->postJson('/api/v1/support/chat', ['question' => 'ligar plataforma'])->assertOk()
             ->assertJsonPath('data.faq_id', $faq->id)->assertJsonPath('data.answer', 'Use a página de vínculo.');
-        Http::assertSentCount(2);
-        Http::assertNotSent(fn (Request $request) => str_contains($request->body(), 'Qual é o saldo') || str_contains($request->body(), 'Segredo em rascunho'));
+        $this->postJson('/api/v1/support/chat', ['question' => 'Outra pergunta'])->assertOk()
+            ->assertJsonPath('data.type', 'human')->assertJsonPath('data.channels.0.name', 'Suporte');
+        Http::assertSentCount(4);
+        Http::assertNotSent(fn (Request $request) => str_contains($request->body(), 'Qual é o saldo') || str_contains($request->body(), 'Unpublished answer sentinel'));
+        Http::assertSent(fn (Request $request) => ($request['messages'][1]['content'] ?? null) === 'Segredo em rascunho'
+            && str_contains($request['messages'][0]['content'], '你是网站的 AI 客服'));
+        Http::assertSent(fn (Request $request) => ($request['messages'][1]['content'] ?? null) === 'ligar plataforma'
+            && str_contains($request['messages'][0]['content'], 'Abra a página de vínculo.'));
 
         $support->saveSettings([...$settings, 'ai_enabled' => false], $staff);
         $this->getJson('/api/v1/support')->assertOk()->assertJsonPath('data.mode', 'human')
             ->assertJsonPath('data.channels.0.name', 'Suporte');
         $this->postJson('/api/v1/support/chat', ['question' => 'ligar plataforma'])->assertConflict();
-        Http::assertSentCount(2);
+        Http::assertSentCount(4);
+    }
+
+    public function test_admin_saves_ai_identity_and_prompt_for_the_configured_model(): void
+    {
+        $staff = $this->administrator();
+        Storage::fake(PublicImages::LOCAL_DISK);
+        Http::preventStrayRequests();
+        Http::fake(['https://api.deepseek.com/chat/completions' => Http::sequence()
+            ->push($this->reply('OK'))->push($this->reply('可以，请告诉我你需要什么帮助。'))]);
+        app(AiConfiguration::class)->save(['model' => 'deepseek-v4-pro', 'api_key' => 'test-only-key'], $staff);
+        $this->actingAs($staff, 'web');
+        Livewire::test(SupportSettings::class)->fillForm([
+            'ai_enabled' => true, 'display_name' => '小绿客服', 'description' => '网站使用咨询',
+            'welcome' => '你好，欢迎咨询。', 'system_prompt' => '先以一句简短问候开始。',
+            'image_upload' => UploadedFile::fake()->image('avatar.png', 32, 32),
+        ])->call('save')->assertHasNoFormErrors();
+
+        $response = $this->getJson('/api/v1/support?language=zh-CN')->assertOk()
+            ->assertJsonPath('data.display_name', '小绿客服')->assertJsonPath('data.description', '网站使用咨询')
+            ->assertJsonPath('data.welcome', '你好，欢迎咨询。')->assertJsonMissingPath('data.system_prompt');
+        $avatar = $response->json('data.avatar_url');
+        $this->assertStringStartsWith(PublicImages::LOCAL_PREFIX, $avatar);
+        Storage::disk(PublicImages::LOCAL_DISK)->assertExists(basename($avatar));
+
+        Livewire::test(SupportSettings::class)->set('question', '你能帮什么？')->set('language', 'zh-CN')
+            ->call('testQuestion')->assertSet('preview.answer', '可以，请告诉我你需要什么帮助。');
+        Http::assertSent(fn (Request $request) => $request['model'] === 'deepseek-v4-pro'
+            && $request->hasHeader('Authorization', 'Bearer test-only-key')
+            && str_contains($request['messages'][0]['content'], '先以一句简短问候开始。')
+            && str_contains($request['messages'][0]['content'], '小绿客服')
+            && $request['messages'][1]['content'] === '你能帮什么？');
     }
 
     public function test_invalid_ai_credentials_preserve_the_previously_verified_model(): void

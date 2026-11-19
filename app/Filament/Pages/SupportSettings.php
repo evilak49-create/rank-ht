@@ -2,8 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Resources\PublicImageField;
 use App\Models\SupportFaq;
 use App\Models\User;
+use App\Storage\PublicImages;
 use App\SupportDesk\CustomerSupport;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Repeater;
@@ -18,6 +20,10 @@ use Illuminate\Validation\ValidationException;
 
 class SupportSettings extends Page
 {
+    private const SETTINGS_FIELDS = [
+        'ai_enabled', 'display_name', 'description', 'avatar_url', 'welcome', 'system_prompt', 'recommended_ids', 'channels',
+    ];
+
     protected static ?string $title = '客服设置';
 
     protected static string|\UnitEnum|null $navigationGroup = '客服管理';
@@ -43,7 +49,7 @@ class SupportSettings extends Page
 
     public function mount(CustomerSupport $support): void
     {
-        $this->form->fill($support->settings()->only(['ai_enabled', 'welcome', 'recommended_ids', 'channels']));
+        $this->form->fill($support->settings()->only(self::SETTINGS_FIELDS));
     }
 
     public function hydrate(): void
@@ -55,7 +61,14 @@ class SupportSettings extends Page
     {
         return $schema->statePath('data')->components([
             Toggle::make('ai_enabled')->label('启用 AI 客服'),
+            TextInput::make('display_name')->label('客服显示名称')->maxLength(80),
+            TextInput::make('description')->label('客服简介')->maxLength(200),
+            PublicImageField::make('上传客服头像'),
+            PublicImageField::current('avatar_url'),
+            PublicImageField::remove('avatar_url'),
             Textarea::make('welcome')->label('欢迎语')->maxLength(400)->rows(2),
+            Textarea::make('system_prompt')->label('默认提示词')->maxLength(4000)->rows(5)
+                ->placeholder(CustomerSupport::DEFAULT_PROMPT)->helperText('留空时使用系统默认提示词。'),
             Select::make('recommended_ids')->label('推荐问题')->multiple()->searchable()->maxItems(8)
                 ->options(fn (): array => SupportFaq::query()->where('published', true)->orderBy('question')->pluck('question', 'id')->all()),
             Repeater::make('channels')->label('人工客服渠道')->addActionLabel('添加渠道')->maxItems(10)->schema([
@@ -67,12 +80,14 @@ class SupportSettings extends Page
         ]);
     }
 
-    public function save(CustomerSupport $support): void
+    public function save(CustomerSupport $support, PublicImages $images): void
     {
         abort_unless(self::canAccess(), 403);
 
         try {
-            $support->saveSettings($this->form->getState(), Filament::auth()->user());
+            $data = PublicImageField::retain($this->form->getState(), 'avatar_url', $support->settings()->avatar_url);
+            $images->apply($data, 'avatar_url', fn (array $settings) => $support->saveSettings($settings, Filament::auth()->user()));
+            $this->form->fill($support->settings()->only(self::SETTINGS_FIELDS));
             Notification::make()->title('客服设置已保存')->success()->send();
         } catch (ValidationException $exception) {
             foreach ($exception->errors() as $field => $messages) {

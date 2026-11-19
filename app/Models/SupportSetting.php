@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['ai_enabled', 'welcome', 'recommended_ids', 'channels', 'user_id'])]
+#[Fillable(['ai_enabled', 'display_name', 'description', 'avatar_url', 'welcome', 'system_prompt', 'recommended_ids', 'channels', 'user_id'])]
 class SupportSetting extends Model
 {
     protected function casts(): array
