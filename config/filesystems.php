@@ -29,6 +29,27 @@ return [
     */
 
     'disks' => [
+        'claim-evidence-local' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/claim-evidence'),
+        ],
+
+        'claim-evidence-s3' => [
+            'driver' => 's3',
+            'key' => env('CLAIM_EVIDENCE_KEY'),
+            'secret' => env('CLAIM_EVIDENCE_SECRET'),
+            'region' => env('CLAIM_EVIDENCE_REGION', 'us-east-1'),
+            'bucket' => env('CLAIM_EVIDENCE_BUCKET'),
+            'endpoint' => env('CLAIM_EVIDENCE_ENDPOINT'),
+            'use_path_style_endpoint' => env('CLAIM_EVIDENCE_PATH_STYLE', false),
+            'visibility' => 'private',
+            'stream_reads' => true,
+            'request_checksum_calculation' => 'when_required',
+            'response_checksum_validation' => 'when_required',
+            'http' => ['connect_timeout' => 5, 'timeout' => 15],
+            'retries' => 1,
+            'throw' => true,
+        ],
 
         'local' => [
             'driver' => 'local',

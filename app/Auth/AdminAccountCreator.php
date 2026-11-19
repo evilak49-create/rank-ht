@@ -6,6 +6,7 @@ use App\Members\MemberAdministration;
 use App\Models\AdminRole;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
+use App\Protection\ProtectionClaims;
 use App\RedPackets\RedPackets;
 use App\Shop\Funds\PlatformFunds;
 use App\Shop\PhysicalShop;
@@ -23,6 +24,7 @@ class AdminAccountCreator
                     ...PlatformAdministration::PERMISSIONS, 'points.manage-rules', ...PhysicalShop::PERMISSIONS, ...PlatformFunds::PERMISSIONS,
                     'activities.manage-checkin', 'activities.view-checkin', 'system.manage-business-timezone', 'content.manage',
                     ...RedPackets::PERMISSIONS,
+                    ...ProtectionClaims::PERMISSIONS,
                 ]],
             );
             $user = new User(['username' => strtolower($username), 'name' => $name, 'password' => $password]);

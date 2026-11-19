@@ -15,6 +15,9 @@ use App\Filament\Resources\PointEntryResource;
 use App\Filament\Resources\PointQuoteResource;
 use App\Filament\Resources\PointRuleResource;
 use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProtectionClaimResource;
+use App\Filament\Resources\ProtectionEligibilityResource;
+use App\Filament\Resources\ProtectionTermResource;
 use App\Filament\Resources\RedPacketInviteResource;
 use App\Filament\Resources\RedPacketRoundResource;
 use App\Filament\Resources\ShopOrderResource;
@@ -51,6 +54,7 @@ class AdminPanelProvider extends PanelProvider
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,
                 RedPacketRoundResource::class, RedPacketInviteResource::class, PixWithdrawalResource::class,
+                ProtectionTermResource::class, ProtectionEligibilityResource::class, ProtectionClaimResource::class,
             ])
             ->middleware([
                 EncryptCookies::class,

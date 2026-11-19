@@ -6,6 +6,7 @@ use App\Http\Controllers\PixController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PlatformFundsController;
 use App\Http\Controllers\PointSettlementController;
+use App\Http\Controllers\ProtectionController;
 use App\Http\Controllers\PublicContentController;
 use App\Http\Controllers\RedPacketController;
 use App\Http\Controllers\ShopController;
@@ -28,7 +29,17 @@ Route::prefix('api/v1')->group(function (): void {
     Route::get('platforms', [PlatformController::class, 'index']);
     Route::get('platforms/featured', [PlatformController::class, 'featured']);
     Route::get('platforms/{platform}', [PlatformController::class, 'show'])->whereNumber('platform');
+    Route::get('platforms/{platform}/protection-terms', [ProtectionController::class, 'publicTerms'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {
+        Route::prefix('protection')->controller(ProtectionController::class)->group(function (): void {
+            Route::get('bindings', 'bindings');
+            Route::get('bindings/{binding}/terms', 'bindingTerms')->whereNumber('binding');
+            Route::get('claims', 'index');
+            Route::post('claims', 'store')->middleware('throttle:6,1,protection-claims');
+            Route::get('claims/{claim}', 'show')->whereNumber('claim');
+            Route::get('claims/{claim}/evidence/{evidence}', 'memberEvidence')->whereNumber(['claim', 'evidence'])
+                ->middleware('signed:relative')->name('claim-evidence.member');
+        });
         Route::get('red-packets', [RedPacketController::class, 'index']);
         Route::get('red-packets/invites', [RedPacketController::class, 'invites']);
         Route::post('red-packets/open', [RedPacketController::class, 'open'])->middleware('throttle:20,1');

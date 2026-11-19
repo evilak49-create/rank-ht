@@ -25,4 +25,9 @@ class PlatformBinding extends Model
     {
         return $this->belongsTo(Platform::class);
     }
+
+    public function member(): BelongsTo
+    {
+        return $this->belongsTo(Member::class);
+    }
 }
