@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\DB;
 
@@ -19,7 +20,13 @@ class Member extends Authenticatable
             'last_login_at' => 'datetime',
             'disabled_at' => 'datetime',
             'session_version' => 'integer',
+            'points_balance' => 'integer',
         ];
+    }
+
+    public function platforms(): BelongsToMany
+    {
+        return $this->belongsToMany(Platform::class, 'platform_bindings');
     }
 
     public function changeDisabledStatus(bool $disabled, ?User $operator = null): void

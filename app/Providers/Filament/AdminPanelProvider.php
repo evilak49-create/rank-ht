@@ -4,6 +4,8 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\AdminLogin;
 use App\Filament\Resources\MemberResource;
+use App\Filament\Resources\PlatformResource;
+use App\Filament\Resources\PointEntryResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -30,7 +32,7 @@ class AdminPanelProvider extends PanelProvider
             ->authGuard('web')
             ->brandName('返利网运营后台')
             ->pages([Dashboard::class])
-            ->resources([MemberResource::class])
+            ->resources([MemberResource::class, PlatformResource::class, PointEntryResource::class])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\MemberPassword;
 use App\Auth\MemberPhone;
 use App\Auth\SmsChallenges;
 use App\Models\Member;
@@ -28,9 +29,9 @@ class MemberAuthController extends Controller
     {
         $data = $this->validatePhone($request, [
             'code' => 'required|digits:6',
-            'password' => 'required|string|min:8|max:72',
+            'password' => MemberPassword::RULE,
         ]);
-        $this->validatePasswordBytes($data['password']);
+        MemberPassword::validateBytes($data['password']);
 
         try {
             $member = DB::transaction(function () use ($data, $sms): Member {
@@ -52,7 +53,7 @@ class MemberAuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $data = $this->validatePhone($request, ['password' => 'required|string|max:72']);
-        $this->validatePasswordBytes($data['password']);
+        MemberPassword::validateBytes($data['password']);
 
         $member = DB::transaction(function () use ($data): Member {
             $member = Member::query()->where('phone', $data['phone'])->lockForUpdate()->first();
@@ -96,9 +97,9 @@ class MemberAuthController extends Controller
     {
         $data = $this->validatePhone($request, [
             'code' => 'required|digits:6',
-            'password' => 'required|string|min:8|max:72',
+            'password' => MemberPassword::RULE,
         ]);
-        $this->validatePasswordBytes($data['password']);
+        MemberPassword::validateBytes($data['password']);
 
         $current = Auth::guard('member')->user();
         if ($current !== null && $current->phone !== $data['phone']) {
@@ -125,19 +126,13 @@ class MemberAuthController extends Controller
         return $request->validate(['phone' => ['required', MemberPhone::RULE], ...$rules]);
     }
 
-    private function validatePasswordBytes(string $password): void
-    {
-        if (strlen($password) > 72 || str_contains($password, "\0")) {
-            throw ValidationException::withMessages(['password' => '密码最多 72 字节，且不能包含空字符。']);
-        }
-    }
-
     private function memberData(Member $member): array
     {
         return [
             'id' => $member->id,
             'phone' => $member->phone,
             'phone_verified_at' => $member->phone_verified_at?->toISOString(),
+            'points_balance' => $member->points_balance ?? 0,
             'last_login_at' => $member->last_login_at?->toISOString(),
         ];
     }

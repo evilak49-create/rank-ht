@@ -1,0 +1,53 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+#[Fillable(['name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position'])]
+#[Hidden(['draft_query', 'active_query'])]
+class Platform extends Model
+{
+    protected function casts(): array
+    {
+        return [
+            'rating' => 'decimal:1',
+            'manually_disabled' => 'boolean',
+            'active_query' => 'encrypted:array',
+            'draft_query' => 'encrypted:array',
+            'query_revision' => 'integer',
+            'active_query_revision' => 'integer',
+            'query_failures' => 'integer',
+            'query_unhealthy_at' => 'datetime',
+            'query_tested_at' => 'datetime',
+        ];
+    }
+
+    #[Scope]
+    protected function available(Builder $query): void
+    {
+        $query->where('manually_disabled', false)
+            ->whereNotNull('active_query_revision')
+            ->whereNull('query_unhealthy_at');
+    }
+
+    public function status(): string
+    {
+        return match (true) {
+            $this->manually_disabled => 'disabled',
+            $this->query_unhealthy_at !== null => 'unhealthy',
+            $this->active_query_revision !== null => 'available',
+            default => 'pending',
+        };
+    }
+
+    public function bindings(): HasMany
+    {
+        return $this->hasMany(PlatformBinding::class);
+    }
+}

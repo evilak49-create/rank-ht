@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'platform_query' => [
+        'allowed_hosts' => array_values(array_filter(array_map(
+            fn (string $host): string => strtolower(trim($host)),
+            explode(',', (string) env('PLATFORM_QUERY_ALLOWED_HOSTS', '')),
+        ))),
+    ],
     'sms' => [
         'driver' => env('SMS_DRIVER'),
     ],

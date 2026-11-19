@@ -1,0 +1,103 @@
+<?php
+
+namespace App\Platforms;
+
+use App\Auth\SmsChallenges;
+use App\Models\Member;
+use App\Models\Platform;
+use App\Models\PlatformBinding;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class BindPlatformAccount
+{
+    public function __construct(
+        private readonly PlatformQueryClient $client,
+        private readonly PlatformAdministration $platforms,
+        private readonly SmsChallenges $sms,
+    ) {}
+
+    public function sendCode(Member $member, Platform $platform, string $phone): void
+    {
+        abort_unless($platform->status() === 'available', 404);
+        $this->ensureNotBound($member, $platform);
+        $this->sms->send($phone, $this->purpose($member, $platform));
+    }
+
+    public function bind(Member $member, Platform $platform, string $phone, ?string $code): PlatformBinding
+    {
+        abort_unless($platform->status() === 'available', 404);
+        $this->ensureNotBound($member, $platform);
+        $purpose = $this->purpose($member, $platform);
+        if ($this->requiresVerification($member, $phone)) {
+            $this->sms->verify($phone, $purpose, $this->requiredCode($code));
+        }
+
+        try {
+            $account = $this->client->lookup($platform->active_query, $phone);
+        } catch (PlatformQueryFailure $failure) {
+            $this->platforms->recordQueryOutcome($platform, $failure->kind);
+            if ($failure->kind === 'ambiguous') {
+                throw ValidationException::withMessages(['phone' => $failure->getMessage()]);
+            }
+            abort(503, '合作平台查询暂不可用。');
+        }
+        $this->platforms->recordQueryOutcome($platform, $account === null ? 'not_found' : 'passed');
+        if ($account === null) {
+            throw ValidationException::withMessages(['phone' => PlatformQueryFailure::label('not_found')]);
+        }
+
+        try {
+            return DB::transaction(function () use ($member, $platform, $phone, $code, $purpose, $account): PlatformBinding {
+                $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
+                abort_unless($current->status() === 'available', 404);
+                abort_if($current->active_query_revision !== $platform->active_query_revision, 409, '平台配置已更新，请重试。');
+
+                $owner = Member::query()->lockForUpdate()->findOrFail($member->id);
+                abort_if($owner->disabled_at !== null, 403, '会员账号已禁用。');
+                abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
+                $this->ensureNotBound($owner, $current);
+
+                if ($this->requiresVerification($owner, $phone)) {
+                    $this->sms->consume($phone, $purpose, $this->requiredCode($code));
+                    if ($owner->phone === $phone) {
+                        $owner->forceFill(['phone_verified_at' => now()])->save();
+                    }
+                }
+
+                return $current->bindings()->create([
+                    'member_id' => $owner->id, 'platform_account_id' => $account->id, 'query_phone' => $phone,
+                    'baseline_deposit_cents' => $account->depositCents, 'baseline_valid_bet_cents' => $account->validBetCents,
+                    'baseline_observed_at' => $account->observedAt,
+                ]);
+            }, 3);
+        } catch (UniqueConstraintViolationException) {
+            abort(409, '该平台账号已绑定。');
+        }
+    }
+
+    private function ensureNotBound(Member $member, Platform $platform): void
+    {
+        abort_if($platform->bindings()->where('member_id', $member->id)->exists(), 409, '你已绑定该平台。');
+    }
+
+    private function requiresVerification(Member $member, string $phone): bool
+    {
+        return $member->phone !== $phone || $member->phone_verified_at === null;
+    }
+
+    private function requiredCode(?string $code): string
+    {
+        if ($code === null) {
+            throw ValidationException::withMessages(['code' => '请验证本次查询使用的手机号。']);
+        }
+
+        return $code;
+    }
+
+    private function purpose(Member $member, Platform $platform): string
+    {
+        return 'pb:'.substr(hash('sha256', $member->id.':'.$platform->id), 0, 29);
+    }
+}

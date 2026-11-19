@@ -31,16 +31,27 @@ class SmsChallenges
         }
     }
 
+    public function verify(string $phone, string $purpose, string $code): void
+    {
+        $challenge = DB::table('sms_challenges')->where(['phone' => $phone, 'purpose' => $purpose])
+            ->where('expires_at', '>', now())->first();
+        $this->assertValid($challenge, $phone, $purpose, $code);
+    }
+
     // Call within the transaction that performs the verified operation.
     public function consume(string $phone, string $purpose, string $code): void
     {
         $query = DB::table('sms_challenges')->where(['phone' => $phone, 'purpose' => $purpose]);
         $challenge = (clone $query)->where('expires_at', '>', now())->lockForUpdate()->first();
+        $this->assertValid($challenge, $phone, $purpose, $code);
+        $query->delete();
+    }
+
+    private function assertValid(?object $challenge, string $phone, string $purpose, string $code): void
+    {
         if ($challenge === null || ! hash_equals($challenge->digest, $this->digest($phone, $purpose, $code))) {
             throw ValidationException::withMessages(['code' => '短信验证码无效或已过期。']);
         }
-
-        $query->delete();
     }
 
     private function digest(string $phone, string $purpose, string $code): string
