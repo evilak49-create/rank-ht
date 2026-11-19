@@ -1,5 +1,7 @@
 <?php
 
+$platformQueryEndpoint = env('PLATFORM_QUERY_DEFAULT_ENDPOINT', 'https://api5.v-n-r-1.com/api/backend/trpc/user.list');
+
 return [
     'pix' => [
         'driver' => env('PIX_DRIVER'),
@@ -9,10 +11,20 @@ return [
         'driver' => env('PLATFORM_FUNDS_DRIVER'),
     ],
     'platform_query' => [
-        'allowed_hosts' => array_values(array_filter(array_map(
+        'allowed_hosts' => array_values(array_unique(array_filter(array_map(
             fn (string $host): string => strtolower(trim($host)),
-            explode(',', (string) env('PLATFORM_QUERY_ALLOWED_HOSTS', '')),
-        ))),
+            [...explode(',', (string) env('PLATFORM_QUERY_ALLOWED_HOSTS', '')), (string) parse_url((string) $platformQueryEndpoint, PHP_URL_HOST)],
+        )))),
+        'defaults' => [
+            'endpoint' => $platformQueryEndpoint,
+            'admin_host' => env('PLATFORM_QUERY_DEFAULT_ADMIN_HOST', 'admin5-public.y-7-l-x.com'),
+            'tenant_id' => env('PLATFORM_QUERY_DEFAULT_TENANT_ID', 9818088),
+            'region_id' => env('PLATFORM_QUERY_DEFAULT_REGION_ID', 1),
+            'token' => env('PLATFORM_QUERY_DEFAULT_TOKEN', env('BACKEND_BEARER_TOKEN')),
+            'account' => env('PLATFORM_QUERY_DEFAULT_ACCOUNT', env('BACKEND_ACCOUNT')),
+            'fingerprint' => env('PLATFORM_QUERY_DEFAULT_FINGERPRINT', env('BACKEND_FINGERPRINT_ID')),
+            'test_phone' => env('PLATFORM_QUERY_DEFAULT_TEST_PHONE'),
+        ],
     ],
     'sms' => [
         'driver' => env('SMS_DRIVER'),

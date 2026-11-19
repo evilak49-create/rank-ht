@@ -142,11 +142,24 @@ class PlatformIntegrationTest extends TestCase
             ])->assertHasNoActionErrors();
 
         $platform = Platform::query()->where('name', 'New Platform')->sole();
+        $action = TestAction::make('configure_query')->table($platform);
+        Livewire::test(ListPlatforms::class)->mountAction($action)->assertActionDataSet([
+            'endpoint' => 'https://api5.v-n-r-1.com/api/backend/trpc/user.list',
+            'admin_host' => 'admin5-public.y-7-l-x.com', 'tenant_id' => 9818088, 'region_id' => 1,
+        ]);
+        Livewire::test(ListPlatforms::class)->callAction($action, [
+            ...$this->queryConfig(), 'endpoint' => 'https://denied.example.test/api/backend/trpc/user.list',
+        ])->assertHasActionErrors(['endpoint']);
         Livewire::test(ListPlatforms::class)
-            ->callAction(TestAction::make('configure_query')->table($platform), $this->queryConfig())->assertHasNoActionErrors()
+            ->callAction($action, [
+                ...$this->queryConfig(), 'endpoint' => $this->queryConfig()['endpoint'].'?input=%7B%7D',
+                'token' => 'Bearer '.$this->queryConfig()['token'],
+            ])->assertHasNoActionErrors()->assertNotified('查询接口配置已保存')
             ->callAction(TestAction::make('test_query')->table($platform))->assertHasNoActionErrors();
 
         $this->assertSame('available', $platform->refresh()->status());
+        $this->assertSame($this->queryConfig()['endpoint'], $platform->active_query['endpoint']);
+        Livewire::test(ListPlatforms::class)->mountAction($action)->assertActionDataSet($this->queryConfig());
         $this->assertDatabaseHas('platform_audits', ['platform_id' => $platform->id, 'user_id' => $operator->id, 'result' => 'passed']);
     }
 
@@ -156,7 +169,7 @@ class PlatformIntegrationTest extends TestCase
         $role = AdminRole::create(['name' => '只读平台', 'permissions' => ['platforms.view']]);
         $operator->roles()->sync([$role->id]);
 
-        $this->actingAs($operator, 'web')->get('/admin/platforms')->assertOk();
+        $this->actingAs($operator, 'web')->get('/admin/platforms')->assertOk()->assertDontSee('fixture-token');
         Livewire::test(ListPlatforms::class)
             ->assertActionHidden(TestAction::make('configure_query')->table($platform))
             ->assertActionHidden(TestAction::make('test_query')->table($platform));

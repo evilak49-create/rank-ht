@@ -17,7 +17,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Arr;
 
 class PlatformResource extends Resource
 {
@@ -111,21 +110,22 @@ class PlatformResource extends Resource
     {
         return Action::make('configure_query')->label('接口设置')
             ->authorize(fn (): bool => self::hasPermission('platforms.configure-query'))
+            ->modalSubmitActionLabel('保存接口配置')
             ->schema([
                 TextInput::make('endpoint')->label('查询接口地址')->url()->maxLength(2048)->required()
-                    ->helperText('查询地址须加入服务器的 PLATFORM_QUERY_ALLOWED_HOSTS 域名列表。'),
+                    ->helperText('可粘贴包含查询参数的完整地址。自定义域名须加入服务器允许列表。'),
                 TextInput::make('admin_host')->label('合作方后台域名')->maxLength(253)->required(),
-                TextInput::make('token')->label('Bearer Token')->password()->maxLength(4096)->required()
-                    ->helperText('更换接口配置时请重新输入接入凭证。'),
-                TextInput::make('account')->label('合作方后台账号')->password()->maxLength(255)->required(),
-                TextInput::make('fingerprint')->label('Fingerprint ID')->password()->maxLength(255)->required(),
+                TextInput::make('token')->label('Bearer Token')->autocomplete('off')->maxLength(4096)->required(),
+                TextInput::make('account')->label('合作方后台账号')->autocomplete('off')->maxLength(255)->required(),
+                TextInput::make('fingerprint')->label('Fingerprint ID')->autocomplete('off')->maxLength(255)->required(),
                 TextInput::make('tenant_id')->label('租户 ID')->integer()->minValue(1)->required(),
                 TextInput::make('region_id')->label('区域 ID')->integer()->minValue(0)->required(),
                 TextInput::make('test_phone')->label('已知推广测试账号的手机号')->inputMode('tel')->required(),
-            ])->fillForm(fn (Platform $record): array => Arr::only(
-                $record->draft_query ?? $record->active_query ?? [],
-                ['endpoint', 'admin_host', 'tenant_id', 'region_id', 'test_phone'],
-            ))->action(fn (Platform $record, array $data) => app(PlatformAdministration::class)->saveQuery($record, $data, self::operator()));
+            ])->fillForm(fn (Platform $record): array => app(PlatformAdministration::class)->queryForm($record, self::operator()))
+            ->action(function (Action $action, Platform $record, array $data): void {
+                ActionForm::submit($action, fn () => app(PlatformAdministration::class)->saveQuery($record, $data, self::operator()));
+                Notification::make()->title('查询接口配置已保存')->body('点击「测试查询」验证，测试通过后生效。')->success()->send();
+            });
     }
 
     private static function testQueryAction(): Action

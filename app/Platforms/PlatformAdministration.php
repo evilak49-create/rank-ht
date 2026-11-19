@@ -8,6 +8,7 @@ use App\Models\PlatformFundTask;
 use App\Models\User;
 use App\Storage\PublicImages;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -41,6 +42,13 @@ class PlatformAdministration
         abort_unless($operator->hasPermission('platforms.configure-query'), 403);
 
         $data['test_phone'] = MemberPhone::normalize($data['test_phone'] ?? null);
+        if (is_string($data['endpoint'] ?? null)) {
+            // The request parameters are generated from the saved settings and lookup phone.
+            $data['endpoint'] = preg_replace('/\?[^#]*/', '', trim($data['endpoint']));
+        }
+        if (is_string($data['token'] ?? null)) {
+            $data['token'] = preg_replace('/\ABearer +/i', '', trim($data['token']));
+        }
         $configuration = Validator::make($data, [
             'endpoint' => ['required', 'string', 'max:2048', 'url:https'],
             'admin_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
@@ -53,7 +61,9 @@ class PlatformAdministration
         ])->validate();
 
         if (! $this->client->acceptsEndpoint($configuration['endpoint'])) {
-            throw ValidationException::withMessages(['endpoint' => PlatformQueryFailure::label('configuration')]);
+            throw ValidationException::withMessages([
+                'endpoint' => '请输入允许列表中的 HTTPS 查询端点，路径须为 /api/backend/trpc/user.list。',
+            ]);
         }
 
         DB::transaction(function () use ($platform, $configuration, $operator): void {
@@ -64,6 +74,16 @@ class PlatformAdministration
             ])->save();
             $this->audit($current, $operator, 'query_configured', $current->query_revision);
         }, 3);
+    }
+
+    public function queryForm(Platform $platform, User $operator): array
+    {
+        abort_unless($operator->hasPermission('platforms.configure-query'), 403);
+        $saved = $platform->draft_query ?? $platform->active_query;
+
+        return Arr::only($saved ?? config('services.platform_query.defaults', []), [
+            'endpoint', 'admin_host', 'token', 'account', 'fingerprint', 'tenant_id', 'region_id', 'test_phone',
+        ]);
     }
 
     public function testQuery(Platform $platform, User $operator): string
