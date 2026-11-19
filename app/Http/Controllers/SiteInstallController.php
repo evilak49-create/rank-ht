@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Installation\InstallationFailed;
 use App\Installation\InstallerAccess;
 use App\Installation\SiteInstaller;
 use Closure;
@@ -11,6 +12,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use PDOException;
 use Throwable;
 
 class SiteInstallController extends Controller
@@ -79,10 +81,16 @@ class SiteInstallController extends Controller
             } catch (ValidationException $exception) {
                 return $this->page($values, $exception->errors(), 422);
             } catch (Throwable $exception) {
-                Log::warning('Website installation did not complete.', ['exception_type' => $exception::class]);
+                $failure = $exception instanceof InstallationFailed ? $exception : new InstallationFailed('unknown', $exception);
+                $cause = $failure->getPrevious() ?? $failure;
+                $context = ['step' => $failure->step, 'exception_type' => $cause::class];
+                if ($cause instanceof PDOException && is_numeric($cause->errorInfo[1] ?? null)) {
+                    $context['mysql_error'] = (int) $cause->errorInfo[1];
+                }
+                Log::warning('Website installation did not complete.', $context);
 
                 return $this->page($values, [
-                    'install' => ['安装未完成。请检查 MySQL 账号权限，以及应用目录和 public 的写入权限，再重试。'],
+                    'install' => [$failure->getMessage()],
                 ], 500);
             }
 

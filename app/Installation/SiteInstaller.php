@@ -12,6 +12,7 @@ use Illuminate\Validation\ValidationException;
 use PDO;
 use PDOException;
 use RuntimeException;
+use Throwable;
 
 class SiteInstaller
 {
@@ -35,7 +36,17 @@ class SiteInstaller
             throw ValidationException::withMessages(['db_name' => '上次安装已开始，请连接同一个 MySQL 数据库继续。']);
         }
 
-        $configuration = $this->environment($database, $data['app_url']);
+        if (! is_writable(dirname(app()->environmentFilePath()))) {
+            throw new InstallationFailed('configuration');
+        }
+
+        foreach (['css', 'js', 'fonts'] as $directory) {
+            $path = public_path($directory);
+            if (! is_writable(is_dir($path) ? $path : public_path())) {
+                throw new InstallationFailed('assets');
+            }
+        }
+
         config(['database.connections.installer' => [
             ...config('database.connections.mysql'),
             ...$database,
@@ -48,7 +59,10 @@ class SiteInstaller
         ]]);
         DB::setDefaultConnection('installer');
 
+        $step = 'configuration';
         try {
+            $configuration = $this->environment($database, $data['app_url']);
+            $step = 'database';
             $connection = DB::connection('installer');
             try {
                 $connection->getPdo();
@@ -57,26 +71,34 @@ class SiteInstaller
             }
 
             $schema = $connection->getSchemaBuilder();
-            if ($pending === null) {
-                if ($schema->getTables($database['database']) !== [] || $schema->getViews($database['database']) !== []) {
-                    throw ValidationException::withMessages(['db_name' => '首次安装请选择空的 MySQL 数据库。']);
-                }
-
-                $save([...$state, 'target' => $target]);
+            if ($pending === null && ($schema->getTables($database['database']) !== [] || $schema->getViews($database['database']) !== [])) {
+                throw ValidationException::withMessages(['db_name' => '首次安装请选择空的 MySQL 数据库。']);
             }
 
             if ($schema->hasTable('users') && User::query()->exists()) {
                 throw ValidationException::withMessages(['db_name' => '该数据库已存在后台账号，无法用于首次安装。']);
             }
 
-            if (Artisan::call('migrate', ['--database' => 'installer', '--force' => true, '--no-interaction' => true]) !== 0
-                || Artisan::call('filament:assets', ['--no-interaction' => true]) !== 0) {
-                throw new RuntimeException('An installation command did not complete.');
+            $step = 'assets';
+            if (Artisan::call('filament:assets', ['--no-interaction' => true]) !== 0) {
+                throw new InstallationFailed($step);
             }
 
-            $connection->transaction(function () use ($data, $configuration): void {
+            $step = 'state';
+            if ($pending === null) {
+                $save([...$state, 'target' => $target]);
+            }
+
+            $step = 'migration';
+            if (Artisan::call('migrate', ['--database' => 'installer', '--force' => true, '--no-interaction' => true]) !== 0) {
+                throw new InstallationFailed($step);
+            }
+
+            $step = 'admin';
+            $connection->transaction(function () use ($data, $configuration, &$step): void {
                 $this->admins->create(strtolower($data['email']), $data['name'], $data['password']);
 
+                $step = 'configuration';
                 $path = app()->environmentFilePath();
                 clearstatcache(true, $path);
                 if (file_exists($path) || is_link($path)) {
@@ -86,7 +108,12 @@ class SiteInstaller
                 File::replace($path, $configuration, 0600);
             });
 
+            $step = 'state';
             $save([]);
+        } catch (ValidationException|InstallationFailed $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw new InstallationFailed($step, $exception);
         } finally {
             DB::purge('installer');
             DB::setDefaultConnection($previous);

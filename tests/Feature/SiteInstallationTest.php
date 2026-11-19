@@ -88,4 +88,32 @@ class SiteInstallationTest extends TestCase
         $this->get('/install')->assertNotFound();
         $this->post('/install', ['token' => $token])->assertNotFound();
     }
+
+    public function test_installation_reports_an_unwritable_public_path_before_using_mysql(): void
+    {
+        $token = str_repeat('a', 64);
+        $this->app->usePublicPath($this->sandbox.'/missing-public');
+        File::put($this->sandbox.'/app/private/site-installer.json', json_encode([
+            'digest' => hash('sha256', $token), 'expires_at' => time() + 60,
+        ]));
+
+        $this->post('/install', [
+            'token' => $token,
+            'app_url' => 'https://example.test',
+            'db_host' => '127.0.0.1',
+            'db_port' => 1,
+            'db_name' => 'rebates_test',
+            'db_user' => 'rebates',
+            'db_password' => 'secret-database-value',
+            'name' => 'Operator',
+            'email' => 'operator@example.test',
+            'password' => 'example-pass-123',
+            'password_confirmation' => 'example-pass-123',
+        ])->assertStatus(500)
+            ->assertSee('后台资源发布')
+            ->assertSee('public')
+            ->assertDontSee('secret-database-value');
+
+        $this->assertFileDoesNotExist($this->sandbox.'/.env');
+    }
 }
