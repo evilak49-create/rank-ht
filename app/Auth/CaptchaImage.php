@@ -12,9 +12,17 @@ class CaptchaImage
         for ($i = 0; $i < 220; $i++) {
             imagesetpixel($image, random_int(0, 149), random_int(0, 44), imagecolorallocate($image, 130, random_int(150, 205), 158));
         }
-        $ink = imagecolorallocate($image, 13, 52, 42);
+        $font = 5;
+        $glyphWidth = imagefontwidth($font);
+        $glyphHeight = imagefontheight($font);
+        $glyph = imagecreatetruecolor($glyphWidth, $glyphHeight);
+        $transparent = imagecolorallocate($glyph, 0, 0, 0);
+        imagecolortransparent($glyph, $transparent);
+        $ink = imagecolorallocate($glyph, 13, 52, 42);
         foreach (str_split($answer) as $index => $character) {
-            imagechar($image, 5, 14 + $index * 24 + random_int(0, 5), random_int(9, 23), $character, $ink);
+            imagefill($glyph, 0, 0, $transparent);
+            imagechar($glyph, $font, 0, 0, $character, $ink);
+            imagecopyresized($image, $glyph, 22 + $index * 30 + random_int(0, 5), random_int(8, 16), 0, 0, 12, 20, $glyphWidth, $glyphHeight);
         }
         $line = imagecolorallocate($image, 96, 143, 122);
         for ($i = 0; $i < 4; $i++) {

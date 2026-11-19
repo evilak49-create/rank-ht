@@ -71,6 +71,10 @@ class MemberVerificationTest extends TestCase
         $this->postJson($url.'/code', ['phone' => $member->phone])->assertConflict();
         $this->postJson($url, ['phone' => $member->phone])->assertUnprocessable()->assertJsonValidationErrors('challenge_id');
         [$challenge, $answer] = $this->challenge('platform_binding');
+        $this->assertSame(4, strlen($answer));
+        $this->postJson($url, [
+            'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer.'A',
+        ])->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->postJson($url, [
             'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer,
         ])->assertCreated()->assertJsonPath('data.platform_account_id', '123456');

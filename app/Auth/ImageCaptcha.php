@@ -11,9 +11,11 @@ class ImageCaptcha
 {
     private const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
+    private const LENGTH = 4;
+
     public const RULES = [
         'challenge_id' => 'required|uuid:4',
-        'code' => ['required', 'string', 'regex:/\A[A-Za-z2-9]{5}\z/'],
+        'code' => ['required', 'string', 'regex:/\A[A-Za-z2-9]{'.self::LENGTH.'}\z/'],
     ];
 
     public function __construct(private readonly CaptchaImage $image) {}
@@ -21,7 +23,7 @@ class ImageCaptcha
     public function issue(string $session, string $purpose): array
     {
         $answer = '';
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < self::LENGTH; $i++) {
             $answer .= self::ALPHABET[random_int(0, strlen(self::ALPHABET) - 1)];
         }
 
