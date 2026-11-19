@@ -55,6 +55,15 @@ class SiteInstallationTest extends TestCase
         $this->assertSame("APP_KEY=existing\n", File::get($this->sandbox.'/.env'));
     }
 
+    public function test_home_reports_a_missing_key_when_environment_already_exists(): void
+    {
+        config(['app.key' => null]);
+        File::put($this->sandbox.'/.env', "APP_KEY=\n");
+
+        $this->get('/')->assertServiceUnavailable()->assertSee('APP_KEY');
+        $this->get('/install')->assertNotFound();
+    }
+
     public function test_invalid_form_does_not_echo_passwords_or_the_installation_code(): void
     {
         $token = str_repeat('a', 64);

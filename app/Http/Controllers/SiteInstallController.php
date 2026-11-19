@@ -17,15 +17,19 @@ class SiteInstallController extends Controller
 {
     public function home(InstallerAccess $access): Response|RedirectResponse
     {
-        if (config('app.key') || ! $access->canConfigure()) {
-            return response()->view('welcome');
-        }
-
         if ($access->isEnabled()) {
             return redirect('/install')->header('Cache-Control', 'no-store');
         }
 
-        return response('网站尚未安装。请在服务器运行 php artisan install:enable，然后访问 /install。', 503, [
+        if (config('app.key')) {
+            return redirect('/admin')->header('Cache-Control', 'no-store');
+        }
+
+        $message = $access->canConfigure()
+            ? '网站尚未安装。请在服务器运行 php artisan install:enable，然后访问 /install。'
+            : '当前配置缺少 APP_KEY。请在服务器检查 .env 和配置缓存。';
+
+        return response($message, 503, [
             'Content-Type' => 'text/plain; charset=utf-8',
             'Cache-Control' => 'no-store',
         ]);
