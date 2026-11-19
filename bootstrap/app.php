@@ -13,14 +13,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
         then: function (): void {
-            // Installation is authorized by its short-lived token, before sessions are available.
+            // Installation is restricted before Laravel sessions become available.
             Route::get('/', [SiteInstallController::class, 'home']);
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');
             Route::post('/install', [SiteInstallController::class, 'store'])->name('site-install.store');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->trimStrings(except: ['db_password']);
         $middleware->redirectGuestsTo(
             fn (Request $request): ?string => $request->is('api/*') ? null : route('filament.admin.auth.login'),
         );

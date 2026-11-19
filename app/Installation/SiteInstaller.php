@@ -96,7 +96,7 @@ class SiteInstaller
 
             $step = 'admin';
             $connection->transaction(function () use ($data, $configuration, &$step): void {
-                $this->admins->create(strtolower($data['email']), $data['name'], $data['password']);
+                $this->admins->create($data['username'], $data['username'], $data['password']);
 
                 $step = 'configuration';
                 $path = app()->environmentFilePath();

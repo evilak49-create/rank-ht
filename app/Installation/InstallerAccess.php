@@ -15,54 +15,69 @@ class InstallerAccess
             && ! is_link(app()->environmentFilePath());
     }
 
-    public function isEnabled(): bool
+    public function forVisitor(?string $ip): ?array
     {
-        return $this->canConfigure() && $this->withState(
-            fn (array $state): bool => $this->isCurrent($state),
+        if (! $this->canConfigure()) {
+            return null;
+        }
+
+        return $this->withState(
+            fn (array $state): ?array => $this->allows($state, $ip) ? $state : null,
             write: false,
         );
     }
 
-    public function enable(): ?string
+    public function enable(string $ip, array $settings): bool
     {
-        return $this->withState(function (array $state, Closure $save): ?string {
+        return $this->withState(function (array $state, Closure $save) use ($ip, $settings): bool {
             if (! $this->canConfigure()) {
-                return null;
+                return false;
             }
 
-            $token = bin2hex(random_bytes(32));
             $save([
-                ...$state,
-                'digest' => hash('sha256', $token),
-                'expires_at' => time() + 1800,
+                'ip' => $ip,
+                'expires_at' => now()->addMinutes(30)->timestamp,
+                'csrf_secret' => bin2hex(random_bytes(32)),
+                'settings' => $settings,
+                'target' => $state['target'] ?? null,
             ]);
 
-            return $token;
+            return true;
         }, create: true);
     }
 
-    public function authorized(string $token, Closure $install): mixed
+    public function authorized(?string $ip, mixed $nonce, mixed $csrf, Closure $install): mixed
     {
-        return $this->withState(function (array $state, Closure $save) use ($token, $install): mixed {
-            abort_unless(
-                $this->canConfigure()
-                && $this->isCurrent($state)
-                && hash_equals($state['digest'], hash('sha256', $token)),
-                404,
-            );
+        return $this->withState(function (array $state, Closure $save) use ($ip, $nonce, $csrf, $install): mixed {
+            abort_unless($this->canConfigure() && $this->allows($state, $ip), 404);
+            abort_unless(is_string($nonce) && preg_match('/\A[a-f0-9]{64}\z/', $nonce)
+                && is_string($csrf) && hash_equals($this->csrf($state, $nonce), $csrf), 419);
 
             return $install($state, $save);
         });
     }
 
-    private function isCurrent(array $state): bool
+    public function csrf(array $state, string $nonce): string
     {
-        return is_string($state['digest'] ?? null) && ($state['expires_at'] ?? 0) > time();
+        return hash_hmac('sha256', $nonce, $state['csrf_secret']);
+    }
+
+    private function allows(array $state, ?string $ip): bool
+    {
+        return $ip !== null && filter_var($ip, FILTER_VALIDATE_IP)
+            && ($state['ip'] ?? null) === inet_ntop(inet_pton($ip))
+            && ($state['expires_at'] ?? 0) > now()->timestamp
+            && is_string($state['csrf_secret'] ?? null)
+            && is_array($state['settings'] ?? null);
     }
 
     private function withState(Closure $callback, bool $create = false, bool $write = true): mixed
     {
         $path = storage_path('app/private/site-installer.json');
+        if (is_link($path)) {
+            throw new RuntimeException('The installer state must not be a symbolic link.');
+        }
+
         if (! $create && ! is_file($path)) {
             return $callback([], static fn () => null);
         }
@@ -75,6 +90,10 @@ class InstallerAccess
         try {
             if (! flock($handle, $write ? LOCK_EX : LOCK_SH)) {
                 throw new RuntimeException('Unable to lock the installer state file.');
+            }
+
+            if ($create && PHP_OS_FAMILY !== 'Windows' && ! chmod($path, 0600)) {
+                throw new RuntimeException('Unable to protect the installer state file.');
             }
 
             $state = json_decode(stream_get_contents($handle), true) ?: [];

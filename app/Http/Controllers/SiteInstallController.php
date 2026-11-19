@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\AdminCredentials;
 use App\Installation\InstallationFailed;
 use App\Installation\InstallerAccess;
 use App\Installation\SiteInstaller;
@@ -13,13 +14,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use PDOException;
+use Symfony\Component\HttpFoundation\Cookie;
 use Throwable;
 
 class SiteInstallController extends Controller
 {
-    public function home(InstallerAccess $access): Response|RedirectResponse
+    private const CSRF_COOKIE = 'site_install_csrf';
+
+    public function home(Request $request, InstallerAccess $access): Response|RedirectResponse
     {
-        if ($access->isEnabled()) {
+        if ($access->forVisitor($request->ip()) !== null) {
             return redirect('/install')->header('Cache-Control', 'no-store');
         }
 
@@ -28,7 +32,7 @@ class SiteInstallController extends Controller
         }
 
         $message = $access->canConfigure()
-            ? '网站尚未安装。请在服务器运行 php artisan install:enable，然后访问 /install。'
+            ? '网站尚未安装。请在服务器运行 php artisan install:enable --ip=你的访问IP，然后访问 /install。'
             : '当前配置缺少 APP_KEY。请在服务器检查 .env 和配置缓存。';
 
         return response($message, 503, [
@@ -39,47 +43,43 @@ class SiteInstallController extends Controller
 
     public function show(Request $request, InstallerAccess $access): Response
     {
-        abort_unless($access->isEnabled(), 404);
+        $state = $access->forVisitor($request->ip());
+        abort_if($state === null, 404);
 
-        return $this->page(['app_url' => $request->getSchemeAndHttpHost()]);
+        $nonce = bin2hex(random_bytes(32));
+
+        return $this->page(csrf: $access->csrf($state, $nonce))->withCookie(Cookie::create(
+            self::CSRF_COOKIE,
+            $nonce,
+            secure: str_starts_with($state['settings']['app_url'], 'https://'),
+            sameSite: Cookie::SAMESITE_STRICT,
+        ));
     }
 
     public function store(Request $request, InstallerAccess $access, SiteInstaller $installer): Response
     {
-        $token = $request->post('token');
-        abort_unless(is_string($token) && preg_match('/\A[a-f0-9]{64}\z/', $token), 404);
+        $csrf = $request->post('_token');
 
-        return $access->authorized($token, function (array $state, Closure $save) use ($request, $installer): Response {
+        return $access->authorized($request->ip(), $request->cookie(self::CSRF_COOKIE), $csrf, function (array $state, Closure $save) use ($request, $installer, $csrf): Response {
             $validator = Validator::make($request->post(), [
-                'app_url' => ['required', 'string', 'max:255', 'url:http,https', 'regex:~\Ahttps?://[^/?#@]+/?\z~'],
-                'db_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
-                'db_port' => 'required|integer|min:1|max:65535',
-                'db_name' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9_-]+\z/'],
-                'db_user' => ['required', 'string', 'max:32', 'not_regex:/[[:cntrl:]]/'],
-                'db_password' => ['nullable', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
-                'name' => 'required|string|max:255',
-                'email' => 'required|email|max:255',
-                'password' => ['required', 'string', 'min:12', 'confirmed', function (string $attribute, mixed $value, Closure $fail): void {
-                    if (is_string($value) && (strlen($value) > 72 || str_contains($value, "\0"))) {
-                        $fail('管理员密码最多 72 字节，且不能包含空字符。');
-                    }
-                }],
+                'username' => AdminCredentials::USERNAME_RULES,
+                'password' => AdminCredentials::passwordRules(),
             ], [
                 'required' => '请填写此项。',
-                'url' => '请输入有效的 HTTP 或 HTTPS 网站地址。',
-                'regex' => '此项格式无效。',
-                'not_regex' => '此项包含不可用字符。',
-                'integer' => '请输入整数。',
-                'email' => '请输入有效的邮箱。',
-                'confirmed' => '两次输入的管理员密码不一致。',
-                'password.min' => '管理员密码至少 12 个字符。',
+                'username.regex' => '账号可使用英文字母、数字、点、下划线和连字符。',
+                'password.min' => '管理员密码至少 6 个字符。',
             ]);
-            $values = $request->only(['app_url', 'db_host', 'db_port', 'db_name', 'db_user', 'name', 'email']);
+            $values = $request->only(['username']);
 
             try {
-                $installer->install($validator->validate(), $state, $save);
+                $installer->install($state['settings'] + $validator->validate(), $state, $save);
             } catch (ValidationException $exception) {
-                return $this->page($values, $exception->errors(), 422);
+                $errors = $exception->errors();
+                if (! isset($errors['username']) && ! isset($errors['password'])) {
+                    $errors['install'] = [reset($errors)[0]];
+                }
+
+                return $this->page($values, $errors, 422, csrf: $csrf);
             } catch (Throwable $exception) {
                 $failure = $exception instanceof InstallationFailed ? $exception : new InstallationFailed('unknown', $exception);
                 $cause = $failure->getPrevious() ?? $failure;
@@ -91,16 +91,16 @@ class SiteInstallController extends Controller
 
                 return $this->page($values, [
                     'install' => [$failure->getMessage()],
-                ], 500);
+                ], 500, csrf: $csrf);
             }
 
             return $this->page(installed: true);
         });
     }
 
-    private function page(array $values = [], array $errors = [], int $status = 200, bool $installed = false): Response
+    private function page(array $values = [], array $errors = [], int $status = 200, bool $installed = false, string $csrf = ''): Response
     {
-        return response()->view('install', compact('values', 'errors', 'installed'), $status, [
+        return response()->view('install', compact('values', 'errors', 'installed', 'csrf'), $status, [
             'Cache-Control' => 'no-store, private',
             'Referrer-Policy' => 'no-referrer',
             'X-Robots-Tag' => 'noindex',

@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\AdminLogin;
 use App\Filament\Resources\MemberResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -25,7 +26,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(AdminLogin::class)
             ->authGuard('web')
             ->brandName('返利网运营后台')
             ->pages([Dashboard::class])
