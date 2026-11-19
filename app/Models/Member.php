@@ -42,6 +42,10 @@ class Member extends Authenticatable
                 'session_version' => $member->session_version + 1,
             ])->save();
 
+            if ($disabled) {
+                PlatformFundTask::pauseForMember($member->id);
+            }
+
             if ($operator !== null) {
                 DB::table('admin_audits')->insert([
                     'user_id' => $operator->id,

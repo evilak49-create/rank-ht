@@ -16,6 +16,7 @@ class PointEntryResource extends Resource
     private const SOURCES = [
         'manual' => '人工调整', 'deposit' => '存款换积分', 'shop_order' => '商品兑换',
         'shop_refund' => '商品退回', 'checkin' => '签到奖励',
+        'platform_funds' => '平台资金兑换', 'platform_refund' => '平台资金退款',
     ];
 
     protected static ?string $model = PointEntry::class;

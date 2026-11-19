@@ -4,6 +4,7 @@ namespace App\Platforms;
 
 use App\Auth\MemberPhone;
 use App\Models\Platform;
+use App\Models\PlatformFundTask;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -121,6 +122,9 @@ class PlatformAdministration
             }
 
             $current->forceFill(['manually_disabled' => $disabled])->save();
+            if ($disabled) {
+                PlatformFundTask::pauseForPlatform($current->id);
+            }
             $this->audit($current, $operator, $disabled ? 'disabled' : 'restored');
         }, 3);
     }
@@ -185,6 +189,7 @@ class PlatformAdministration
                 'query_unhealthy_at' => $platform->query_unhealthy_at ?? now(),
                 'query_health_reason' => $result,
             ]);
+            PlatformFundTask::pauseForPlatform($platform->id);
         }
     }
 

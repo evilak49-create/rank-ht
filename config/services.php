@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'platform_funds' => [
+        'driver' => env('PLATFORM_FUNDS_DRIVER'),
+    ],
     'platform_query' => [
         'allowed_hosts' => array_values(array_filter(array_map(
             fn (string $host): string => strtolower(trim($host)),

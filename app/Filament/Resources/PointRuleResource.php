@@ -3,9 +3,11 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PointRuleResource\Pages\ListPointRules;
+use App\Models\FundRateVersion;
 use App\Models\PointRule;
 use App\Models\User;
 use App\Points\PointRules;
+use App\Shop\Funds\FundRates;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
@@ -63,5 +65,20 @@ class PointRuleResource extends Resource
     public static function getPages(): array
     {
         return ['index' => ListPointRules::route('/')];
+    }
+
+    public static function updateFundRateAction(): Action
+    {
+        return Action::make('update_fund_rate')->label('设置平台资金比例')
+            ->authorize(fn (): bool => self::canViewAny())
+            ->schema([TextInput::make('rate')->label('每积分到账金额（BRL）')->inputMode('decimal')->required()])
+            ->fillForm(fn (): array => [
+                'rate' => PointRules::display(FundRateVersion::query()->latest('id')->firstOrFail()->cents_per_point, 2),
+            ])->successNotificationTitle('平台资金比例已更新')
+            ->action(function (array $data): void {
+                $operator = Filament::auth()->user();
+                abort_unless($operator instanceof User, 403);
+                app(FundRates::class)->save($data['rate'], $operator);
+            });
     }
 }

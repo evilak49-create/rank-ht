@@ -3,13 +3,23 @@
 use App\Http\Controllers\CheckinController;
 use App\Http\Controllers\MemberAuthController;
 use App\Http\Controllers\PlatformController;
+use App\Http\Controllers\PlatformFundsController;
 use App\Http\Controllers\PointSettlementController;
+use App\Http\Controllers\PublicContentController;
 use App\Http\Controllers\ShopController;
 use App\Http\Middleware\VerifyMemberSession;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api/v1')->group(function (): void {
     Route::get('health', fn () => response()->json(['status' => 'ok']));
+    Route::prefix('content')->controller(PublicContentController::class)->group(function (): void {
+        Route::get('banners', 'banners');
+        Route::get('announcements/latest', 'latest');
+        Route::get('announcements', 'announcements');
+        Route::get('announcements/{article}', 'announcement')->whereNumber('article');
+        Route::get('help', 'help');
+        Route::get('help/{article}', 'helpArticle')->whereNumber('article');
+    });
     Route::get('shop/products', [ShopController::class, 'products']);
     Route::get('shop/products/{product}', [ShopController::class, 'product'])->whereNumber('product');
 
@@ -27,6 +37,10 @@ Route::prefix('api/v1')->group(function (): void {
         Route::get('shop/orders', [ShopController::class, 'orders']);
         Route::get('shop/orders/{order}', [ShopController::class, 'order'])->whereNumber('order');
         Route::post('shop/orders', [ShopController::class, 'checkout'])->middleware('throttle:20,1');
+        Route::post('platform-funds/preview', [PlatformFundsController::class, 'preview'])->middleware('throttle:20,1');
+        Route::post('platform-funds/orders', [PlatformFundsController::class, 'checkout'])->middleware('throttle:20,1');
+        Route::get('platform-funds/orders', [PlatformFundsController::class, 'orders']);
+        Route::get('platform-funds/orders/{order}', [PlatformFundsController::class, 'order'])->whereNumber('order');
         Route::post('platforms/{platform}/binding/code', [PlatformController::class, 'sendCode'])
             ->whereNumber('platform')->middleware('throttle:member-sms');
         Route::post('platforms/{platform}/binding', [PlatformController::class, 'bind'])
