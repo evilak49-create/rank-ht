@@ -10,9 +10,11 @@ use App\Http\Controllers\PointSettlementController;
 use App\Http\Controllers\ProtectionController;
 use App\Http\Controllers\PublicContentController;
 use App\Http\Controllers\RedPacketController;
+use App\Http\Controllers\ShippingAddressController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\VisitorActivityController;
+use App\Http\Controllers\WalletController;
 use App\Http\Middleware\VerifyMemberSession;
 use Illuminate\Support\Facades\Route;
 
@@ -38,6 +40,11 @@ Route::prefix('api/v1')->group(function (): void {
     Route::get('platforms/{platform}/reviews', [PlatformReviewController::class, 'index'])->whereNumber('platform');
     Route::get('platforms/{platform}/protection-terms', [ProtectionController::class, 'publicTerms'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {
+        Route::get('shipping-address', [ShippingAddressController::class, 'show']);
+        Route::put('shipping-address', [ShippingAddressController::class, 'save'])->middleware('throttle:20,1,shipping-address');
+        Route::get('wallet', [WalletController::class, 'show']);
+        Route::get('wallet/entries', [WalletController::class, 'entries']);
+        Route::get('wallet/entries/{entry}', [WalletController::class, 'entry'])->whereNumber('entry');
         Route::get('platform-favorites', [PlatformController::class, 'favorites']);
         Route::get('platform-favorites/{platform}', [PlatformController::class, 'favoriteStatus'])->whereNumber('platform');
         Route::put('platform-favorites/{platform}', [PlatformController::class, 'favorite'])->whereNumber('platform');
@@ -69,6 +76,7 @@ Route::prefix('api/v1')->group(function (): void {
             ->whereNumber('binding')->middleware('throttle:10,1');
         Route::post('point-quotes/{quote}/confirm', [PointSettlementController::class, 'confirm'])
             ->whereNumber('quote');
+        Route::get('point-quotes/{quote}', [PointSettlementController::class, 'show'])->whereNumber('quote');
         Route::get('shop/orders', [ShopController::class, 'orders']);
         Route::get('shop/orders/{order}', [ShopController::class, 'order'])->whereNumber('order');
         Route::post('shop/orders', [ShopController::class, 'checkout'])->middleware('throttle:20,1');

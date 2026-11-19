@@ -4,6 +4,7 @@ namespace App\Shop;
 
 use App\Models\Member;
 use App\Models\Product;
+use App\Models\ShippingAddress;
 use App\Models\ShopOrder;
 use App\Models\User;
 use App\Points\PointWallet;
@@ -26,11 +27,21 @@ class PhysicalShop
             abort_if($owner->disabled_at !== null, 403, '会员账号已禁用。');
             abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
             $request = strtolower($data['request_id']);
+            $version = isset($data['address_version']) ? (int) $data['address_version'] : null;
             $existing = ShopOrder::query()->where('member_id', $owner->id)->where('request_id', $request)->first();
             if ($existing !== null) {
-                abort_if((int) $existing->product_id !== (int) $data['product_id'] || $existing->address != $data['address'], 409, '该订单请求号已使用。');
+                abort_if((int) $existing->product_id !== (int) $data['product_id'] || $existing->address_version !== $version
+                    || ($version === null && $existing->address != $data['address']), 409, '该订单请求号已使用。');
 
                 return $existing;
+            }
+
+            $address = $data['address'] ?? null;
+            if ($version !== null) {
+                $confirmed = ShippingAddress::find($owner->id);
+                abort_if($confirmed === null, 409, '请先保存收货地址。');
+                abort_if($confirmed->version !== $version, 409, '收货地址已更新，请重新核对后再提交。');
+                $address = $confirmed->address;
             }
 
             $product = Product::query()->where('is_active', true)->lockForUpdate()->findOrFail($data['product_id']);
@@ -41,7 +52,7 @@ class PhysicalShop
             $order = ShopOrder::create([
                 'order_number' => (string) Str::uuid(), 'request_id' => $request, 'member_id' => $owner->id,
                 'product_id' => $product->id, 'product_name' => $product->name, 'points_price' => $product->points_price,
-                'address' => $data['address'], 'status' => 'pending',
+                'address' => $address, 'address_version' => $version, 'status' => 'pending',
             ]);
             $this->wallet->record($owner, -$order->points_price, [
                 'operation_key' => (string) Str::uuid(), 'reason' => '商品兑换', 'source' => 'shop_order', 'source_id' => $order->id,

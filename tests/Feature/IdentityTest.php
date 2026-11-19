@@ -81,6 +81,21 @@ class IdentityTest extends TestCase
         $this->postJson('/api/v1/auth/login', [...$credentials, 'password' => 'new-example-pass'])->assertOk();
     }
 
+    public function test_signed_in_member_can_only_request_and_use_reset_codes_for_their_own_phone(): void
+    {
+        $current = Member::create(['phone' => '11912345678', 'password' => 'example-pass-123']);
+        $other = Member::create(['phone' => '11912345679', 'password' => 'example-pass-123']);
+        $this->actingAs($current, 'member')->withSession(['member_session_version' => 0]);
+        $this->postJson('/api/v1/auth/sms-code', [
+            'phone' => $other->phone, 'purpose' => 'reset_password',
+        ])->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->postJson('/api/v1/auth/reset-password', [
+            'phone' => $other->phone, 'code' => '123456', 'password' => 'new-example-pass',
+        ])->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->assertDatabaseEmpty('sms_challenges');
+        $this->assertSame(0, $other->refresh()->session_version);
+    }
+
     public function test_disabled_member_cannot_reuse_a_session_after_restoration(): void
     {
         $credentials = ['phone' => '11912345678', 'password' => 'example-pass-123'];

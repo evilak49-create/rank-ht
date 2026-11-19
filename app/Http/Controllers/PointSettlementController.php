@@ -20,6 +20,13 @@ class PointSettlementController extends Controller
         return response()->json(['data' => $this->data($settlement->confirm($request->user(), $quote))]);
     }
 
+    public function show(Request $request, string $quote): JsonResponse
+    {
+        $record = PointQuote::query()->whereBelongsTo($request->user())->findOrFail($quote);
+
+        return response()->json(['data' => $this->data($record)])->header('Cache-Control', 'private, no-store');
+    }
+
     private function data(PointQuote $quote): array
     {
         return [

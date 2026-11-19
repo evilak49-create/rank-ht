@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Auth\MemberPhone;
 use App\Models\Product;
 use App\Models\ShopOrder;
 use App\Shop\PhysicalShop;
+use App\Shop\ShippingAddressFields;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,36 +24,31 @@ class ShopController extends Controller
     public function checkout(Request $request, PhysicalShop $shop): JsonResponse
     {
         if (is_array($address = $request->input('address'))) {
-            $request->merge(['address' => [...$address, 'phone' => MemberPhone::normalize($address['phone'] ?? null)]]);
+            $request->merge(['address' => ShippingAddressFields::normalize($address)]);
         }
         $data = $request->validate([
             'product_id' => 'required|integer|min:1', 'request_id' => 'required|uuid',
             'quantity' => 'sometimes|required|integer|in:1',
-            'address' => 'required|array:recipient,phone,postal_code,state,city,street,number,district,complement',
-            'address.recipient' => 'required|string|max:120',
-            'address.phone' => ['required', MemberPhone::RULE],
-            'address.postal_code' => ['required', 'regex:/\A[0-9]{5}-?[0-9]{3}\z/'],
-            'address.state' => ['required', 'regex:/\A[A-Z]{2}\z/'],
-            'address.city' => 'required|string|max:120', 'address.street' => 'required|string|max:200',
-            'address.number' => 'required|string|max:32', 'address.district' => 'nullable|string|max:120',
-            'address.complement' => 'nullable|string|max:200',
+            'address_version' => 'required_without:address|integer|min:1|prohibits:address',
+            'address' => 'required_without:address_version|array:recipient,phone,postal_code,state,city,street,number,district,complement',
+            ...($request->has('address') ? collect(ShippingAddressFields::rules())->mapWithKeys(fn ($rule, string $key) => ['address.'.$key => $rule])->all() : []),
         ]);
 
-        return response()->json(['data' => $this->orderData($shop->checkout($request->user(), $data))], 201);
+        return response()->json(['data' => $this->orderData($shop->checkout($request->user(), $data))], 201)->header('Cache-Control', 'private, no-store');
     }
 
     public function orders(Request $request): JsonResponse
     {
         $orders = ShopOrder::query()->where('member_id', $request->user()->id)->latest('id')->paginate(20);
 
-        return response()->json($orders->through($this->orderData(...)));
+        return response()->json($orders->through($this->orderData(...)))->header('Cache-Control', 'private, no-store');
     }
 
     public function order(Request $request, string $order): JsonResponse
     {
         return response()->json(['data' => $this->orderData(
             ShopOrder::query()->where('member_id', $request->user()->id)->findOrFail($order),
-        )]);
+        )])->header('Cache-Control', 'private, no-store');
     }
 
     private function orderData(ShopOrder $order): array

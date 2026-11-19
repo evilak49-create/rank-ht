@@ -21,6 +21,9 @@ class MemberAuthController extends Controller
     public function sendCode(Request $request, SmsChallenges $sms): JsonResponse
     {
         $data = $this->validatePhone($request, ['purpose' => 'required|in:register,reset_password']);
+        if ($data['purpose'] === 'reset_password' && ($current = Auth::guard('member')->user()) instanceof Member) {
+            $this->validateResetAccount($request, $current->refresh(), $data['phone']);
+        }
         $sms->send($data['phone'], $data['purpose']);
 
         return response()->json(['status' => 'accepted'], 202);
@@ -109,12 +112,14 @@ class MemberAuthController extends Controller
         MemberPassword::validateBytes($data['password']);
 
         $current = Auth::guard('member')->user();
-        if ($current !== null && $current->phone !== $data['phone']) {
-            throw ValidationException::withMessages(['phone' => '手机号须与当前会员账号一致。']);
-        }
-
-        DB::transaction(function () use ($data, $sms): void {
-            $member = Member::query()->where('phone', $data['phone'])->lockForUpdate()->first();
+        DB::transaction(function () use ($request, $current, $data, $sms): void {
+            $query = Member::query()->lockForUpdate();
+            if ($current instanceof Member) {
+                $member = $query->findOrFail($current->id);
+                $this->validateResetAccount($request, $member, $data['phone']);
+            } else {
+                $member = $query->where('phone', $data['phone'])->first();
+            }
             $sms->consume($data['phone'], 'reset_password', $data['code']);
 
             $member?->forceFill([
@@ -124,6 +129,15 @@ class MemberAuthController extends Controller
         }, 3);
 
         return $this->logout($request);
+    }
+
+    private function validateResetAccount(Request $request, Member $member, string $phone): void
+    {
+        abort_if($member->disabled_at !== null, 403, '会员账号已禁用。');
+        abort_unless($request->session()->get('member_session_version') === $member->session_version, 401, '会员登录会话已失效。');
+        if ($member->phone !== $phone) {
+            throw ValidationException::withMessages(['phone' => '手机号须与当前会员账号一致。']);
+        }
     }
 
     private function validatePhone(Request $request, array $rules): array

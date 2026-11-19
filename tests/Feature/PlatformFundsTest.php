@@ -44,6 +44,10 @@ class PlatformFundsTest extends TestCase
             ->assertJsonPath('data.id', $orderId)->assertJsonPath('data.amount_cents', 375);
         $this->assertSame(17, $member->refresh()->points_balance);
         $this->assertDatabaseCount('point_entries', 1);
+        $path = '/api/v1/wallet/entries?direction=debit&platform_id=';
+        $this->getJson($path.$binding->platform_id)->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.related.id', $orderId)->assertJsonPath('data.0.related.status', 'pending');
+        $this->getJson($path.($binding->platform_id + 1))->assertOk()->assertJsonCount(0, 'data');
     }
 
     public function test_approval_is_idempotent_and_an_unsent_task_requires_operator_resume_after_member_disable(): void
