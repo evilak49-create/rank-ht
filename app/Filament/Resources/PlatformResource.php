@@ -120,6 +120,7 @@ class PlatformResource extends Resource
                 TextInput::make('fingerprint')->label('Fingerprint ID')->autocomplete('off')->maxLength(255)->required(),
                 TextInput::make('tenant_id')->label('租户 ID')->integer()->minValue(1)->required(),
                 TextInput::make('region_id')->label('区域 ID')->integer()->minValue(0)->required(),
+                TextInput::make('client_language')->label('请求语言')->maxLength(24)->required(),
                 TextInput::make('test_phone')->label('已知推广测试账号的手机号')->inputMode('tel')->required(),
             ])->fillForm(fn (Platform $record): array => app(PlatformAdministration::class)->queryForm($record, self::operator()))
             ->action(function (Action $action, Platform $record, array $data): void {

@@ -36,6 +36,8 @@ class PlatformQueryClient
                 ->withHeaders([
                     'account' => $config['account'],
                     'fingerprint-id' => $config['fingerprint'],
+                    'client-language' => $config['client_language'] ?? 'zh-CN',
+                    'Content-Type' => 'application/json',
                     'Origin' => 'https://'.$config['admin_host'],
                     'Referer' => 'https://'.$config['admin_host'].'/',
                     'x-admin-host' => $config['admin_host'],

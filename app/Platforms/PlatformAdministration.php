@@ -49,6 +49,7 @@ class PlatformAdministration
         if (is_string($data['token'] ?? null)) {
             $data['token'] = preg_replace('/\ABearer +/i', '', trim($data['token']));
         }
+        $data['client_language'] ??= config('services.platform_query.defaults.client_language', 'zh-CN');
         $configuration = Validator::make($data, [
             'endpoint' => ['required', 'string', 'max:2048', 'url:https'],
             'admin_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
@@ -57,6 +58,7 @@ class PlatformAdministration
             'fingerprint' => ['required', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
             'tenant_id' => 'required|integer|min:1',
             'region_id' => 'required|integer|min:0',
+            'client_language' => ['required', 'string', 'max:24', 'regex:/\A[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{2,8})*\z/'],
             'test_phone' => ['required', MemberPhone::RULE],
         ])->validate();
 
@@ -80,9 +82,10 @@ class PlatformAdministration
     {
         abort_unless($operator->hasPermission('platforms.configure-query'), 403);
         $saved = $platform->draft_query ?? $platform->active_query;
+        $defaults = config('services.platform_query.defaults', []);
 
-        return Arr::only($saved ?? config('services.platform_query.defaults', []), [
-            'endpoint', 'admin_host', 'token', 'account', 'fingerprint', 'tenant_id', 'region_id', 'test_phone',
+        return Arr::only($saved === null ? $defaults : $saved + ['client_language' => $defaults['client_language'] ?? 'zh-CN'], [
+            'endpoint', 'admin_host', 'token', 'account', 'fingerprint', 'tenant_id', 'region_id', 'test_phone', 'client_language',
         ]);
     }
 

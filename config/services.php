@@ -1,6 +1,11 @@
 <?php
 
-$platformQueryEndpoint = env('PLATFORM_QUERY_DEFAULT_ENDPOINT', 'https://api5.v-n-r-1.com/api/backend/trpc/user.list');
+$platformQueryPrivateDefaults = [];
+$platformQueryDefaultsPath = storage_path('app/private/platform-query-defaults.json');
+if (env('APP_ENV') !== 'testing' && is_file($platformQueryDefaultsPath) && is_readable($platformQueryDefaultsPath)) {
+    $platformQueryPrivateDefaults = (array) json_decode((string) file_get_contents($platformQueryDefaultsPath), true);
+}
+$platformQueryEndpoint = env('PLATFORM_QUERY_DEFAULT_ENDPOINT', $platformQueryPrivateDefaults['endpoint'] ?? 'https://api5.v-n-r-1.com/api/backend/trpc/user.list');
 
 return [
     'pix' => [
@@ -17,13 +22,14 @@ return [
         )))),
         'defaults' => [
             'endpoint' => $platformQueryEndpoint,
-            'admin_host' => env('PLATFORM_QUERY_DEFAULT_ADMIN_HOST', 'admin5-public.y-7-l-x.com'),
-            'tenant_id' => env('PLATFORM_QUERY_DEFAULT_TENANT_ID', 9818088),
-            'region_id' => env('PLATFORM_QUERY_DEFAULT_REGION_ID', 1),
-            'token' => env('PLATFORM_QUERY_DEFAULT_TOKEN', env('BACKEND_BEARER_TOKEN')),
-            'account' => env('PLATFORM_QUERY_DEFAULT_ACCOUNT', env('BACKEND_ACCOUNT')),
-            'fingerprint' => env('PLATFORM_QUERY_DEFAULT_FINGERPRINT', env('BACKEND_FINGERPRINT_ID')),
-            'test_phone' => env('PLATFORM_QUERY_DEFAULT_TEST_PHONE'),
+            'admin_host' => env('PLATFORM_QUERY_DEFAULT_ADMIN_HOST', $platformQueryPrivateDefaults['admin_host'] ?? 'admin5-public.y-7-l-x.com'),
+            'tenant_id' => env('PLATFORM_QUERY_DEFAULT_TENANT_ID', $platformQueryPrivateDefaults['tenant_id'] ?? 9818088),
+            'region_id' => env('PLATFORM_QUERY_DEFAULT_REGION_ID', $platformQueryPrivateDefaults['region_id'] ?? 1),
+            'client_language' => env('PLATFORM_QUERY_DEFAULT_CLIENT_LANGUAGE', $platformQueryPrivateDefaults['client_language'] ?? 'zh-CN'),
+            'token' => env('PLATFORM_QUERY_DEFAULT_TOKEN', env('BACKEND_BEARER_TOKEN', $platformQueryPrivateDefaults['token'] ?? null)),
+            'account' => env('PLATFORM_QUERY_DEFAULT_ACCOUNT', env('BACKEND_ACCOUNT', $platformQueryPrivateDefaults['account'] ?? null)),
+            'fingerprint' => env('PLATFORM_QUERY_DEFAULT_FINGERPRINT', env('BACKEND_FINGERPRINT_ID', $platformQueryPrivateDefaults['fingerprint'] ?? null)),
+            'test_phone' => env('PLATFORM_QUERY_DEFAULT_TEST_PHONE', $platformQueryPrivateDefaults['test_phone'] ?? null),
         ],
     ],
     'sms' => [

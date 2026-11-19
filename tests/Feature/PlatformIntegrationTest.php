@@ -11,6 +11,7 @@ use App\Platforms\PlatformAdministration;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -160,6 +161,8 @@ class PlatformIntegrationTest extends TestCase
         $this->assertSame('available', $platform->refresh()->status());
         $this->assertSame($this->queryConfig()['endpoint'], $platform->active_query['endpoint']);
         Livewire::test(ListPlatforms::class)->mountAction($action)->assertActionDataSet($this->queryConfig());
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader('client-language', 'zh-CN')
+            && $request->hasHeader('Content-Type', 'application/json'));
         $this->assertDatabaseHas('platform_audits', ['platform_id' => $platform->id, 'user_id' => $operator->id, 'result' => 'passed']);
     }
 
