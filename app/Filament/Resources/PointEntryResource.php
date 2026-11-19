@@ -13,6 +13,11 @@ use Filament\Tables\Table;
 
 class PointEntryResource extends Resource
 {
+    private const SOURCES = [
+        'manual' => '人工调整', 'deposit' => '存款换积分', 'shop_order' => '商品兑换',
+        'shop_refund' => '商品退回', 'checkin' => '签到奖励',
+    ];
+
     protected static ?string $model = PointEntry::class;
 
     protected static ?string $modelLabel = '积分流水';
@@ -31,7 +36,9 @@ class PointEntryResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->defaultSort('id', 'desc')->columns([
-            TextColumn::make('id')->label('流水 ID')->sortable(),
+            TextColumn::make('id')->label('流水 ID')->sortable()->searchable(),
+            TextColumn::make('source')->label('来源')->formatStateUsing(fn (string $state) => self::SOURCES[$state] ?? $state),
+            TextColumn::make('source_id')->label('关联单号'),
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('direction')->label('方向')->badge()
                 ->formatStateUsing(fn (string $state): string => $state === 'credit' ? '加分' : '扣分'),
@@ -43,6 +50,7 @@ class PointEntryResource extends Resource
             TextColumn::make('created_at')->label('操作时间')->dateTime()->sortable(),
         ])->filters([
             SelectFilter::make('direction')->label('方向')->options(['credit' => '加分', 'debit' => '扣分']),
+            SelectFilter::make('source')->label('来源')->options(self::SOURCES),
         ]);
     }
 

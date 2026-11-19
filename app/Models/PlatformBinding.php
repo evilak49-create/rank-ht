@@ -14,7 +14,11 @@ class PlatformBinding extends Model
 {
     protected function casts(): array
     {
-        return ['baseline_observed_at' => 'datetime'];
+        return [
+            'baseline_observed_at' => 'datetime', 'baseline_deposit_cents' => 'integer',
+            'baseline_valid_bet_cents' => 'integer', 'baseline_version' => 'integer',
+            'point_remainder' => 'integer', 'settlement_paused_at' => 'datetime',
+        ];
     }
 
     public function platform(): BelongsTo

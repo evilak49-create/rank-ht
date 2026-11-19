@@ -3,9 +3,15 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\AdminLogin;
+use App\Filament\Resources\BusinessTimezoneResource;
+use App\Filament\Resources\MemberCheckinResource;
 use App\Filament\Resources\MemberResource;
 use App\Filament\Resources\PlatformResource;
 use App\Filament\Resources\PointEntryResource;
+use App\Filament\Resources\PointQuoteResource;
+use App\Filament\Resources\PointRuleResource;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ShopOrderResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -32,7 +38,11 @@ class AdminPanelProvider extends PanelProvider
             ->authGuard('web')
             ->brandName('返利网运营后台')
             ->pages([Dashboard::class])
-            ->resources([MemberResource::class, PlatformResource::class, PointEntryResource::class])
+            ->resources([
+                MemberResource::class, PlatformResource::class, PointEntryResource::class,
+                PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
+                MemberCheckinResource::class, BusinessTimezoneResource::class,
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

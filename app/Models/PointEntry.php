@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['member_id', 'user_id', 'operation_key', 'direction', 'amount', 'balance_before', 'balance_after', 'reason'])]
+#[Fillable(['member_id', 'user_id', 'operation_key', 'direction', 'amount', 'balance_before', 'balance_after', 'reason', 'source', 'source_id'])]
 class PointEntry extends Model
 {
     protected function casts(): array

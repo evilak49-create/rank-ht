@@ -1,0 +1,89 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Resources\ShopOrderResource\Pages\ListShopOrders;
+use App\Models\ShopOrder;
+use App\Models\User;
+use App\Shop\PhysicalShop;
+use Filament\Actions\Action;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Resources\Resource;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+
+class ShopOrderResource extends Resource
+{
+    protected static ?string $model = ShopOrder::class;
+
+    protected static ?string $pluralModelLabel = '商品订单';
+
+    protected static string|\UnitEnum|null $navigationGroup = '商城管理';
+
+    private const STATUSES = ['pending' => '待发货', 'shipped' => '已发货', 'cancelled' => '已取消'];
+
+    public static function canViewAny(): bool
+    {
+        return self::allowed('shop.view-orders');
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table->defaultSort('id', 'desc')->columns([
+            TextColumn::make('order_number')->label('订单号')->searchable(),
+            TextColumn::make('member.phone')->label('会员手机号')->searchable(),
+            TextColumn::make('product_name')->label('商品')->searchable(),
+            TextColumn::make('quantity')->label('数量')->state(1),
+            TextColumn::make('points_price')->label('消耗积分')->numeric(),
+            TextColumn::make('status')->label('状态')->badge()->formatStateUsing(fn (string $state) => self::STATUSES[$state]),
+            TextColumn::make('created_at')->label('创建时间')->dateTime()->sortable(),
+            TextColumn::make('address.recipient')->label('收件人')->toggleable(isToggledHiddenByDefault: true),
+            TextColumn::make('address.phone')->label('收件电话')->toggleable(isToggledHiddenByDefault: true),
+            TextColumn::make('address_text')->label('收件地址')->wrap()->toggleable(isToggledHiddenByDefault: true)
+                ->state(fn (ShopOrder $record): string => implode(' · ', array_filter([
+                    $record->address['postal_code'], $record->address['state'], $record->address['city'],
+                    $record->address['district'] ?? null, $record->address['street'], $record->address['number'],
+                    $record->address['complement'] ?? null,
+                ]))),
+            TextColumn::make('carrier')->label('承运商'),
+            TextColumn::make('tracking_number')->label('物流单号'),
+            TextColumn::make('cancellation_reason')->label('取消原因')->toggleable(isToggledHiddenByDefault: true),
+        ])->filters([SelectFilter::make('status')->label('状态')->options(self::STATUSES)])
+            ->recordActions([
+                Action::make('ship')->label('登记发货')->authorize(fn (): bool => self::allowed('shop.ship-orders'))
+                    ->visible(fn (ShopOrder $record): bool => $record->status === 'pending')
+                    ->schema([
+                        TextInput::make('carrier')->label('承运商')->maxLength(120)->required(),
+                        TextInput::make('tracking_number')->label('物流单号')->maxLength(120)->required(),
+                    ])->action(fn (ShopOrder $record, array $data) => app(PhysicalShop::class)->ship($record, $data, self::operator())),
+                Action::make('cancel_order')->label('取消订单')->color('danger')
+                    ->authorize(fn (): bool => self::allowed('shop.cancel-orders'))
+                    ->visible(fn (ShopOrder $record): bool => $record->status === 'pending')
+                    ->schema([Textarea::make('reason')->label('取消原因')->maxLength(300)->required()])
+                    ->action(fn (ShopOrder $record, array $data) => app(PhysicalShop::class)->cancel($record, $data['reason'], self::operator())),
+            ]);
+    }
+
+    public static function getPages(): array
+    {
+        return ['index' => ListShopOrders::route('/')];
+    }
+
+    private static function allowed(string $permission): bool
+    {
+        $operator = Filament::auth()->user();
+
+        return $operator instanceof User && $operator->hasPermission($permission);
+    }
+
+    private static function operator(): User
+    {
+        $operator = Filament::auth()->user();
+        abort_unless($operator instanceof User, 403);
+
+        return $operator;
+    }
+}

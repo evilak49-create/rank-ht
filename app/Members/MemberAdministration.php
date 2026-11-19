@@ -7,6 +7,7 @@ use App\Auth\MemberPhone;
 use App\Models\Member;
 use App\Models\PointEntry;
 use App\Models\User;
+use App\Points\PointWallet;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 class MemberAdministration
 {
     public const PERMISSIONS = ['members.change-phone', 'members.reset-password', 'members.adjust-points', 'points.view'];
+
+    public function __construct(private readonly PointWallet $wallet) {}
 
     public function changePhone(Member $member, string $newPhone, User $operator): void
     {
@@ -76,19 +79,8 @@ class MemberAdministration
                 return $entry;
             }
 
-            $before = $current->points_balance;
-            if ($data['direction'] === 'debit' && $amount > $before) {
-                throw ValidationException::withMessages(['amount' => '可用积分不足。']);
-            }
-            if ($data['direction'] === 'credit' && $amount > PHP_INT_MAX - $before) {
-                throw ValidationException::withMessages(['amount' => '积分余额超出支持范围。']);
-            }
-            $after = $data['direction'] === 'credit' ? $before + $amount : $before - $amount;
-            $current->forceFill(['points_balance' => $after])->save();
-
-            $entry = PointEntry::create([
-                ...$data, 'member_id' => $current->id, 'user_id' => $operator->id,
-                'balance_before' => $before, 'balance_after' => $after,
+            $entry = $this->wallet->record($current, $data['direction'] === 'credit' ? $amount : -$amount, [
+                'operation_key' => $data['operation_key'], 'reason' => $data['reason'], 'user_id' => $operator->id,
             ]);
             $this->audit($current, $operator, 'member.points_adjusted', ['point_entry_id' => $entry->id]);
 
