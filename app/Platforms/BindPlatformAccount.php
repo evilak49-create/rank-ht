@@ -28,13 +28,13 @@ class BindPlatformAccount
         $this->sms->send($phone, $this->purpose($member, $platform));
     }
 
-    public function bind(Member $member, Platform $platform, string $phone, ?string $code): PlatformBinding
+    public function bind(Member $member, Platform $platform, string $phone, ?string $code, bool $useSms): PlatformBinding
     {
         abort_unless($platform->status() === 'available', 404);
         $this->ensureNotBound($member, $platform);
+        abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
         $purpose = $this->purpose($member, $platform);
-        if ($this->requiresVerification($member, $phone)) {
-            $this->verification->requireSms();
+        if ($useSms && $this->requiresVerification($member, $phone)) {
             $this->sms->verify($phone, $purpose, $this->requiredCode($code));
         }
 
@@ -53,7 +53,7 @@ class BindPlatformAccount
         }
 
         try {
-            return DB::transaction(function () use ($member, $platform, $phone, $code, $purpose, $account): PlatformBinding {
+            return DB::transaction(function () use ($member, $platform, $phone, $code, $purpose, $account, $useSms): PlatformBinding {
                 $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
                 abort_unless($current->status() === 'available', 404);
                 abort_if($current->active_query_revision !== $platform->active_query_revision, 409, '平台配置已更新，请重试。');
@@ -63,8 +63,8 @@ class BindPlatformAccount
                 abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
                 $this->ensureNotBound($owner, $current);
 
-                if ($this->requiresVerification($owner, $phone)) {
-                    $this->verification->requireSms();
+                abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
+                if ($useSms && $this->requiresVerification($owner, $phone)) {
                     $this->sms->consume($phone, $purpose, $this->requiredCode($code));
                     if ($owner->phone === $phone) {
                         $owner->forceFill(['phone_verified_at' => now()])->save();

@@ -34,7 +34,11 @@ class PointSettlementController extends Controller
             'eligibility' => $quote->eligibility, 'status' => $quote->status(),
             'expires_at' => $quote->expires_at->toISOString(), 'confirmed_at' => $quote->confirmed_at?->toISOString(),
             'point_entry_id' => $quote->point_entry_id,
-            ...Arr::except($quote->snapshot, ['remainder_units', 'observed_deposit_cents', 'observed_valid_bet_cents']),
+            ...Arr::only($quote->snapshot, [
+                'baseline_observed_at', 'observed_at', 'observed_deposit_cents', 'observed_valid_bet_cents',
+                'deposit_cents', 'valid_bet_cents', 'required_bet_cents', 'points_per_brl',
+                'wager_multiplier', 'remainder_before', 'remainder_after',
+            ]),
         ];
     }
 }

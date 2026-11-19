@@ -35,7 +35,8 @@ class MemberAuthController extends Controller
     public function captcha(Request $request, ImageCaptcha $captcha): JsonResponse
     {
         abort_if($this->verification->smsEnabled(), 409, '当前使用短信验证码。');
-        $data = $request->validate(['purpose' => 'required|in:register,reset_password']);
+        $data = $request->validate(['purpose' => 'required|in:register,reset_password,platform_binding']);
+        abort_if($data['purpose'] === 'platform_binding' && ! Auth::guard('member')->check(), 401);
         abort_if($data['purpose'] === 'reset_password' && ! Auth::guard('member')->check(), 409, '短信找回暂不可用，请联系人工客服。');
 
         return response()->json(['data' => $captcha->issue($request->session()->getId(), $data['purpose'])])
@@ -178,10 +179,7 @@ class MemberAuthController extends Controller
 
     private function challengeRules(bool $useSms): array
     {
-        return $useSms ? ['code' => 'required|digits:6'] : [
-            'challenge_id' => 'required|uuid:4',
-            'code' => ['required', 'string', 'regex:/\A[A-Za-z2-9]{5}\z/'],
-        ];
+        return $useSms ? ['code' => 'required|digits:6'] : ImageCaptcha::RULES;
     }
 
     private function validateResetAccount(Request $request, Member $member, string $phone): void

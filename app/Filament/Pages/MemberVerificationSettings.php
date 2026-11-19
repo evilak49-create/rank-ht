@@ -44,7 +44,7 @@ class MemberVerificationSettings extends Page
     {
         return $schema->statePath('data')->components([
             Toggle::make('sms_enabled')->label('启用手机号短信验证码')
-                ->helperText('关闭后注册改用图片验证码。已登录会员可用原密码和图片修改密码。忘记密码和需要验证新手机号的平台绑定暂时停用。'),
+                ->helperText('关闭后，注册和平台绑定使用图片验证码。已登录会员可用当前密码和图片验证码修改密码，短信找回密码暂停。'),
         ]);
     }
 

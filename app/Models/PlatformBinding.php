@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'member_id', 'platform_id', 'platform_account_id', 'query_phone',
@@ -29,5 +30,10 @@ class PlatformBinding extends Model
     public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function pointQuotes(): HasMany
+    {
+        return $this->hasMany(PointQuote::class);
     }
 }

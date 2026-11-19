@@ -11,14 +11,22 @@ use Illuminate\Http\Request;
 
 class ShopController extends Controller
 {
-    public function products(): JsonResponse
+    private const PRODUCT_FIELDS = ['id', 'name', 'description', 'image_url', 'points_price', 'stock', 'is_active', 'created_at', 'updated_at'];
+
+    public function products(Request $request): JsonResponse
     {
-        return response()->json(Product::query()->where('is_active', true)->latest('id')->paginate(20));
+        $filters = $request->validate(['search' => 'nullable|string|max:120']);
+        $query = Product::query()->select(self::PRODUCT_FIELDS)->where('is_active', true)->latest('id');
+        if (filled($filters['search'] ?? null)) {
+            $query->whereLike('name', '%'.$filters['search'].'%');
+        }
+
+        return response()->json($query->paginate(20)->appends($filters));
     }
 
     public function product(string $product): JsonResponse
     {
-        return response()->json(['data' => Product::query()->where('is_active', true)->findOrFail($product)]);
+        return response()->json(['data' => Product::query()->select(self::PRODUCT_FIELDS)->where('is_active', true)->findOrFail($product)]);
     }
 
     public function checkout(Request $request, PhysicalShop $shop): JsonResponse

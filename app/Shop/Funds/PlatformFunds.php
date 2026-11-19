@@ -22,12 +22,17 @@ class PlatformFunds
 
     public function __construct(private readonly PointWallet $wallet, private readonly FundChannel $channel) {}
 
+    public function rate(): array
+    {
+        return $this->rateData($this->currentRate());
+    }
+
     public function preview(Member $member, array $data): array
     {
         $binding = $this->binding($member, $data['binding_id']);
         $this->requireAvailable($binding->platform, $member);
 
-        return $this->conversion(FundRateVersion::query()->latest('id')->firstOrFail(), (int) $data['points']);
+        return $this->conversion($this->currentRate(), (int) $data['points']);
     }
 
     public function checkout(Member $member, array $data): PlatformFundOrder
@@ -175,8 +180,17 @@ class PlatformFunds
     private function conversion(FundRateVersion $rate, int $points): array
     {
         return [
-            'rate_version' => $rate->id, 'points' => $points, 'cents_per_point' => $rate->cents_per_point,
-            'amount_cents' => $points * $rate->cents_per_point, 'currency' => 'BRL',
+            ...$this->rateData($rate), 'points' => $points, 'amount_cents' => $points * $rate->cents_per_point,
         ];
+    }
+
+    private function currentRate(): FundRateVersion
+    {
+        return FundRateVersion::query()->latest('id')->firstOrFail();
+    }
+
+    private function rateData(FundRateVersion $rate): array
+    {
+        return ['rate_version' => $rate->id, 'cents_per_point' => $rate->cents_per_point, 'currency' => 'BRL'];
     }
 }

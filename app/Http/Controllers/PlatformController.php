@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\ImageCaptcha;
 use App\Auth\MemberPhone;
+use App\Auth\MemberVerification;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
 use App\Platforms\BindPlatformAccount;
 use App\Platforms\PlatformParticipation;
+use App\Protection\ProtectionClaims;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -23,7 +27,7 @@ class PlatformController extends Controller
             $query->whereLike('name', '%'.$filters['search'].'%');
         }
 
-        return response()->json($query->paginate(20)->through($this->platformData(...)));
+        return response()->json($query->paginate(20)->appends($filters)->through($this->platformData(...)));
     }
 
     public function featured(): JsonResponse
@@ -72,10 +76,26 @@ class PlatformController extends Controller
 
     public function bindings(Request $request): JsonResponse
     {
-        $bindings = PlatformBinding::query()->where('member_id', $request->user()->id)
-            ->with('platform:id,name')->orderByDesc('id')->paginate(20);
+        $bindings = $this->ownedBindings($request)->latest('id')->paginate(20);
 
-        return response()->json($bindings->through($this->bindingData(...)));
+        return response()->json($bindings->through(fn (PlatformBinding $binding): array => $this->bindingData($binding, includeAccountId: true)));
+    }
+
+    public function binding(Request $request, string $binding): JsonResponse
+    {
+        return response()->json(['data' => $this->bindingData($this->ownedBindings($request)->findOrFail($binding))]);
+    }
+
+    private function ownedBindings(Request $request): Builder
+    {
+        $memberId = $request->user()->id;
+        $confirmedQuotes = fn (Builder $quotes) => $quotes
+            ->where('member_id', $memberId)->whereNotNull('confirmed_at')->whereNotNull('point_entry_id');
+
+        return PlatformBinding::query()->where('member_id', $memberId)->with('platform:id,name,logo_url')
+            ->withSum(['pointQuotes as redeemed_points' => $confirmedQuotes], 'estimated_points')
+            ->withMax(['pointQuotes as last_redeemed_at' => $confirmedQuotes], 'confirmed_at')
+            ->withCasts(['last_redeemed_at' => 'datetime']);
     }
 
     public function sendCode(Request $request, string $platform, BindPlatformAccount $binding): JsonResponse
@@ -86,23 +106,30 @@ class PlatformController extends Controller
         return response()->json(['status' => 'accepted'], 202);
     }
 
-    public function bind(Request $request, string $platform, BindPlatformAccount $binding): JsonResponse
+    public function bind(Request $request, string $platform, BindPlatformAccount $binding, MemberVerification $verification, ImageCaptcha $captcha): JsonResponse
     {
-        $data = $this->validatePhone($request);
+        $useSms = $verification->smsEnabled();
+        $activePlatform = Platform::query()->available()->findOrFail($platform);
+        $data = $this->validatePhone($request, $useSms ? ['code' => 'nullable|digits:6'] : ImageCaptcha::RULES);
+        if (! $useSms) {
+            $captcha->consume($request->session()->getId(), 'platform_binding', $data['challenge_id'], $data['code']);
+        }
         $record = $binding->bind(
-            $request->user(), Platform::query()->available()->findOrFail($platform), $data['phone'], $data['code'] ?? null,
+            $request->user(), $activePlatform, $data['phone'], $useSms ? ($data['code'] ?? null) : null, $useSms,
         );
 
-        return response()->json(['data' => $this->bindingData($record->load('platform:id,name'))], 201);
+        $record = $this->ownedBindings($request)->findOrFail($record->id);
+
+        return response()->json(['data' => $this->bindingData($record, includeAccountId: true)], 201);
     }
 
-    private function validatePhone(Request $request): array
+    private function validatePhone(Request $request, array $verificationRules = []): array
     {
         $request->merge(['phone' => MemberPhone::normalize($request->input('phone'))]);
 
         return $request->validate([
             'phone' => ['required', MemberPhone::RULE],
-            'code' => 'nullable|digits:6',
+            ...$verificationRules,
         ]);
     }
 
@@ -112,13 +139,18 @@ class PlatformController extends Controller
             'member_review_count' => (int) $platform->member_review_count];
     }
 
-    private function bindingData(PlatformBinding $binding): array
+    private function bindingData(PlatformBinding $binding, bool $includeAccountId = false): array
     {
         return [
             'id' => $binding->id,
             'platform_id' => $binding->platform_id,
             'platform_name' => $binding->platform->name,
-            'platform_account_id' => $binding->platform_account_id,
+            'logo_url' => $binding->platform->logo_url,
+            'masked_platform_account' => ProtectionClaims::maskAccount($binding->platform_account_id),
+            ...($includeAccountId ? ['platform_account_id' => $binding->platform_account_id] : []),
+            'redeemed_points' => (int) $binding->redeemed_points,
+            'last_redeemed_at' => $binding->last_redeemed_at?->toISOString(),
+            'protection_status' => $binding->protection_status,
             'created_at' => $binding->created_at?->toISOString(),
         ];
     }

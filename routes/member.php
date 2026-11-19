@@ -9,16 +9,18 @@ use App\Http\Controllers\PlatformReviewController;
 use App\Http\Controllers\PointSettlementController;
 use App\Http\Controllers\ProtectionController;
 use App\Http\Controllers\PublicContentController;
+use App\Http\Controllers\RedemptionHistoryController;
 use App\Http\Controllers\RedPacketController;
 use App\Http\Controllers\ShippingAddressController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\VisitorActivityController;
 use App\Http\Controllers\WalletController;
+use App\Http\Middleware\PreventClientApiCaching;
 use App\Http\Middleware\VerifyMemberSession;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('api/v1')->group(function (): void {
+Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(function (): void {
     Route::get('health', fn () => response()->json(['status' => 'ok']));
     Route::post('visitor-activity', VisitorActivityController::class)->middleware('throttle:60,1,visitor-activity');
     Route::get('support', [SupportController::class, 'index']);
@@ -33,6 +35,7 @@ Route::prefix('api/v1')->group(function (): void {
     });
     Route::get('shop/products', [ShopController::class, 'products']);
     Route::get('shop/products/{product}', [ShopController::class, 'product'])->whereNumber('product');
+    Route::get('platform-funds/rate', [PlatformFundsController::class, 'rate']);
 
     Route::get('platforms', [PlatformController::class, 'index']);
     Route::get('platforms/featured', [PlatformController::class, 'featured']);
@@ -72,12 +75,14 @@ Route::prefix('api/v1')->group(function (): void {
         Route::get('check-in', [CheckinController::class, 'status']);
         Route::post('check-in', [CheckinController::class, 'record']);
         Route::get('platform-bindings', [PlatformController::class, 'bindings']);
+        Route::get('platform-bindings/{binding}', [PlatformController::class, 'binding'])->whereNumber('binding');
         Route::post('platform-bindings/{binding}/point-quotes', [PointSettlementController::class, 'quote'])
             ->whereNumber('binding')->middleware('throttle:10,1');
         Route::post('point-quotes/{quote}/confirm', [PointSettlementController::class, 'confirm'])
             ->whereNumber('quote');
         Route::get('point-quotes/{quote}', [PointSettlementController::class, 'show'])->whereNumber('quote');
         Route::get('shop/orders', [ShopController::class, 'orders']);
+        Route::get('shop/redemptions', RedemptionHistoryController::class);
         Route::get('shop/orders/{order}', [ShopController::class, 'order'])->whereNumber('order');
         Route::post('shop/orders', [ShopController::class, 'checkout'])->middleware('throttle:20,1');
         Route::post('platform-funds/preview', [PlatformFundsController::class, 'preview'])->middleware('throttle:20,1');
@@ -91,6 +96,7 @@ Route::prefix('api/v1')->group(function (): void {
     });
 
     Route::prefix('auth')->controller(MemberAuthController::class)->group(function (): void {
+        Route::get('csrf-cookie', fn () => response()->noContent());
         Route::get('verification', 'verification')->middleware('throttle:30,1,member-verification-config');
         Route::post('captcha', 'captcha')->middleware('throttle:15,1,member-image-captcha');
         Route::post('sms-code', 'sendCode')->middleware('throttle:member-sms');

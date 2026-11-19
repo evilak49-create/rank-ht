@@ -8,6 +8,8 @@ use App\Models\AdminRole;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\User;
+use App\Platforms\PlatformAccount;
+use App\Platforms\PlatformQueryClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -55,17 +57,26 @@ class MemberVerificationTest extends TestCase
         $this->postJson('/api/v1/auth/login', ['phone' => $member->phone, 'password' => 'new-password'])->assertOk();
     }
 
-    public function test_image_mode_does_not_grant_access_to_platform_accounts_that_require_sms(): void
+    public function test_image_mode_can_bind_without_sms_and_does_not_mark_the_phone_as_verified(): void
     {
         DB::table('member_verification_settings')->where('id', 1)->update(['sms_enabled' => false]);
         $member = Member::create(['phone' => '11912345678', 'password' => 'test-password']);
         $platform = Platform::create(['name' => 'Platform', 'promotion_url' => 'https://example.test', 'rating' => '4.0']);
-        $platform->forceFill(['active_query_revision' => 1])->save();
+        $platform->forceFill(['active_query_revision' => 1, 'active_query' => ['endpoint' => 'https://example.test']])->save();
+        $client = Mockery::mock(PlatformQueryClient::class);
+        $client->shouldReceive('lookup')->once()->andReturn(new PlatformAccount('123456', 100, 250, now()));
+        $this->app->instance(PlatformQueryClient::class, $client);
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $url = '/api/v1/platforms/'.$platform->id.'/binding';
         $this->postJson($url.'/code', ['phone' => $member->phone])->assertConflict();
-        $this->postJson($url, ['phone' => $member->phone, 'code' => '123456'])->assertConflict();
-        $this->assertDatabaseEmpty('platform_bindings');
+        $this->postJson($url, ['phone' => $member->phone])->assertUnprocessable()->assertJsonValidationErrors('challenge_id');
+        [$challenge, $answer] = $this->challenge('platform_binding');
+        $this->postJson($url, [
+            'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer,
+        ])->assertCreated()->assertJsonPath('data.platform_account_id', '123456');
+        $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'query_phone' => $member->phone]);
+        $this->assertNull($member->refresh()->phone_verified_at);
+        $this->assertDatabaseEmpty('sms_challenges');
     }
 
     private function challenge(string $purpose): array
