@@ -22,6 +22,8 @@ class PlatformReviewResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '平台管理';
 
+    protected static ?int $navigationSort = 20;
+
     private const STATUSES = ['pending' => '待审核', 'approved' => '已发布', 'rejected' => '已驳回'];
 
     private const SOURCES = ['member' => '会员投稿', 'ai' => 'AI 平台说明'];

@@ -24,6 +24,8 @@ class ProductResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '商城管理';
 
+    protected static ?int $navigationSort = 10;
+
     public static function canViewAny(): bool
     {
         $operator = Filament::auth()->user();
@@ -43,7 +45,9 @@ class ProductResource extends Resource
             Action::make('edit_product')->label('编辑')->authorize(fn (): bool => self::canViewAny())
                 ->schema(self::fields())
                 ->fillForm(fn (Product $record) => $record->only(['name', 'description', 'image_url', 'points_price', 'is_active']))
-                ->action(fn (Product $record, array $data) => app(PhysicalShop::class)->saveProduct($record, $data, self::operator())),
+                ->action(fn (Action $action, Product $record, array $data) => ActionForm::submit($action, fn () => app(PhysicalShop::class)->saveProduct(
+                    $record, PublicImageField::retain($data, 'image_url', $record->image_url), self::operator(),
+                ))),
             Action::make('adjust_stock')->label('调整库存')->authorize(fn (): bool => self::canViewAny())
                 ->schema([
                     TextInput::make('delta')->label('库存增减量')->integer()->required()->helperText('正数增加，负数扣减。'),
@@ -56,7 +60,8 @@ class ProductResource extends Resource
     {
         return Action::make('create_product')->label('新增商品')->authorize(fn (): bool => self::canViewAny())
             ->schema(self::fields())
-            ->action(fn (array $data) => app(PhysicalShop::class)->saveProduct(null, $data, self::operator()));
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action,
+                fn () => app(PhysicalShop::class)->saveProduct(null, PublicImageField::retain($data, 'image_url', null), self::operator())));
     }
 
     public static function getPages(): array
@@ -69,8 +74,9 @@ class ProductResource extends Resource
         return [
             TextInput::make('name')->label('商品名称')->maxLength(120)->required(),
             Textarea::make('description')->label('说明')->maxLength(2000),
-            TextInput::make('image_url')->label('图片地址')->url()->maxLength(2048),
             PublicImageField::make('上传商品图片'),
+            PublicImageField::current('image_url'),
+            PublicImageField::remove('image_url'),
             TextInput::make('points_price')->label('所需积分')->integer()->minValue(1)->required(),
             Toggle::make('is_active')->label('上架')->default(false),
         ];

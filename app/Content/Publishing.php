@@ -26,6 +26,19 @@ class Publishing
         abort_unless($operator->hasPermission('content.manage'), 403);
         abort_unless(in_array($type, ['announcement', 'help'], true) && ($existing === null || $existing->type === $type), 404);
 
+        $files = [];
+        if ($type === 'help' && is_array($data['steps'] ?? null)) {
+            Validator::make($data, ['steps' => 'array|list|max:30'])->validate();
+            foreach (array_keys($data['steps']) as $index) {
+                $files["steps.$index.image_upload"] = "steps.$index.image_url";
+            }
+        }
+
+        return $this->images->applyMany($data, $files, fn (array $fields) => $this->persistArticle($type, $existing, $fields, $operator));
+    }
+
+    private function persistArticle(string $type, ?SiteArticle $existing, array $data, User $operator): SiteArticle
+    {
         $rules = [
             'title' => 'required|string|max:150', 'body' => 'required|string|max:12000',
             'published' => 'required|boolean', 'sort_order' => 'nullable|integer|between:0,100000',
@@ -36,7 +49,7 @@ class Publishing
                 'steps' => 'nullable|array|max:30',
                 'steps.*' => 'array:title,body,image_url',
                 'steps.*.title' => 'required|string|max:150', 'steps.*.body' => 'required|string|max:1500',
-                'steps.*.image_url' => 'nullable|string|max:2048|url:https',
+                'steps.*.image_url' => PublicImages::urlRules(),
                 'target_type' => ['nullable', Rule::in(array_keys(self::TARGETS))],
                 'target_id' => 'nullable|integer|min:1',
             ];
@@ -66,8 +79,9 @@ class Publishing
 
     private function persistBanner(?SiteBanner $existing, array $data, User $operator): SiteBanner
     {
+        $data['image_url'] ??= $existing?->image_url;
         $fields = Validator::make($data, [
-            'name' => 'required|string|max:150', 'image_url' => 'required|string|max:2048|url:https',
+            'name' => 'required|string|max:150', 'image_url' => PublicImages::urlRules(required: true),
             'active' => 'required|boolean', 'sort_order' => 'required|integer|between:0,100000',
             'target_type' => ['required', Rule::in(array_keys(self::TARGETS))],
             'target_id' => 'nullable|integer|min:1',

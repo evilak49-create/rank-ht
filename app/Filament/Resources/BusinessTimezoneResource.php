@@ -22,6 +22,8 @@ class BusinessTimezoneResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '系统设置';
 
+    protected static ?int $navigationSort = 40;
+
     public static function canViewAny(): bool
     {
         $operator = Filament::auth()->user();

@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\AdminLogin;
 use App\Filament\Pages\AiSettings;
+use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\OssSettings;
 use App\Filament\Pages\SupportSettings;
 use App\Filament\Resources\AdminAccessAuditResource;
@@ -37,7 +38,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -58,6 +59,17 @@ class AdminPanelProvider extends PanelProvider
             ->login(AdminLogin::class)
             ->authGuard('web')
             ->brandName('返利网运营后台')
+            ->navigationGroups([
+                NavigationGroup::make('会员管理'),
+                NavigationGroup::make('平台管理'),
+                NavigationGroup::make('积分管理'),
+                NavigationGroup::make('商城管理'),
+                NavigationGroup::make('活动管理'),
+                NavigationGroup::make('保障与申诉'),
+                NavigationGroup::make('内容管理'),
+                NavigationGroup::make('客服管理'),
+                NavigationGroup::make('系统设置'),
+            ])
             ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([

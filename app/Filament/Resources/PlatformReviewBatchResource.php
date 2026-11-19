@@ -27,6 +27,8 @@ class PlatformReviewBatchResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '平台管理';
 
+    protected static ?int $navigationSort = 30;
+
     private const STATES = ['pending' => '待生成', 'processing' => '生成中', 'succeeded' => '已发布', 'failed' => '失败'];
 
     private const ERRORS = [

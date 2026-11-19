@@ -25,6 +25,8 @@ class PlatformFundOrderResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '商城管理';
 
+    protected static ?int $navigationSort = 30;
+
     private const STATUSES = [
         'pending' => '待审核', 'rejected' => '已驳回', 'processing' => '发放中',
         'unresolved' => '结果待确认', 'paid' => '已到账', 'failed' => '发放失败',

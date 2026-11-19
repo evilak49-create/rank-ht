@@ -28,6 +28,8 @@ class SupportFaqResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '客服管理';
 
+    protected static ?int $navigationSort = 20;
+
     public static function canViewAny(): bool
     {
         $staff = Filament::auth()->user();

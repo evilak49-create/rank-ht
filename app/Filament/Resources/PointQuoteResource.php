@@ -20,6 +20,8 @@ class PointQuoteResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '积分管理';
 
+    protected static ?int $navigationSort = 30;
+
     private const STATUS = ['pending' => '待确认', 'expired' => '已过期', 'confirmed' => '已确认'];
 
     private const ELIGIBILITY = [

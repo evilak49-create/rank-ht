@@ -23,6 +23,8 @@ class ShopOrderResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '商城管理';
 
+    protected static ?int $navigationSort = 20;
+
     private const STATUSES = ['pending' => '待发货', 'shipped' => '已发货', 'cancelled' => '已取消'];
 
     public static function canViewAny(): bool

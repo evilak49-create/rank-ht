@@ -24,6 +24,8 @@ class MemberCheckinResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '活动管理';
 
+    protected static ?int $navigationSort = 10;
+
     public static function canViewAny(): bool
     {
         $operator = Filament::auth()->user();

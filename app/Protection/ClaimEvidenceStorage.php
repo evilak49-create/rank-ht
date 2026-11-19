@@ -37,8 +37,6 @@ class ClaimEvidenceStorage
             return self::CLOUD;
         }
 
-        abort_unless(app()->environment(['local', 'testing']), 503, '申诉凭证存储暂不可用。');
-
         return self::LOCAL;
     }
 

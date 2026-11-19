@@ -22,7 +22,9 @@ class ProtectionTermResource extends Resource
 
     protected static ?string $pluralModelLabel = '保障条款';
 
-    protected static string|\UnitEnum|null $navigationGroup = '投诉管理';
+    protected static string|\UnitEnum|null $navigationGroup = '保障与申诉';
+
+    protected static ?int $navigationSort = 10;
 
     public static function canViewAny(): bool
     {

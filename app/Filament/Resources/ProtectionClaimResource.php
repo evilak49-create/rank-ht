@@ -25,7 +25,9 @@ class ProtectionClaimResource extends Resource
 
     protected static ?string $pluralModelLabel = '申诉案件';
 
-    protected static string|\UnitEnum|null $navigationGroup = '投诉管理';
+    protected static string|\UnitEnum|null $navigationGroup = '保障与申诉';
+
+    protected static ?int $navigationSort = 30;
 
     public static function canViewAny(): bool
     {

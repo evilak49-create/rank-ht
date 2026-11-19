@@ -21,6 +21,8 @@ class AiSettings extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = '系统设置';
 
+    protected static ?int $navigationSort = 60;
+
     protected string $view = 'filament.pages.ai-settings';
 
     public array $data = [];

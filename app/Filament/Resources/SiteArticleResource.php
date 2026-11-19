@@ -53,14 +53,15 @@ abstract class SiteArticleResource extends Resource
                     ->fillForm(fn (SiteArticle $record): array => $record->only([
                         'title', 'body', 'published', 'published_at', 'steps', 'sort_order', 'target_type', 'target_id',
                     ]))
-                    ->action(fn (SiteArticle $record, array $data) => static::save($record, $data)),
+                    ->action(fn (Action $action, SiteArticle $record, array $data) => ActionForm::submit($action, fn () => static::save($record, $data))),
             ]);
     }
 
     public static function createAction(): Action
     {
         return Action::make('create_article')->label('新增')->authorize(fn () => static::canViewAny())
-            ->schema(static::fields())->action(fn (array $data) => static::save(null, $data));
+            ->schema(static::fields())
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action, fn () => static::save(null, $data)));
     }
 
     private static function fields(): array
@@ -81,7 +82,9 @@ abstract class SiteArticleResource extends Resource
             Repeater::make('steps')->label('教程步骤')->defaultItems(0)->maxItems(30)->schema([
                 TextInput::make('title')->label('步骤标题')->maxLength(150)->required(),
                 Textarea::make('body')->label('步骤说明')->maxLength(1500)->required(),
-                TextInput::make('image_url')->label('步骤图片地址')->url()->maxLength(2048),
+                PublicImageField::make('上传步骤图片'),
+                PublicImageField::current('image_url', retainSubmitted: true),
+                PublicImageField::remove('image_url'),
             ]),
             ...SiteTargetFields::make(false),
         ];
@@ -91,6 +94,14 @@ abstract class SiteArticleResource extends Resource
     {
         $operator = Filament::auth()->user();
         abort_unless($operator instanceof User, 403);
+        if (static::$articleType === 'help') {
+            $existingUrls = array_column($record?->steps ?? [], 'image_url');
+            $data['steps'] = array_map(function (array $step) use ($existingUrls): array {
+                $url = $step['image_url'] ?? null;
+
+                return PublicImageField::retain($step, 'image_url', in_array($url, $existingUrls, true) ? $url : null);
+            }, $data['steps'] ?? []);
+        }
         app(Publishing::class)->article(static::$articleType, $record, $data, $operator);
     }
 }

@@ -29,6 +29,13 @@ return [
     */
 
     'disks' => [
+        'site-images' => [
+            'driver' => 'local',
+            'root' => storage_path('app/public/images'),
+            'visibility' => 'public',
+            'throw' => true,
+        ],
+
         'claim-evidence-local' => [
             'driver' => 'local',
             'root' => storage_path('app/private/claim-evidence'),

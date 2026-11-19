@@ -23,6 +23,8 @@ class SiteBannerResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '内容管理';
 
+    protected static ?int $navigationSort = 10;
+
     public static function canViewAny(): bool
     {
         $operator = Filament::auth()->user();
@@ -35,19 +37,20 @@ class SiteBannerResource extends Resource
         return $table->defaultSort('sort_order')->columns([
             TextColumn::make('name')->label('名称')->searchable(),
             TextColumn::make('sort_order')->label('顺序')->sortable(),
-            TextColumn::make('target_type')->label('站内目标')->formatStateUsing(fn (string $type) => Publishing::TARGETS[$type]),
+            TextColumn::make('target_type')->label('站内目标')->formatStateUsing(fn (string $state) => Publishing::TARGETS[$state]),
             IconColumn::make('active')->label('启用')->boolean(),
         ])->recordActions([
             Action::make('edit_banner')->label('编辑')->authorize(fn () => self::canViewAny())->schema(self::fields())
                 ->fillForm(fn (SiteBanner $record): array => $record->only(['name', 'image_url', 'target_type', 'target_id', 'sort_order', 'active']))
-                ->action(fn (SiteBanner $record, array $data) => self::save($record, $data)),
+                ->action(fn (Action $action, SiteBanner $record, array $data) => ActionForm::submit($action, fn () => self::save($record, $data))),
         ]);
     }
 
     public static function createAction(): Action
     {
         return Action::make('create_banner')->label('新增 Banner')->authorize(fn () => self::canViewAny())
-            ->schema(self::fields())->action(fn (array $data) => self::save(null, $data));
+            ->schema(self::fields(creating: true))
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action, fn () => self::save(null, $data)));
     }
 
     public static function getPages(): array
@@ -55,12 +58,12 @@ class SiteBannerResource extends Resource
         return ['index' => ListSiteBanners::route('/')];
     }
 
-    private static function fields(): array
+    private static function fields(bool $creating = false): array
     {
         return [
             TextInput::make('name')->label('名称')->maxLength(150)->required(),
-            TextInput::make('image_url')->label('图片地址')->url()->maxLength(2048)->requiredWithout('image_upload'),
-            PublicImageField::make('上传 Banner 图片'),
+            PublicImageField::make('上传 Banner 图片')->required($creating),
+            PublicImageField::current('image_url'),
             TextInput::make('sort_order')->label('展示顺序')->integer()->minValue(0)->maxValue(100000)->default(0)->required(),
             Toggle::make('active')->label('启用')->default(false),
             ...SiteTargetFields::make(true),
@@ -71,6 +74,6 @@ class SiteBannerResource extends Resource
     {
         $operator = Filament::auth()->user();
         abort_unless($operator instanceof User, 403);
-        app(Publishing::class)->banner($record, $data, $operator);
+        app(Publishing::class)->banner($record, PublicImageField::retain($data, 'image_url', $record?->image_url), $operator);
     }
 }

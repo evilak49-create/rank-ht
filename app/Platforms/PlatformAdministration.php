@@ -158,7 +158,7 @@ class PlatformAdministration
         $profile = Validator::make($data, [
             'name' => 'required|string|max:120',
             'promotion_url' => 'required|string|max:2048|url:https',
-            'logo_url' => 'nullable|string|max:2048|url:https',
+            'logo_url' => PublicImages::urlRules(),
             'description' => 'nullable|string|max:2000',
             'rating' => 'required|numeric|between:1,5|decimal:0,1',
             'featured_position' => ['nullable', 'integer', 'between:1,10', $position],

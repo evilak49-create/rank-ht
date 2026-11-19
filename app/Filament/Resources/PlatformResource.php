@@ -29,6 +29,8 @@ class PlatformResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '平台管理';
 
+    protected static ?int $navigationSort = 10;
+
     private const STATUS_LABELS = [
         'pending' => '待测试', 'available' => '正常', 'disabled' => '停用', 'unhealthy' => '异常',
     ];
@@ -81,7 +83,9 @@ class PlatformResource extends Resource
                 ->fillForm(fn (Platform $record): array => $record->only([
                     'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position',
                 ]))
-                ->action(fn (Platform $record, array $data) => app(PlatformAdministration::class)->update($record, $data, self::operator())),
+                ->action(fn (Action $action, Platform $record, array $data) => ActionForm::submit($action, fn () => app(PlatformAdministration::class)->update(
+                    $record, PublicImageField::retain($data, 'logo_url', $record->logo_url), self::operator(),
+                ))),
             self::configureQueryAction(),
             self::testQueryAction(),
             self::statusAction(true),
@@ -94,7 +98,8 @@ class PlatformResource extends Resource
         return Action::make('create_platform')->label('新增平台')
             ->authorize(fn (): bool => self::hasPermission('platforms.edit'))
             ->schema(self::profileFields())
-            ->action(fn (array $data) => app(PlatformAdministration::class)->create($data, self::operator()));
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action,
+                fn () => app(PlatformAdministration::class)->create(PublicImageField::retain($data, 'logo_url', null), self::operator())));
     }
 
     public static function getPages(): array
@@ -149,8 +154,9 @@ class PlatformResource extends Resource
         return [
             TextInput::make('name')->label('平台名称')->maxLength(120)->required(),
             TextInput::make('promotion_url')->label('推广注册链接')->url()->maxLength(2048)->required(),
-            TextInput::make('logo_url')->label('Logo 图片地址')->url()->maxLength(2048),
             PublicImageField::make('上传 Logo'),
+            PublicImageField::current('logo_url'),
+            PublicImageField::remove('logo_url'),
             Textarea::make('description')->label('平台简介')->maxLength(2000),
             TextInput::make('rating')->label('评分')->numeric()->step(0.1)->minValue(1)->maxValue(5)->required(),
             TextInput::make('featured_position')->label('首页精选位置')->integer()->minValue(1)->maxValue(10)

@@ -6,6 +6,8 @@ use App\Filament\Resources\AnnouncementResource\Pages\ListAnnouncements;
 
 class AnnouncementResource extends SiteArticleResource
 {
+    protected static ?int $navigationSort = 20;
+
     protected static string $articleType = 'announcement';
 
     protected static ?string $pluralModelLabel = '公告管理';

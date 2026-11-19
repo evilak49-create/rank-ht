@@ -26,6 +26,8 @@ class AdminAccountResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '系统设置';
 
+    protected static ?int $navigationSort = 10;
+
     public static function canViewAny(): bool
     {
         $operator = Filament::auth()->user();
@@ -48,17 +50,17 @@ class AdminAccountResource extends Resource
         ])->recordActions([
             Action::make('edit_account')->label('编辑')->authorize(fn () => self::canViewAny())->visible(self::mayManage(...))
                 ->fillForm(fn (User $record): array => $record->only(['username', 'name']))->schema(self::fields())
-                ->action(fn (Action $action, User $record, array $data) => AdminAccessForm::submit($action,
+                ->action(fn (Action $action, User $record, array $data) => ActionForm::submit($action,
                     fn () => app(AdminAccess::class)->saveAccount($record, $data, Filament::auth()->user()))),
             Action::make('assign_roles')->label('分配角色')->authorize(fn () => self::canAssign())->visible(self::mayManage(...))
                 ->fillForm(fn (User $record): array => ['role_ids' => $record->roles->modelKeys()])
                 ->schema([Select::make('role_ids')->label('角色')->multiple()->searchable()
                     ->options(fn (): array => AdminRole::query()->orderBy('name')->get()->filter(fn (AdminRole $role): bool => array_diff($role->permissions, Filament::auth()->user()->grantedPermissions()) === [])->pluck('name', 'id')->all())])
-                ->action(fn (Action $action, User $record, array $data) => AdminAccessForm::submit($action,
+                ->action(fn (Action $action, User $record, array $data) => ActionForm::submit($action,
                     fn () => app(AdminAccess::class)->assignRoles($record, $data['role_ids'] ?? [], Filament::auth()->user()))),
             Action::make('reset_password')->label('重置密码')->authorize(fn () => self::canViewAny())->visible(self::mayManage(...))
                 ->schema([self::passwordField()])
-                ->action(fn (Action $action, User $record, array $data) => AdminAccessForm::submit($action,
+                ->action(fn (Action $action, User $record, array $data) => ActionForm::submit($action,
                     fn () => app(AdminAccess::class)->resetPassword($record, $data['password'], Filament::auth()->user()))),
             self::enabledAction(false),
             self::enabledAction(true),
@@ -69,7 +71,7 @@ class AdminAccountResource extends Resource
     {
         return Action::make('create_account')->label('新增账号')->authorize(fn () => self::canViewAny())
             ->schema([...self::fields(), self::passwordField()])
-            ->action(fn (Action $action, array $data) => AdminAccessForm::submit($action,
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action,
                 fn () => app(AdminAccess::class)->saveAccount(null, $data, Filament::auth()->user())));
     }
 
@@ -84,7 +86,7 @@ class AdminAccountResource extends Resource
             ->authorize(fn () => self::canViewAny())
             ->visible(fn (User $record): bool => $record->panel_enabled !== $enabled && self::mayManage($record))
             ->schema([Checkbox::make('confirm')->label($enabled ? '确认启用此账号' : '确认停用此账号')->accepted()])
-            ->action(fn (Action $action, User $record) => AdminAccessForm::submit($action,
+            ->action(fn (Action $action, User $record) => ActionForm::submit($action,
                 fn () => app(AdminAccess::class)->setEnabled($record, $enabled, Filament::auth()->user())));
     }
 

@@ -22,6 +22,8 @@ class SupportSettings extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = '客服管理';
 
+    protected static ?int $navigationSort = 10;
+
     protected string $view = 'filament.pages.support-settings';
 
     public array $data = [];

@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\SimulatedPixCallbackController;
+use App\Http\Controllers\SiteImageController;
 use App\Http\Controllers\SiteInstallController;
 use App\Installation\InstallerAccess;
+use App\Storage\PublicImages;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,6 +22,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');
             Route::post('/install', [SiteInstallController::class, 'store'])->name('site-install.store');
             Route::post('/api/v1/pix/simulator-callback', SimulatedPixCallbackController::class);
+            Route::get(PublicImages::LOCAL_PREFIX.'{filename}', SiteImageController::class)
+                ->where('filename', PublicImages::LOCAL_FILENAME);
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

@@ -111,7 +111,7 @@ class PhysicalShop
     {
         $fields = Validator::make($data, [
             'name' => 'required|string|max:120', 'description' => 'nullable|string|max:2000',
-            'image_url' => 'nullable|string|max:2048|url:https', 'points_price' => 'required|integer|between:1,2147483647',
+            'image_url' => PublicImages::urlRules(), 'points_price' => 'required|integer|between:1,2147483647',
             'is_active' => 'required|boolean',
         ])->validate();
 

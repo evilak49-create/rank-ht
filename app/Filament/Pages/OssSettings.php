@@ -21,6 +21,8 @@ class OssSettings extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = '系统设置';
 
+    protected static ?int $navigationSort = 50;
+
     protected string $view = 'filament.pages.oss-settings';
 
     public ?array $data = [];

@@ -21,6 +21,8 @@ class AdminAccessAuditResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '系统设置';
 
+    protected static ?int $navigationSort = 30;
+
     private const ACTIONS = [
         'role.created' => '新增角色', 'role.updated' => '修改角色权限',
         'roles.changed' => '调整账号角色', 'account.created' => '新增账号', 'account.updated' => '编辑账号',

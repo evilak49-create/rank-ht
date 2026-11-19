@@ -24,6 +24,8 @@ class AdminRoleResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '系统设置';
 
+    protected static ?int $navigationSort = 20;
+
     public static function canViewAny(): bool
     {
         $operator = Filament::auth()->user();
@@ -43,7 +45,7 @@ class AdminRoleResource extends Resource
                 ->visible(fn (AdminRole $record): bool => array_diff($record->permissions, Filament::auth()->user()->grantedPermissions()) === [])
                 ->fillForm(fn (AdminRole $record): array => $record->only(['name', 'permissions']))
                 ->schema(self::fields())
-                ->action(fn (Action $action, AdminRole $record, array $data) => AdminAccessForm::submit($action,
+                ->action(fn (Action $action, AdminRole $record, array $data) => ActionForm::submit($action,
                     fn () => app(AdminAccess::class)->saveRole($record, $data, Filament::auth()->user()))),
         ]);
     }
@@ -51,7 +53,7 @@ class AdminRoleResource extends Resource
     public static function createAction(): Action
     {
         return Action::make('create_role')->label('新增角色')->authorize(fn () => self::canViewAny())->schema(self::fields())
-            ->action(fn (Action $action, array $data) => AdminAccessForm::submit($action,
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action,
                 fn () => app(AdminAccess::class)->saveRole(null, $data, Filament::auth()->user())));
     }
 

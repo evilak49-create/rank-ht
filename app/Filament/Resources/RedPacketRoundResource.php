@@ -23,6 +23,8 @@ class RedPacketRoundResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = '活动管理';
 
+    protected static ?int $navigationSort = 20;
+
     public static function canViewAny(): bool
     {
         return self::allowed('red-packets.view') || self::allowed('red-packets.manage');
