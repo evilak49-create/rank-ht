@@ -11,11 +11,13 @@ use App\Http\Controllers\PublicContentController;
 use App\Http\Controllers\RedPacketController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\SupportController;
+use App\Http\Controllers\VisitorActivityController;
 use App\Http\Middleware\VerifyMemberSession;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api/v1')->group(function (): void {
     Route::get('health', fn () => response()->json(['status' => 'ok']));
+    Route::post('visitor-activity', VisitorActivityController::class)->middleware('throttle:60,1,visitor-activity');
     Route::get('support', [SupportController::class, 'index']);
     Route::post('support/chat', [SupportController::class, 'chat'])->middleware('throttle:8,1,support-chat');
     Route::prefix('content')->controller(PublicContentController::class)->group(function (): void {

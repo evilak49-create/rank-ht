@@ -29,6 +29,8 @@ use App\Filament\Resources\RedPacketRoundResource;
 use App\Filament\Resources\ShopOrderResource;
 use App\Filament\Resources\SiteBannerResource;
 use App\Filament\Resources\SupportFaqResource;
+use App\Filament\Widgets\OperationsOverview;
+use App\Filament\Widgets\OperationsQueue;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -55,6 +57,7 @@ class AdminPanelProvider extends PanelProvider
             ->authGuard('web')
             ->brandName('返利网运营后台')
             ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class])
+            ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PointEntryResource::class,
                 PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
