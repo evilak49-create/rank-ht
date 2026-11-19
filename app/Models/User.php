@@ -49,4 +49,9 @@ class User extends Authenticatable implements FilamentUser
         return $this->panel_enabled === true
             && $this->roles()->whereJsonContains('permissions', $permission)->exists();
     }
+
+    public function grantedPermissions(): array
+    {
+        return $this->roles()->get()->flatMap(fn (AdminRole $role): array => $role->permissions)->unique()->values()->all();
+    }
 }

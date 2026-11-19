@@ -4,6 +4,9 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\AdminLogin;
 use App\Filament\Pages\OssSettings;
+use App\Filament\Resources\AdminAccessAuditResource;
+use App\Filament\Resources\AdminAccountResource;
+use App\Filament\Resources\AdminRoleResource;
 use App\Filament\Resources\AnnouncementResource;
 use App\Filament\Resources\BusinessTimezoneResource;
 use App\Filament\Resources\HelpArticleResource;
@@ -56,6 +59,7 @@ class AdminPanelProvider extends PanelProvider
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,
                 RedPacketRoundResource::class, RedPacketInviteResource::class, PixWithdrawalResource::class,
                 ProtectionTermResource::class, ProtectionEligibilityResource::class, ProtectionClaimResource::class,
+                AdminAccountResource::class, AdminRoleResource::class, AdminAccessAuditResource::class,
             ])
             ->middleware([
                 EncryptCookies::class,
