@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             // Installation is authorized by its short-lived token, before sessions are available.
+            Route::get('/', [SiteInstallController::class, 'home']);
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');
             Route::post('/install', [SiteInstallController::class, 'store'])->name('site-install.store');
         },

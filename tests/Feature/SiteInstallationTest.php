@@ -35,6 +35,16 @@ class SiteInstallationTest extends TestCase
         $this->assertFileDoesNotExist($this->sandbox.'/.env');
     }
 
+    public function test_fresh_home_guides_installation_without_an_application_key(): void
+    {
+        config(['app.key' => null]);
+
+        $this->get('/')->assertServiceUnavailable()->assertSee('php artisan install:enable');
+        $this->artisan('install:enable')->assertSuccessful();
+        $this->get('/')->assertRedirect('/install');
+        $this->get('/install')->assertOk();
+    }
+
     public function test_an_existing_environment_disables_installation(): void
     {
         $this->artisan('install:enable')->assertSuccessful();

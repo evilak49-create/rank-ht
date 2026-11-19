@@ -19,6 +19,7 @@ class InstallerAccess
     {
         return $this->canConfigure() && $this->withState(
             fn (array $state): bool => $this->isCurrent($state),
+            write: false,
         );
     }
 
@@ -59,20 +60,20 @@ class InstallerAccess
         return is_string($state['digest'] ?? null) && ($state['expires_at'] ?? 0) > time();
     }
 
-    private function withState(Closure $callback, bool $create = false): mixed
+    private function withState(Closure $callback, bool $create = false, bool $write = true): mixed
     {
         $path = storage_path('app/private/site-installer.json');
         if (! $create && ! is_file($path)) {
             return $callback([], static fn () => null);
         }
 
-        $handle = fopen($path, 'c+b');
+        $handle = fopen($path, $write ? 'c+b' : 'rb');
         if ($handle === false) {
             throw new RuntimeException('Unable to open the installer state file.');
         }
 
         try {
-            if (! flock($handle, LOCK_EX)) {
+            if (! flock($handle, $write ? LOCK_EX : LOCK_SH)) {
                 throw new RuntimeException('Unable to lock the installer state file.');
             }
 

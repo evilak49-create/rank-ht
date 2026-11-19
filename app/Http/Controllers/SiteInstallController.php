@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Installation\InstallerAccess;
 use App\Installation\SiteInstaller;
 use Closure;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -14,6 +15,22 @@ use Throwable;
 
 class SiteInstallController extends Controller
 {
+    public function home(InstallerAccess $access): Response|RedirectResponse
+    {
+        if (config('app.key') || ! $access->canConfigure()) {
+            return response()->view('welcome');
+        }
+
+        if ($access->isEnabled()) {
+            return redirect('/install')->header('Cache-Control', 'no-store');
+        }
+
+        return response('网站尚未安装。请在服务器运行 php artisan install:enable，然后访问 /install。', 503, [
+            'Content-Type' => 'text/plain; charset=utf-8',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
     public function show(Request $request, InstallerAccess $access): Response
     {
         abort_unless($access->isEnabled(), 404);
