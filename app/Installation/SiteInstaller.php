@@ -25,6 +25,10 @@ class SiteInstaller
 
     public function install(array $data, array $state, Closure $save): void
     {
+        if (! extension_loaded('pdo_mysql')) {
+            throw new InstallationFailed('driver');
+        }
+
         $previous = DB::getDefaultConnection();
         $database = [
             'host' => $data['db_host'],

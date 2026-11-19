@@ -151,6 +151,15 @@ class SiteInstallationTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_enable_command_reports_the_failed_storage_check(): void
+    {
+        $this->app->useStoragePath($this->sandbox.'/missing-storage');
+
+        $this->artisan('install:enable', ['--url' => 'https://example.test'])
+            ->expectsOutputToContain('storage/app/private 不存在或当前用户无法写入')
+            ->assertFailed();
+    }
+
     private function enableWizard(): string
     {
         return app(InstallerAccess::class)->enable('https://example.test');

@@ -10,6 +10,8 @@ class InstallerAccess
 {
     public const CONFIGURATION_FILE = 'app/private/site.env';
 
+    public const STATE_FILE = 'app/private/site-installer.json';
+
     public function canConfigure(): bool
     {
         if (app()->configurationIsCached()) {
@@ -115,7 +117,7 @@ class InstallerAccess
 
     private function withState(Closure $callback, bool $create = false, bool $write = true): mixed
     {
-        $path = storage_path('app/private/site-installer.json');
+        $path = storage_path(self::STATE_FILE);
         if (is_link($path)) {
             throw new RuntimeException('The installer state must not be a symbolic link.');
         }

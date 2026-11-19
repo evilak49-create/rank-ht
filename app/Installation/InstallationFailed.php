@@ -10,6 +10,7 @@ class InstallationFailed extends RuntimeException
     public function __construct(public readonly string $step, ?Throwable $previous = null)
     {
         parent::__construct(match ($step) {
+            'driver' => '处理网页请求的 PHP 未启用 pdo_mysql，请在站点使用的 PHP-FPM 版本中启用该扩展。',
             'configuration' => '应用配置生成失败。请确认 PHP-FPM 用户可以读取 .env.example，并在 storage/app/private 创建文件。',
             'database' => 'MySQL 数据库检查失败。请确认账号有权读取所选数据库的结构。',
             'state' => '安装状态保存失败。请确认 PHP-FPM 用户可写入 storage/app/private/site-installer.json。',
