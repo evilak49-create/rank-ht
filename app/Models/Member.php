@@ -30,6 +30,11 @@ class Member extends Authenticatable
         return $this->belongsToMany(Platform::class, 'platform_bindings');
     }
 
+    public function favoritePlatforms(): BelongsToMany
+    {
+        return $this->belongsToMany(Platform::class, 'platform_favorites')->withPivot('created_at');
+    }
+
     public function changeDisabledStatus(bool $disabled, ?User $operator = null): void
     {
         DB::transaction(function () use ($disabled, $operator): void {

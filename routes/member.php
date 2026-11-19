@@ -5,6 +5,7 @@ use App\Http\Controllers\MemberAuthController;
 use App\Http\Controllers\PixController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PlatformFundsController;
+use App\Http\Controllers\PlatformReviewController;
 use App\Http\Controllers\PointSettlementController;
 use App\Http\Controllers\ProtectionController;
 use App\Http\Controllers\PublicContentController;
@@ -34,8 +35,16 @@ Route::prefix('api/v1')->group(function (): void {
     Route::get('platforms', [PlatformController::class, 'index']);
     Route::get('platforms/featured', [PlatformController::class, 'featured']);
     Route::get('platforms/{platform}', [PlatformController::class, 'show'])->whereNumber('platform');
+    Route::get('platforms/{platform}/reviews', [PlatformReviewController::class, 'index'])->whereNumber('platform');
     Route::get('platforms/{platform}/protection-terms', [ProtectionController::class, 'publicTerms'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {
+        Route::get('platform-favorites', [PlatformController::class, 'favorites']);
+        Route::get('platform-favorites/{platform}', [PlatformController::class, 'favoriteStatus'])->whereNumber('platform');
+        Route::put('platform-favorites/{platform}', [PlatformController::class, 'favorite'])->whereNumber('platform');
+        Route::delete('platform-favorites/{platform}', [PlatformController::class, 'unfavorite'])->whereNumber('platform');
+        Route::post('platforms/{platform}/reviews', [PlatformReviewController::class, 'store'])
+            ->whereNumber('platform')->middleware('throttle:8,1,platform-reviews');
+        Route::get('platforms/{platform}/my-reviews', [PlatformReviewController::class, 'mine'])->whereNumber('platform');
         Route::prefix('protection')->controller(ProtectionController::class)->group(function (): void {
             Route::get('bindings', 'bindings');
             Route::get('bindings/{binding}/terms', 'bindingTerms')->whereNumber('binding');

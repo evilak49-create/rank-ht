@@ -50,4 +50,15 @@ class Platform extends Model
     {
         return $this->hasMany(PlatformBinding::class);
     }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(PlatformReview::class);
+    }
+
+    #[Scope]
+    protected function withPublicReviewCount(Builder $query): void
+    {
+        $query->withCount(['reviews as review_count' => fn (Builder $reviews) => $reviews->published()]);
+    }
 }

@@ -70,6 +70,10 @@ class PlatformResource extends Resource
                     default => $query,
                 }),
         ])->recordActions([
+            Action::make('reviews')->label('查看评价')->visible(fn (): bool => PlatformReviewResource::canViewAny())
+                ->url(fn (Platform $record): string => PlatformReviewResource::getUrl('index', [
+                    'filters' => ['platform' => ['value' => $record->id]],
+                ])),
             Action::make('edit_profile')->label('编辑资料')
                 ->authorize(fn (): bool => self::hasPermission('platforms.edit'))
                 ->schema(self::profileFields())

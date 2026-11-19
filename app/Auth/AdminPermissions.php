@@ -17,6 +17,8 @@ class AdminPermissions
         'platforms.configure-query' => '管理平台接口',
         'platforms.test-query' => '测试平台接口',
         'platforms.change-status' => '停用或启用平台',
+        'platforms.view-reviews' => '查看平台评价',
+        'platforms.moderate-reviews' => '审核平台评价',
         'shop.manage-products' => '管理商品和库存',
         'shop.view-orders' => '查看商品订单',
         'shop.ship-orders' => '登记发货',
