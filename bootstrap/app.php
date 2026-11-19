@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\SimulatedPixCallbackController;
 use App\Http\Controllers\SiteInstallController;
 use App\Installation\InstallerAccess;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
             Route::get('/', [SiteInstallController::class, 'home']);
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');
             Route::post('/install', [SiteInstallController::class, 'store'])->name('site-install.store');
+            Route::post('/api/v1/pix/simulator-callback', SimulatedPixCallbackController::class);
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

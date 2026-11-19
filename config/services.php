@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'pix' => [
+        'driver' => env('PIX_DRIVER'),
+        'simulator_callback_key' => env('PIX_SIMULATOR_CALLBACK_KEY'),
+    ],
     'platform_funds' => [
         'driver' => env('PLATFORM_FUNDS_DRIVER'),
     ],

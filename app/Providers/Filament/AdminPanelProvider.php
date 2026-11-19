@@ -8,12 +8,15 @@ use App\Filament\Resources\BusinessTimezoneResource;
 use App\Filament\Resources\HelpArticleResource;
 use App\Filament\Resources\MemberCheckinResource;
 use App\Filament\Resources\MemberResource;
+use App\Filament\Resources\PixWithdrawalResource;
 use App\Filament\Resources\PlatformFundOrderResource;
 use App\Filament\Resources\PlatformResource;
 use App\Filament\Resources\PointEntryResource;
 use App\Filament\Resources\PointQuoteResource;
 use App\Filament\Resources\PointRuleResource;
 use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\RedPacketInviteResource;
+use App\Filament\Resources\RedPacketRoundResource;
 use App\Filament\Resources\ShopOrderResource;
 use App\Filament\Resources\SiteBannerResource;
 use Filament\Http\Middleware\Authenticate;
@@ -47,6 +50,7 @@ class AdminPanelProvider extends PanelProvider
                 PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,
+                RedPacketRoundResource::class, RedPacketInviteResource::class, PixWithdrawalResource::class,
             ])
             ->middleware([
                 EncryptCookies::class,

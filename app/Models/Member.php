@@ -9,7 +9,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\DB;
 
 #[Fillable(['phone', 'password', 'phone_verified_at'])]
-#[Hidden(['password', 'session_version'])]
+#[Hidden(['password', 'session_version', 'pix_cpf', 'invite_code'])]
 class Member extends Authenticatable
 {
     protected function casts(): array
@@ -21,6 +21,7 @@ class Member extends Authenticatable
             'disabled_at' => 'datetime',
             'session_version' => 'integer',
             'points_balance' => 'integer',
+            'pix_cpf' => 'encrypted',
         ];
     }
 
@@ -44,6 +45,7 @@ class Member extends Authenticatable
 
             if ($disabled) {
                 PlatformFundTask::pauseForMember($member->id);
+                PixTask::pauseForMember($member->id);
             }
 
             if ($operator !== null) {

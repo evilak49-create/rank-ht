@@ -6,6 +6,7 @@ use App\Auth\MemberPassword;
 use App\Auth\MemberPhone;
 use App\Auth\SmsChallenges;
 use App\Models\Member;
+use App\RedPackets\InvitationRewards;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,23 +26,29 @@ class MemberAuthController extends Controller
         return response()->json(['status' => 'accepted'], 202);
     }
 
-    public function register(Request $request, SmsChallenges $sms): JsonResponse
+    public function register(Request $request, SmsChallenges $sms, InvitationRewards $invitations): JsonResponse
     {
         $data = $this->validatePhone($request, [
             'code' => 'required|digits:6',
             'password' => MemberPassword::RULE,
+            'invite_code' => ['nullable', 'string', 'regex:/\A[0-9a-fA-F]{32}\z/'],
         ]);
         MemberPassword::validateBytes($data['password']);
 
         try {
-            $member = DB::transaction(function () use ($data, $sms): Member {
+            $member = DB::transaction(function () use ($data, $sms, $invitations): Member {
                 $sms->consume($data['phone'], 'register', $data['code']);
 
-                return Member::create([
+                $member = Member::create([
                     'phone' => $data['phone'],
                     'password' => $data['password'],
                     'phone_verified_at' => now(),
                 ]);
+                if (filled($data['invite_code'] ?? null)) {
+                    $invitations->register($member, $data['invite_code']);
+                }
+
+                return $member;
             }, 3);
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['phone' => '该手机号已注册。']);

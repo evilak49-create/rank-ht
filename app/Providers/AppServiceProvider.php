@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Auth\LocalLogSmsSender;
 use App\Auth\MemberPhone;
 use App\Auth\SmsChallenges;
+use App\RedPackets\PixChannel;
+use App\RedPackets\SimulatedPixChannel;
 use App\Shop\Funds\DisabledFundChannel;
 use App\Shop\Funds\FundChannel;
 use App\Shop\Funds\SimulatedFundChannel;
@@ -21,6 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(PixChannel::class, SimulatedPixChannel::class);
         $this->app->bind(FundChannel::class, fn (): FundChannel => $this->app->environment(['local', 'testing'])
             && config('services.platform_funds.driver') === 'simulator'
             ? new SimulatedFundChannel : new DisabledFundChannel);

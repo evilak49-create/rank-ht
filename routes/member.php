@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\CheckinController;
 use App\Http\Controllers\MemberAuthController;
+use App\Http\Controllers\PixController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PlatformFundsController;
 use App\Http\Controllers\PointSettlementController;
 use App\Http\Controllers\PublicContentController;
+use App\Http\Controllers\RedPacketController;
 use App\Http\Controllers\ShopController;
 use App\Http\Middleware\VerifyMemberSession;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +29,14 @@ Route::prefix('api/v1')->group(function (): void {
     Route::get('platforms/featured', [PlatformController::class, 'featured']);
     Route::get('platforms/{platform}', [PlatformController::class, 'show'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {
+        Route::get('red-packets', [RedPacketController::class, 'index']);
+        Route::get('red-packets/invites', [RedPacketController::class, 'invites']);
+        Route::post('red-packets/open', [RedPacketController::class, 'open'])->middleware('throttle:20,1');
+        Route::get('pix-account', [PixController::class, 'account']);
+        Route::put('pix-account', [PixController::class, 'saveAccount'])->middleware('throttle:10,1');
+        Route::get('pix-withdrawals', [PixController::class, 'index']);
+        Route::get('pix-withdrawals/{order}', [PixController::class, 'show'])->whereNumber('order');
+        Route::post('pix-withdrawals', [PixController::class, 'submit'])->middleware('throttle:10,1');
         Route::get('check-in', [CheckinController::class, 'status']);
         Route::post('check-in', [CheckinController::class, 'record']);
         Route::get('platform-bindings', [PlatformController::class, 'bindings']);
