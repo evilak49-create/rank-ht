@@ -8,11 +8,21 @@ use RuntimeException;
 
 class InstallerAccess
 {
+    public const CONFIGURATION_FILE = 'app/private/site.env';
+
     public function canConfigure(): bool
     {
-        return ! app()->configurationIsCached()
-            && ! File::exists(app()->environmentFilePath())
-            && ! is_link(app()->environmentFilePath());
+        if (app()->configurationIsCached()) {
+            return false;
+        }
+
+        foreach ([app()->environmentFilePath(), storage_path(self::CONFIGURATION_FILE)] as $path) {
+            if (File::exists($path) || is_link($path)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function forVisitor(mixed $nonce): ?array
@@ -35,9 +45,9 @@ class InstallerAccess
         );
     }
 
-    public function enable(array $settings): ?string
+    public function enable(string $siteUrl): ?string
     {
-        return $this->withState(function (array $state, Closure $save) use ($settings): ?string {
+        return $this->withState(function (array $state, Closure $save) use ($siteUrl): ?string {
             if (! $this->canConfigure()) {
                 return null;
             }
@@ -47,7 +57,7 @@ class InstallerAccess
                 'activation_digest' => hash('sha256', $link),
                 'expires_at' => now()->addMinutes(30)->timestamp,
                 'csrf_secret' => bin2hex(random_bytes(32)),
-                'settings' => $settings,
+                'site_url' => $siteUrl,
                 'target' => $state['target'] ?? null,
             ]);
 
@@ -69,7 +79,7 @@ class InstallerAccess
             $state['browser_digest'] = hash('sha256', $nonce);
             $save($state);
 
-            return [$nonce, $state['settings']['app_url']];
+            return [$nonce, $state['site_url']];
         });
     }
 
@@ -100,7 +110,7 @@ class InstallerAccess
     {
         return ($state['expires_at'] ?? 0) > now()->timestamp
             && is_string($state['csrf_secret'] ?? null)
-            && is_array($state['settings'] ?? null);
+            && is_string($state['site_url'] ?? null);
     }
 
     private function withState(Closure $callback, bool $create = false, bool $write = true): mixed

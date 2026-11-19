@@ -12,7 +12,10 @@
         p { margin: 0 0 18px; }
         .description, small { color: #50636e; }
         small { display: block; margin-top: 4px; }
-        .fields { display: grid; gap: 14px; max-width: 420px; margin: 22px 0; }
+        fieldset { border: 0; border-top: 1px solid #e2eaec; margin: 0 0 20px; padding: 14px 0 0; min-width: 0; }
+        legend { font-size: 17px; font-weight: 700; padding-right: 10px; }
+        .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+        .wide { grid-column: 1 / -1; }
         label { display: block; font-weight: 600; margin-bottom: 4px; }
         input { width: 100%; border: 1px solid #aabac2; border-radius: 7px; min-height: 43px; padding: 8px 11px; font: inherit; color: inherit; }
         [aria-invalid=true] { border-color: #a52d25; }
@@ -21,7 +24,7 @@
         .notice { padding: 12px 16px; background: #fff1ed; color: #842a20; border-radius: 8px; margin-bottom: 20px; }
         button, .button { display: inline-block; background: #176950; color: #fff; border: 0; border-radius: 8px; padding: 10px 20px; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
         button:hover, .button:hover { background: #104f3d; }
-        @media (max-width: 540px) { main { margin: 18px auto; } }
+        @media (max-width: 540px) { main { margin: 18px auto; } .fields { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -32,7 +35,7 @@
         <a class="button" href="{{ route('filament.admin.auth.login', absolute: false) }}">前往运营后台</a>
     @else
         <h1>安装返利网</h1>
-        <p class="description">创建首个运营后台账号。</p>
+        <p class="description">配置网站与 MySQL 数据库，并创建首个运营后台账号。</p>
 
         @if (isset($errors['install']))
             <p class="notice" role="alert">{{ $errors['install'][0] }}</p>
@@ -42,28 +45,53 @@
 
         <form method="post" action="{{ route('site-install.store', absolute: false) }}">
             <input type="hidden" name="_token" value="{{ $csrf }}">
-            <div class="fields">
-                <div>
-                    <label for="username">账号</label>
-                    <input id="username" name="username" type="text" autocomplete="username" maxlength="64"
-                           value="{{ is_string($values['username'] ?? null) ? $values['username'] : '' }}"
-                           @if (isset($errors['username'])) aria-invalid="true" aria-describedby="username-error" @endif required>
-                    @if (isset($errors['username']))
-                        <span class="error" id="username-error">{{ $errors['username'][0] }}</span>
-                    @endif
-                </div>
-                <div>
-                    <label for="password">密码</label>
-                    <input id="password" name="password" type="password" autocomplete="new-password" minlength="6"
-                           @if (isset($errors['password'])) aria-invalid="true" aria-describedby="password-error"
-                           @else aria-describedby="password-hint" @endif required>
-                    @if (isset($errors['password']))
-                        <span class="error" id="password-error">{{ $errors['password'][0] }}</span>
-                    @else
-                        <small id="password-hint">至少 6 个字符。</small>
-                    @endif
-                </div>
-            </div>
+            @php
+                $sections = [
+                    '网站设置' => [
+                        ['app_url', '网站地址', 'url', '', 'url', true],
+                    ],
+                    'MySQL 数据库' => [
+                        ['db_host', '主机地址', 'text', '127.0.0.1', 'off', false],
+                        ['db_port', '端口', 'number', '3306', 'off', false],
+                        ['db_name', '数据库名称', 'text', '', 'off', false],
+                        ['db_user', '数据库用户名', 'text', '', 'off', false],
+                        ['db_password', '数据库密码（可留空）', 'password', '', 'new-password', true],
+                    ],
+                    '后台账号' => [
+                        ['username', '账号', 'text', '', 'username', false],
+                        ['password', '密码', 'password', '', 'new-password', false],
+                    ],
+                ];
+            @endphp
+            @foreach ($sections as $legend => $fields)
+                <fieldset>
+                    <legend>{{ $legend }}</legend>
+                    <div class="fields">
+                        @foreach ($fields as [$name, $label, $type, $default, $autocomplete, $wide])
+                            @php
+                                $error = $errors[$name][0] ?? null;
+                                $value = $values[$name] ?? $default;
+                            @endphp
+                            <div @class(['wide' => $wide])>
+                                <label for="{{ $name }}">{{ $label }}</label>
+                                <input id="{{ $name }}" name="{{ $name }}" type="{{ $type }}" autocomplete="{{ $autocomplete }}"
+                                       @if ($type !== 'password') value="{{ is_scalar($value) ? $value : '' }}" @endif
+                                       @required($name !== 'db_password')
+                                       @if ($name === 'db_port') min="1" max="65535" @endif
+                                       @if ($name === 'username') maxlength="64" @endif
+                                       @if ($name === 'password') minlength="5" @endif
+                                       @if ($error) aria-invalid="true" aria-describedby="{{ $name }}-error"
+                                       @elseif ($name === 'password') aria-describedby="password-hint" @endif>
+                                @if ($error)
+                                    <span class="error" id="{{ $name }}-error">{{ $error }}</span>
+                                @elseif ($name === 'password')
+                                    <small id="password-hint">至少 5 个字符，可使用纯数字。</small>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </fieldset>
+            @endforeach
             <button type="submit">开始安装</button>
         </form>
     @endif

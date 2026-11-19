@@ -3,60 +3,46 @@
 namespace App\Console\Commands;
 
 use App\Installation\InstallerAccess;
+use App\Installation\SiteInstaller;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Validator;
 
 class EnableSiteInstaller extends Command
 {
-    protected $signature = 'install:enable';
+    protected $signature = 'install:enable {--url= : Public website URL}';
 
     protected $description = 'Enable the website installation wizard for 30 minutes';
 
     public function handle(InstallerAccess $access): int
     {
-        if (! extension_loaded('pdo_mysql') || ! is_writable(base_path()) || ! is_writable(storage_path('app/private'))) {
-            $this->error('请启用 pdo_mysql，并确认应用配置目录和 storage/app/private 可写。');
+        if (! extension_loaded('pdo_mysql') || ! is_readable(base_path('.env.example')) || ! is_writable(storage_path('app/private'))) {
+            $this->error('请启用 pdo_mysql，并确认 .env.example 可读、storage/app/private 可写。');
 
             return self::FAILURE;
         }
 
         if (! $access->canConfigure()) {
-            $this->error('检测到现有 .env 或配置缓存，网站安装向导未开启。');
+            $this->error('检测到现有站点配置或配置缓存，网站安装向导未开启。');
 
             return self::FAILURE;
         }
 
-        $settings = [
-            'app_url' => trim((string) $this->ask('网站完整地址（例如 https://example.com）')),
-            'db_host' => trim((string) $this->ask('MySQL 主机', '127.0.0.1')),
-            'db_port' => trim((string) $this->ask('MySQL 端口', '3306')),
-            'db_name' => trim((string) $this->ask('MySQL 数据库名称')),
-            'db_user' => trim((string) $this->ask('MySQL 用户名')),
-            'db_password' => $this->secret('MySQL 密码（可留空）'),
-        ];
-        $validator = Validator::make($settings, [
-            'app_url' => ['required', 'string', 'max:255', 'url:http,https', 'regex:~\Ahttps?://[^/?#@]+/?\z~'],
-            'db_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
-            'db_port' => 'required|integer|min:1|max:65535',
-            'db_name' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9_-]+\z/'],
-            'db_user' => ['required', 'string', 'max:32', 'not_regex:/[[:cntrl:]]/'],
-            'db_password' => ['nullable', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
-        ]);
-        if ($validator->fails()) {
-            $this->error('以下安装配置无效：'.implode(', ', $validator->errors()->keys()));
+        $siteUrl = trim((string) ($this->option('url') ?? $this->ask('网站完整地址（例如 https://example.com）')));
+        if (Validator::make(['app_url' => $siteUrl], ['app_url' => SiteInstaller::URL_RULES])->fails()) {
+            $this->error('请输入有效的 HTTP 或 HTTPS 网站地址。');
 
             return self::FAILURE;
         }
 
-        $link = $access->enable($validator->validated());
+        $link = $access->enable($siteUrl);
         if ($link === null) {
-            $this->error('检测到现有 .env 或配置缓存，网站安装向导未开启。');
+            $this->error('检测到现有站点配置或配置缓存，网站安装向导未开启。');
 
             return self::FAILURE;
         }
 
-        $this->info('请在 30 分钟内用浏览器打开以下安装链接，然后输入后台账号和密码。');
-        $this->line(rtrim($settings['app_url'], '/').'/install/activate#'.$link);
+        $this->info('请在 30 分钟内用浏览器打开以下链接，填写 MySQL 配置和后台账号。');
+        $this->line(rtrim($siteUrl, '/').'/install/activate#'.$link);
 
         return self::SUCCESS;
     }

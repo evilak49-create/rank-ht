@@ -33,7 +33,7 @@ class SiteInstallController extends Controller
 
         $message = $access->canConfigure()
             ? '网站尚未安装。请在服务器运行 php artisan install:enable，并打开生成的安装链接。'
-            : '当前配置缺少 APP_KEY。请在服务器检查 .env 和配置缓存。';
+            : '当前配置缺少 APP_KEY。请检查站点配置文件和 Laravel 配置缓存。';
 
         return response($message, 503, [
             'Content-Type' => 'text/plain; charset=utf-8',
@@ -77,7 +77,7 @@ class SiteInstallController extends Controller
         $state = $access->forVisitor($nonce);
         abort_if($state === null, 404);
 
-        return $this->page(csrf: $access->csrf($state, $nonce));
+        return $this->page(['app_url' => $state['site_url']], csrf: $access->csrf($state, $nonce));
     }
 
     public function store(Request $request, InstallerAccess $access, SiteInstaller $installer): Response
@@ -86,24 +86,29 @@ class SiteInstallController extends Controller
 
         return $access->authorized($request->cookie(self::BROWSER_COOKIE), $csrf, function (array $state, Closure $save) use ($request, $installer, $csrf): Response {
             $validator = Validator::make($request->post(), [
+                'app_url' => SiteInstaller::URL_RULES,
+                'db_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
+                'db_port' => 'required|integer|min:1|max:65535',
+                'db_name' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9_-]+\z/'],
+                'db_user' => ['required', 'string', 'max:32', 'not_regex:/[[:cntrl:]]/'],
+                'db_password' => ['nullable', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
                 'username' => AdminCredentials::USERNAME_RULES,
                 'password' => AdminCredentials::passwordRules(),
             ], [
                 'required' => '请填写此项。',
+                'url' => '请输入有效的 HTTP 或 HTTPS 网站地址。',
+                'regex' => '此项格式无效。',
+                'not_regex' => '此项包含不可用字符。',
+                'integer' => '请输入整数。',
                 'username.regex' => '账号可使用英文字母、数字、点、下划线和连字符。',
-                'password.min' => '管理员密码至少 6 个字符。',
+                'password.min' => '管理员密码至少 5 个字符。',
             ]);
-            $values = $request->only(['username']);
+            $values = $request->only(['app_url', 'db_host', 'db_port', 'db_name', 'db_user', 'username']);
 
             try {
-                $installer->install($state['settings'] + $validator->validate(), $state, $save);
+                $installer->install($validator->validate(), $state, $save);
             } catch (ValidationException $exception) {
-                $errors = $exception->errors();
-                if (! isset($errors['username']) && ! isset($errors['password'])) {
-                    $errors['install'] = [reset($errors)[0]];
-                }
-
-                return $this->page($values, $errors, 422, csrf: $csrf);
+                return $this->page($values, $exception->errors(), 422, csrf: $csrf);
             } catch (Throwable $exception) {
                 $failure = $exception instanceof InstallationFailed ? $exception : new InstallationFailed('unknown', $exception);
                 $cause = $failure->getPrevious() ?? $failure;

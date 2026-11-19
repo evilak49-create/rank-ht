@@ -16,7 +16,12 @@ use Throwable;
 
 class SiteInstaller
 {
-    public function __construct(private readonly AdminAccountCreator $admins) {}
+    public const URL_RULES = ['required', 'string', 'max:255', 'url:http,https', 'regex:~\Ahttps?://[^/?#@]+/?\z~'];
+
+    public function __construct(
+        private readonly AdminAccountCreator $admins,
+        private readonly InstallerAccess $access,
+    ) {}
 
     public function install(array $data, array $state, Closure $save): void
     {
@@ -36,7 +41,8 @@ class SiteInstaller
             throw ValidationException::withMessages(['db_name' => '上次安装已开始，请连接同一个 MySQL 数据库继续。']);
         }
 
-        if (! is_writable(dirname(app()->environmentFilePath()))) {
+        $configurationPath = storage_path(InstallerAccess::CONFIGURATION_FILE);
+        if (! is_writable(dirname($configurationPath))) {
             throw new InstallationFailed('configuration');
         }
 
@@ -95,17 +101,16 @@ class SiteInstaller
             }
 
             $step = 'admin';
-            $connection->transaction(function () use ($data, $configuration, &$step): void {
+            $connection->transaction(function () use ($data, $configuration, $configurationPath, &$step): void {
                 $this->admins->create($data['username'], $data['username'], $data['password']);
 
                 $step = 'configuration';
-                $path = app()->environmentFilePath();
-                clearstatcache(true, $path);
-                if (file_exists($path) || is_link($path)) {
+                clearstatcache(true, $configurationPath);
+                if (! $this->access->canConfigure()) {
                     throw new RuntimeException('An environment configuration already exists.');
                 }
 
-                File::replace($path, $configuration, 0600);
+                File::replace($configurationPath, $configuration, 0600);
             });
 
             $step = 'state';

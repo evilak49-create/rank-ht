@@ -10,7 +10,7 @@ class AdminCredentials
 
     public static function passwordRules(): array
     {
-        return ['required', 'string', 'min:6', function (string $attribute, mixed $value, Closure $fail): void {
+        return ['required', 'string', 'min:5', function (string $attribute, mixed $value, Closure $fail): void {
             if (is_string($value) && (strlen($value) > 72 || str_contains($value, "\0"))) {
                 $fail('后台密码最多 72 字节，且不能包含空字符。');
             }
