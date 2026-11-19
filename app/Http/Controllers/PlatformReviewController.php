@@ -17,7 +17,7 @@ class PlatformReviewController extends Controller
 
         return response()->json($reviews->through(fn (PlatformReview $review): array => [
             'id' => $review->id, 'display_name' => $review->display_name, 'rating' => $review->rating,
-            'body' => $review->body, 'published_at' => $review->published_at, 'source' => 'member',
+            'body' => $review->body, 'published_at' => $review->published_at, 'source' => $review->source,
         ]));
     }
 

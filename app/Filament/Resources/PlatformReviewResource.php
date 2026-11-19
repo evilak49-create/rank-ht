@@ -24,6 +24,8 @@ class PlatformReviewResource extends Resource
 
     private const STATUSES = ['pending' => '待审核', 'approved' => '已发布', 'rejected' => '已驳回'];
 
+    private const SOURCES = ['member' => '会员投稿', 'ai' => 'AI 平台说明'];
+
     public static function canViewAny(): bool
     {
         $staff = Filament::auth()->user();
@@ -36,7 +38,8 @@ class PlatformReviewResource extends Resource
         return $table->defaultSort('id', 'desc')->columns([
             TextColumn::make('platform.name')->label('平台')->searchable(),
             TextColumn::make('member.phone')->label('提交会员')->searchable(),
-            TextColumn::make('rating')->label('星级')->formatStateUsing(fn (int $state): string => $state.' 星'),
+            TextColumn::make('source')->label('来源')->badge()->formatStateUsing(fn (string $state): string => self::SOURCES[$state]),
+            TextColumn::make('rating')->label('星级')->placeholder('—')->formatStateUsing(fn (int $state): string => $state.' 星'),
             TextColumn::make('body')->label('评价内容')->limit(80)->wrap(),
             TextColumn::make('status')->label('审核状态')->badge()->formatStateUsing(fn (string $state): string => self::STATUSES[$state]),
             TextColumn::make('review_reason')->label('驳回原因')->limit(80)->toggleable(),
@@ -46,6 +49,8 @@ class PlatformReviewResource extends Resource
         ])->filters([
             SelectFilter::make('status')->label('审核状态')->options(self::STATUSES),
             SelectFilter::make('platform')->label('平台')->relationship('platform', 'name')->searchable(),
+            SelectFilter::make('source')->label('来源')->options(self::SOURCES),
+            SelectFilter::make('batch')->label('生成批次')->relationship('batch', 'id')->searchable(),
         ])->recordActions([
             Action::make('read')->label('查看全文')->authorize(fn (): bool => self::canViewAny())
                 ->modalDescription(fn (PlatformReview $record): string => $record->body)

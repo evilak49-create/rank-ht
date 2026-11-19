@@ -70,6 +70,7 @@ class PlatformResource extends Resource
                     default => $query,
                 }),
         ])->recordActions([
+            PlatformReviewBatchResource::generateAction(),
             Action::make('reviews')->label('查看评价')->visible(fn (): bool => PlatformReviewResource::canViewAny())
                 ->url(fn (Platform $record): string => PlatformReviewResource::getUrl('index', [
                     'filters' => ['platform' => ['value' => $record->id]],

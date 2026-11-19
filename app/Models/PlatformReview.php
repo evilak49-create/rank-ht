@@ -36,4 +36,9 @@ class PlatformReview extends Model
     {
         return $this->belongsTo(User::class, 'reviewer_id');
     }
+
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(PlatformReviewBatch::class, 'platform_review_batch_id');
+    }
 }

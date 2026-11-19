@@ -17,6 +17,7 @@ use App\Filament\Resources\MemberResource;
 use App\Filament\Resources\PixWithdrawalResource;
 use App\Filament\Resources\PlatformFundOrderResource;
 use App\Filament\Resources\PlatformResource;
+use App\Filament\Resources\PlatformReviewBatchResource;
 use App\Filament\Resources\PlatformReviewResource;
 use App\Filament\Resources\PointEntryResource;
 use App\Filament\Resources\PointQuoteResource;
@@ -60,7 +61,7 @@ class AdminPanelProvider extends PanelProvider
             ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
-                MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PointEntryResource::class,
+                MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class, PointEntryResource::class,
                 PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,

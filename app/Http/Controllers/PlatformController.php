@@ -108,7 +108,8 @@ class PlatformController extends Controller
 
     private function platformData(Platform $platform): array
     {
-        return [...$platform->only(self::PUBLIC_FIELDS), 'review_count' => (int) $platform->review_count];
+        return [...$platform->only(self::PUBLIC_FIELDS), 'review_count' => (int) $platform->review_count,
+            'member_review_count' => (int) $platform->member_review_count];
     }
 
     private function bindingData(PlatformBinding $binding): array

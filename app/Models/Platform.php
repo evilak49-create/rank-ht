@@ -59,6 +59,9 @@ class Platform extends Model
     #[Scope]
     protected function withPublicReviewCount(Builder $query): void
     {
-        $query->withCount(['reviews as review_count' => fn (Builder $reviews) => $reviews->published()]);
+        $query->withCount([
+            'reviews as review_count' => fn (Builder $reviews) => $reviews->published(),
+            'reviews as member_review_count' => fn (Builder $reviews) => $reviews->published()->where('source', 'member'),
+        ]);
     }
 }
