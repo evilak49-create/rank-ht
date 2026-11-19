@@ -47,15 +47,26 @@ class EnableSiteInstaller extends Command
             return self::FAILURE;
         }
 
-        $link = $access->enable($siteUrl);
-        if ($link === null) {
+        $database = Validator::make([
+            'db_host' => trim((string) $this->ask('MySQL 主机', '127.0.0.1')),
+            'db_port' => trim((string) $this->ask('MySQL 端口', '3306')),
+            'db_name' => trim((string) $this->ask('MySQL 数据库名称')),
+            'db_user' => trim((string) $this->ask('MySQL 用户名')),
+            'db_password' => $this->secret('MySQL 密码'),
+        ], SiteInstaller::DATABASE_RULES);
+        if ($database->fails()) {
+            $this->error('请填写有效的 MySQL 连接信息。无效字段：'.implode(', ', $database->errors()->keys()));
+
+            return self::FAILURE;
+        }
+
+        if (! $access->enable($siteUrl, $database->validated())) {
             $this->error('检测到现有站点配置或配置缓存，网站安装向导未开启。');
 
             return self::FAILURE;
         }
 
-        $this->info('请在 30 分钟内用浏览器打开以下链接，填写 MySQL 配置和后台账号。');
-        $this->line(rtrim($siteUrl, '/').'/install/activate#'.$link);
+        $this->info('安装已开启 30 分钟。请打开 '.rtrim($siteUrl, '/').'/install，填写已授权的 MySQL 连接信息和后台账号。');
 
         return self::SUCCESS;
     }

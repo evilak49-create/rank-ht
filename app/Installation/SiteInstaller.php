@@ -18,6 +18,14 @@ class SiteInstaller
 {
     public const URL_RULES = ['required', 'string', 'max:255', 'url:http,https', 'regex:~\Ahttps?://[^/?#@]+/?\z~'];
 
+    public const DATABASE_RULES = [
+        'db_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
+        'db_port' => 'required|integer|min:1|max:65535',
+        'db_name' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9_-]+\z/'],
+        'db_user' => ['required', 'string', 'max:32', 'not_regex:/[[:cntrl:]]/'],
+        'db_password' => ['required', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
+    ];
+
     public function __construct(
         private readonly AdminAccountCreator $admins,
         private readonly InstallerAccess $access,

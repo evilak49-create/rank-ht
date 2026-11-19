@@ -55,7 +55,7 @@
                         ['db_port', '端口', 'number', '3306', 'off', false],
                         ['db_name', '数据库名称', 'text', '', 'off', false],
                         ['db_user', '数据库用户名', 'text', '', 'off', false],
-                        ['db_password', '数据库密码（可留空）', 'password', '', 'new-password', true],
+                        ['db_password', '数据库密码', 'password', '', 'new-password', true],
                     ],
                     '后台账号' => [
                         ['username', '账号', 'text', '', 'username', false],
@@ -76,7 +76,7 @@
                                 <label for="{{ $name }}">{{ $label }}</label>
                                 <input id="{{ $name }}" name="{{ $name }}" type="{{ $type }}" autocomplete="{{ $autocomplete }}"
                                        @if ($type !== 'password') value="{{ is_scalar($value) ? $value : '' }}" @endif
-                                       @required($name !== 'db_password')
+                                       required
                                        @if ($name === 'db_port') min="1" max="65535" @endif
                                        @if ($name === 'username') maxlength="64" @endif
                                        @if ($name === 'password') minlength="5" @endif

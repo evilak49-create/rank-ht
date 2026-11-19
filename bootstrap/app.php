@@ -16,8 +16,6 @@ $app = Application::configure(basePath: dirname(__DIR__))
         then: function (): void {
             // Installation is restricted before Laravel sessions become available.
             Route::get('/', [SiteInstallController::class, 'home']);
-            Route::get('/install/activate', [SiteInstallController::class, 'activationPage']);
-            Route::post('/install/activate', [SiteInstallController::class, 'activate'])->name('site-install.activate');
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');
             Route::post('/install', [SiteInstallController::class, 'store'])->name('site-install.store');
         },
