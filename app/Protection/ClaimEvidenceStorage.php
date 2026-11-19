@@ -3,6 +3,9 @@
 namespace App\Protection;
 
 use App\Models\ClaimEvidence;
+use App\Models\OssLocation;
+use App\Storage\OssConfiguration;
+use App\Storage\OssGateway;
 use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -21,8 +24,15 @@ class ClaimEvidenceStorage
 
     private const CLOUD = 'claim-evidence-s3';
 
+    public function __construct(private readonly OssConfiguration $configuration, private readonly OssGateway $gateway) {}
+
     public function uploadDisk(): string
     {
+        $location = $this->configuration->active('private');
+        if ($location !== null) {
+            return 'oss:'.$location->id;
+        }
+
         if (filled(config('filesystems.disks.'.self::CLOUD.'.bucket'))) {
             return self::CLOUD;
         }
@@ -40,6 +50,13 @@ class ClaimEvidenceStorage
         }
 
         try {
+            $location = $this->location($disk);
+            if ($location !== null) {
+                $this->gateway->put($location, $key, $stream, $mime);
+
+                return;
+            }
+
             $storage = Storage::disk($disk);
             if ($storage instanceof AwsS3V3Adapter) {
                 // The private bucket policy controls access, including on AWS buckets with ACLs disabled.
@@ -64,7 +81,12 @@ class ClaimEvidenceStorage
         }
 
         try {
-            if (! Storage::disk($disk)->delete($keys)) {
+            $location = $this->location($disk);
+            if ($location !== null) {
+                foreach ($keys as $key) {
+                    $this->gateway->delete($location, $key);
+                }
+            } elseif (! Storage::disk($disk)->delete($keys)) {
                 throw new RuntimeException('Unable to clean up uncommitted evidence.');
             }
         } catch (Throwable $exception) {
@@ -74,9 +96,12 @@ class ClaimEvidenceStorage
 
     public function show(ClaimEvidence $evidence): StreamedResponse
     {
-        abort_unless(in_array($evidence->disk, [self::LOCAL, self::CLOUD], true), 404);
+        $location = $this->location($evidence->disk);
+        abort_unless($location !== null || in_array($evidence->disk, [self::LOCAL, self::CLOUD], true), 404);
         try {
-            $stream = Storage::disk($evidence->disk)->readStream($evidence->object_key);
+            $stream = $location === null
+                ? Storage::disk($evidence->disk)->readStream($evidence->object_key)
+                : $this->gateway->read($location, $evidence->object_key);
         } catch (Throwable $exception) {
             Log::warning('Unable to read claim evidence.', ['evidence_id' => $evidence->id, 'error' => $exception::class]);
             abort(503, '申诉凭证暂不可读取。');
@@ -97,5 +122,10 @@ class ClaimEvidenceStorage
             'Content-Security-Policy' => "default-src 'none'; sandbox",
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    private function location(string $disk): ?OssLocation
+    {
+        return str_starts_with($disk, 'oss:') ? $this->configuration->historicalPrivate((int) substr($disk, 4)) : null;
     }
 }

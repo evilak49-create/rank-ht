@@ -70,6 +70,7 @@ class ProductResource extends Resource
             TextInput::make('name')->label('商品名称')->maxLength(120)->required(),
             Textarea::make('description')->label('说明')->maxLength(2000),
             TextInput::make('image_url')->label('图片地址')->url()->maxLength(2048),
+            PublicImageField::make('上传商品图片'),
             TextInput::make('points_price')->label('所需积分')->integer()->minValue(1)->required(),
             Toggle::make('is_active')->label('上架')->default(false),
         ];

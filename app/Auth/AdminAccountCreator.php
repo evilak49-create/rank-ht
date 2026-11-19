@@ -25,6 +25,7 @@ class AdminAccountCreator
                     'activities.manage-checkin', 'activities.view-checkin', 'system.manage-business-timezone', 'content.manage',
                     ...RedPackets::PERMISSIONS,
                     ...ProtectionClaims::PERMISSIONS,
+                    'system.manage-oss',
                 ]],
             );
             $user = new User(['username' => strtolower($username), 'name' => $name, 'password' => $password]);

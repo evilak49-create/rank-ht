@@ -11,6 +11,8 @@ use App\Models\Platform;
 use App\Models\PlatformBinding;
 use App\Models\User;
 use App\Protection\ClaimEvidenceStorage;
+use App\Storage\OssConfiguration;
+use App\Storage\OssGateway;
 use Aws\MockHandler;
 use Aws\Result;
 use Filament\Actions\Testing\TestAction;
@@ -97,7 +99,7 @@ class ProtectionClaimsTest extends TestCase
         $this->post('/api/v1/protection/claims', $payload, ['Accept' => 'application/json'])
             ->assertUnprocessable()->assertJsonValidationErrors('evidence.1');
 
-        $storage = Mockery::mock(ClaimEvidenceStorage::class)->makePartial();
+        $storage = Mockery::mock(ClaimEvidenceStorage::class, [app(OssConfiguration::class), app(OssGateway::class)])->makePartial();
         $storage->shouldReceive('put')->once()->withArgs(fn ($disk, $key, $file, $mime) => $file->getClientOriginalName() === 'first.png')->passthru();
         $storage->shouldReceive('put')->once()->withArgs(fn ($disk, $key, $file, $mime) => $file->getClientOriginalName() === 'second.png')
             ->andThrow(new RuntimeException('storage timeout'));

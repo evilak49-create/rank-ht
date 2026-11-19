@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\AdminLogin;
+use App\Filament\Pages\OssSettings;
 use App\Filament\Resources\AnnouncementResource;
 use App\Filament\Resources\BusinessTimezoneResource;
 use App\Filament\Resources\HelpArticleResource;
@@ -47,7 +48,7 @@ class AdminPanelProvider extends PanelProvider
             ->login(AdminLogin::class)
             ->authGuard('web')
             ->brandName('返利网运营后台')
-            ->pages([Dashboard::class])
+            ->pages([Dashboard::class, OssSettings::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PointEntryResource::class,
                 PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,

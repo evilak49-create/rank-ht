@@ -59,7 +59,8 @@ class SiteBannerResource extends Resource
     {
         return [
             TextInput::make('name')->label('名称')->maxLength(150)->required(),
-            TextInput::make('image_url')->label('图片地址')->url()->maxLength(2048)->required(),
+            TextInput::make('image_url')->label('图片地址')->url()->maxLength(2048)->requiredWithout('image_upload'),
+            PublicImageField::make('上传 Banner 图片'),
             TextInput::make('sort_order')->label('展示顺序')->integer()->minValue(0)->maxValue(100000)->default(0)->required(),
             Toggle::make('active')->label('启用')->default(false),
             ...SiteTargetFields::make(true),

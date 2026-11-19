@@ -6,6 +6,7 @@ use App\Auth\MemberPhone;
 use App\Models\Platform;
 use App\Models\PlatformFundTask;
 use App\Models\User;
+use App\Storage\PublicImages;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -19,7 +20,7 @@ class PlatformAdministration
         'platforms.test-query', 'platforms.change-status',
     ];
 
-    public function __construct(private readonly PlatformQueryClient $client) {}
+    public function __construct(private readonly PlatformQueryClient $client, private readonly PublicImages $images) {}
 
     public function create(array $data, User $operator): Platform
     {
@@ -143,6 +144,11 @@ class PlatformAdministration
     }
 
     private function saveProfile(Platform $platform, array $data, User $operator): Platform
+    {
+        return $this->images->apply($data, 'logo_url', fn (array $profile) => $this->persistProfile($platform, $profile, $operator));
+    }
+
+    private function persistProfile(Platform $platform, array $data, User $operator): Platform
     {
         $position = Rule::unique('platforms', 'featured_position');
         if ($platform->exists) {

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ShopOrder;
 use App\Models\User;
 use App\Points\PointWallet;
+use App\Storage\PublicImages;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -16,7 +17,7 @@ class PhysicalShop
 {
     public const PERMISSIONS = ['shop.manage-products', 'shop.view-orders', 'shop.ship-orders', 'shop.cancel-orders'];
 
-    public function __construct(private readonly PointWallet $wallet) {}
+    public function __construct(private readonly PointWallet $wallet, private readonly PublicImages $images) {}
 
     public function checkout(Member $member, array $data): ShopOrder
     {
@@ -92,6 +93,11 @@ class PhysicalShop
     public function saveProduct(?Product $product, array $data, User $operator): void
     {
         abort_unless($operator->hasPermission('shop.manage-products'), 403);
+        $this->images->apply($data, 'image_url', fn (array $fields) => $this->persistProduct($product, $fields));
+    }
+
+    private function persistProduct(?Product $product, array $data): void
+    {
         $fields = Validator::make($data, [
             'name' => 'required|string|max:120', 'description' => 'nullable|string|max:2000',
             'image_url' => 'nullable|string|max:2048|url:https', 'points_price' => 'required|integer|between:1,2147483647',

@@ -6,6 +6,7 @@ use App\Models\Platform;
 use App\Models\SiteArticle;
 use App\Models\SiteBanner;
 use App\Models\User;
+use App\Storage\PublicImages;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -17,6 +18,8 @@ class Publishing
         'home' => '首页', 'platforms' => '平台列表', 'platform' => '平台详情',
         'announcements' => '公告列表', 'help' => '帮助中心', 'help_article' => '帮助文章',
     ];
+
+    public function __construct(private readonly PublicImages $images) {}
 
     public function article(string $type, ?SiteArticle $existing, array $data, User $operator): SiteArticle
     {
@@ -57,6 +60,12 @@ class Publishing
     public function banner(?SiteBanner $existing, array $data, User $operator): SiteBanner
     {
         abort_unless($operator->hasPermission('content.manage'), 403);
+
+        return $this->images->apply($data, 'image_url', fn (array $fields) => $this->persistBanner($existing, $fields, $operator));
+    }
+
+    private function persistBanner(?SiteBanner $existing, array $data, User $operator): SiteBanner
+    {
         $fields = Validator::make($data, [
             'name' => 'required|string|max:150', 'image_url' => 'required|string|max:2048|url:https',
             'active' => 'required|boolean', 'sort_order' => 'required|integer|between:0,100000',

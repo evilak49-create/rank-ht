@@ -145,6 +145,7 @@ class PlatformResource extends Resource
             TextInput::make('name')->label('平台名称')->maxLength(120)->required(),
             TextInput::make('promotion_url')->label('推广注册链接')->url()->maxLength(2048)->required(),
             TextInput::make('logo_url')->label('Logo 图片地址')->url()->maxLength(2048),
+            PublicImageField::make('上传 Logo'),
             Textarea::make('description')->label('平台简介')->maxLength(2000),
             TextInput::make('rating')->label('评分')->numeric()->step(0.1)->minValue(1)->maxValue(5)->required(),
             TextInput::make('featured_position')->label('首页精选位置')->integer()->minValue(1)->maxValue(10)
