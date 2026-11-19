@@ -2,6 +2,7 @@
 
 namespace App\Platforms;
 
+use App\Auth\MemberVerification;
 use App\Auth\SmsChallenges;
 use App\Models\Member;
 use App\Models\Platform;
@@ -16,10 +17,12 @@ class BindPlatformAccount
         private readonly PlatformQueryClient $client,
         private readonly PlatformAdministration $platforms,
         private readonly SmsChallenges $sms,
+        private readonly MemberVerification $verification,
     ) {}
 
     public function sendCode(Member $member, Platform $platform, string $phone): void
     {
+        $this->verification->requireSms();
         abort_unless($platform->status() === 'available', 404);
         $this->ensureNotBound($member, $platform);
         $this->sms->send($phone, $this->purpose($member, $platform));
@@ -31,6 +34,7 @@ class BindPlatformAccount
         $this->ensureNotBound($member, $platform);
         $purpose = $this->purpose($member, $platform);
         if ($this->requiresVerification($member, $phone)) {
+            $this->verification->requireSms();
             $this->sms->verify($phone, $purpose, $this->requiredCode($code));
         }
 
@@ -60,6 +64,7 @@ class BindPlatformAccount
                 $this->ensureNotBound($owner, $current);
 
                 if ($this->requiresVerification($owner, $phone)) {
+                    $this->verification->requireSms();
                     $this->sms->consume($phone, $purpose, $this->requiredCode($code));
                     if ($owner->phone === $phone) {
                         $owner->forceFill(['phone_verified_at' => now()])->save();

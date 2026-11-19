@@ -91,6 +91,8 @@ Route::prefix('api/v1')->group(function (): void {
     });
 
     Route::prefix('auth')->controller(MemberAuthController::class)->group(function (): void {
+        Route::get('verification', 'verification')->middleware('throttle:30,1,member-verification-config');
+        Route::post('captcha', 'captcha')->middleware('throttle:15,1,member-image-captcha');
         Route::post('sms-code', 'sendCode')->middleware('throttle:member-sms');
         Route::post('register', 'register')->middleware('throttle:member-verification');
         Route::post('login', 'login')->middleware('throttle:member-login');

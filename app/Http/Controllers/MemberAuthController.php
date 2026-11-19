@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\ImageCaptcha;
 use App\Auth\MemberPassword;
 use App\Auth\MemberPhone;
+use App\Auth\MemberVerification;
 use App\Auth\SmsChallenges;
 use App\Models\Member;
 use App\RedPackets\InvitationRewards;
@@ -18,8 +20,31 @@ use Illuminate\Validation\ValidationException;
 
 class MemberAuthController extends Controller
 {
+    public function __construct(private readonly MemberVerification $verification) {}
+
+    public function verification(): JsonResponse
+    {
+        $sms = $this->verification->smsEnabled();
+
+        return response()->json(['data' => [
+            'mode' => $sms ? 'sms' : 'image',
+            'can_reset_password' => $sms || Auth::guard('member')->check(),
+        ]])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function captcha(Request $request, ImageCaptcha $captcha): JsonResponse
+    {
+        abort_if($this->verification->smsEnabled(), 409, '当前使用短信验证码。');
+        $data = $request->validate(['purpose' => 'required|in:register,reset_password']);
+        abort_if($data['purpose'] === 'reset_password' && ! Auth::guard('member')->check(), 409, '短信找回暂不可用，请联系人工客服。');
+
+        return response()->json(['data' => $captcha->issue($request->session()->getId(), $data['purpose'])])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     public function sendCode(Request $request, SmsChallenges $sms): JsonResponse
     {
+        $this->verification->requireSms();
         $data = $this->validatePhone($request, ['purpose' => 'required|in:register,reset_password']);
         if ($data['purpose'] === 'reset_password' && ($current = Auth::guard('member')->user()) instanceof Member) {
             $this->validateResetAccount($request, $current->refresh(), $data['phone']);
@@ -29,23 +54,30 @@ class MemberAuthController extends Controller
         return response()->json(['status' => 'accepted'], 202);
     }
 
-    public function register(Request $request, SmsChallenges $sms, InvitationRewards $invitations): JsonResponse
+    public function register(Request $request, SmsChallenges $sms, InvitationRewards $invitations, ImageCaptcha $captcha): JsonResponse
     {
+        $useSms = $this->verification->smsEnabled();
         $data = $this->validatePhone($request, [
-            'code' => 'required|digits:6',
+            ...$this->challengeRules($useSms),
             'password' => MemberPassword::RULE,
             'invite_code' => ['nullable', 'string', 'regex:/\A[0-9a-fA-F]{32}\z/'],
         ]);
         MemberPassword::validateBytes($data['password']);
+        if (! $useSms) {
+            $captcha->consume($request->session()->getId(), 'register', $data['challenge_id'], $data['code']);
+        }
 
         try {
-            $member = DB::transaction(function () use ($data, $sms, $invitations): Member {
-                $sms->consume($data['phone'], 'register', $data['code']);
+            $member = DB::transaction(function () use ($data, $sms, $invitations, $useSms): Member {
+                abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
+                if ($useSms) {
+                    $sms->consume($data['phone'], 'register', $data['code']);
+                }
 
                 $member = Member::create([
                     'phone' => $data['phone'],
                     'password' => $data['password'],
-                    'phone_verified_at' => now(),
+                    'phone_verified_at' => $useSms ? now() : null,
                 ]);
                 if (filled($data['invite_code'] ?? null)) {
                     $invitations->register($member, $data['invite_code']);
@@ -103,16 +135,25 @@ class MemberAuthController extends Controller
         return response()->noContent();
     }
 
-    public function resetPassword(Request $request, SmsChallenges $sms): Response
+    public function resetPassword(Request $request, SmsChallenges $sms, ImageCaptcha $captcha): Response
     {
+        $useSms = $this->verification->smsEnabled();
+        $current = Auth::guard('member')->user();
+        abort_if(! $useSms && ! ($current instanceof Member), 409, '短信找回暂不可用，请联系人工客服。');
         $data = $this->validatePhone($request, [
-            'code' => 'required|digits:6',
+            ...$this->challengeRules($useSms),
             'password' => MemberPassword::RULE,
+            ...($useSms ? [] : ['current_password' => 'required|string|max:72']),
         ]);
         MemberPassword::validateBytes($data['password']);
+        if (! $useSms) {
+            MemberPassword::validateBytes($data['current_password']);
+            $this->validateResetAccount($request, $current->refresh(), $data['phone']);
+            $captcha->consume($request->session()->getId(), 'reset_password', $data['challenge_id'], $data['code']);
+        }
 
-        $current = Auth::guard('member')->user();
-        DB::transaction(function () use ($request, $current, $data, $sms): void {
+        DB::transaction(function () use ($request, $current, $data, $sms, $useSms): void {
+            abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
             $query = Member::query()->lockForUpdate();
             if ($current instanceof Member) {
                 $member = $query->findOrFail($current->id);
@@ -120,7 +161,11 @@ class MemberAuthController extends Controller
             } else {
                 $member = $query->where('phone', $data['phone'])->first();
             }
-            $sms->consume($data['phone'], 'reset_password', $data['code']);
+            if ($useSms) {
+                $sms->consume($data['phone'], 'reset_password', $data['code']);
+            } elseif (! Hash::check($data['current_password'], $member->password)) {
+                throw ValidationException::withMessages(['current_password' => '当前密码错误。']);
+            }
 
             $member?->forceFill([
                 'password' => $data['password'],
@@ -129,6 +174,14 @@ class MemberAuthController extends Controller
         }, 3);
 
         return $this->logout($request);
+    }
+
+    private function challengeRules(bool $useSms): array
+    {
+        return $useSms ? ['code' => 'required|digits:6'] : [
+            'challenge_id' => 'required|uuid:4',
+            'code' => ['required', 'string', 'regex:/\A[A-Za-z2-9]{5}\z/'],
+        ];
     }
 
     private function validateResetAccount(Request $request, Member $member, string $phone): void

@@ -42,6 +42,7 @@ class AdminPermissions
         'system.manage-business-timezone' => '管理业务时区',
         'system.manage-oss' => '管理 OSS 配置',
         'system.manage-ai' => '管理 AI 渠道',
+        'system.manage-member-verification' => '管理会员验证码',
         'system.manage-admins' => '管理后台账号',
         'system.manage-roles' => '管理后台角色和授权',
         'system.view-admin-audit' => '查看后台授权审计',

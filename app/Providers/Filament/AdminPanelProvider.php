@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\AdminLogin;
 use App\Filament\Pages\AiSettings;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\MemberVerificationSettings;
 use App\Filament\Pages\OssSettings;
 use App\Filament\Pages\SupportSettings;
 use App\Filament\Resources\AdminAccessAuditResource;
@@ -70,7 +71,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('客服管理'),
                 NavigationGroup::make('系统设置'),
             ])
-            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class])
+            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class, PointEntryResource::class,
