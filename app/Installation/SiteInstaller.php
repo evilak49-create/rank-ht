@@ -133,24 +133,26 @@ class SiteInstaller
     private function environment(array $database, string $url): string
     {
         $settings = [
+            'APP_NAME' => '返利网',
             'APP_ENV' => 'production',
             'APP_DEBUG' => 'false',
             'APP_KEY' => 'base64:'.base64_encode(random_bytes(32)),
             'APP_URL' => rtrim($url, '/'),
+            'APP_LOCALE' => 'zh_CN',
             'DB_CONNECTION' => 'mysql',
             'DB_HOST' => $database['host'],
             'DB_PORT' => $database['port'],
             'DB_DATABASE' => $database['database'],
             'DB_USERNAME' => $database['username'],
             'DB_PASSWORD' => $database['password'],
+            'SESSION_DRIVER' => 'database',
             'SESSION_SECURE_COOKIE' => str_starts_with($url, 'https://') ? 'true' : 'false',
+            'CACHE_STORE' => 'database',
+            'QUEUE_CONNECTION' => 'database',
             'SMS_DRIVER' => '',
         ];
-        $lines = preg_split('/\R/', File::get(base_path('.env.example')));
-        $lines = array_filter($lines, function (string $line) use ($settings): bool {
-            return ! array_key_exists(strtok($line, '=') ?: '', $settings);
-        });
 
+        $lines = [];
         foreach ($settings as $name => $value) {
             $escaped = strtr((string) $value, ['\\' => '\\\\', '"' => '\\"', '$' => '\\$']);
             $lines[] = $name.'="'.$escaped.'"';

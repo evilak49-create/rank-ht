@@ -16,7 +16,6 @@ class SiteInstallationTest extends TestCase
 
         $this->sandbox = sys_get_temp_dir().DIRECTORY_SEPARATOR.'rebates-install-'.bin2hex(random_bytes(8));
         File::ensureDirectoryExists($this->sandbox.'/app/private');
-        File::copy(base_path('.env.example'), $this->sandbox.'/.env.example');
         $this->app->useEnvironmentPath($this->sandbox);
         $this->app->useStoragePath($this->sandbox);
         $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1']);
@@ -144,8 +143,10 @@ class SiteInstallationTest extends TestCase
         $this->assertFileDoesNotExist($this->sandbox.'/.env');
     }
 
-    public function test_enable_command_only_requires_the_site_url(): void
+    public function test_enable_command_only_requires_the_site_url_even_without_a_template(): void
     {
+        $this->app->setBasePath($this->sandbox.'/release');
+
         $this->artisan('install:enable', ['--url' => 'https://example.test'])
             ->expectsOutput('请在 30 分钟内用浏览器打开以下链接，填写 MySQL 配置和后台账号。')
             ->assertSuccessful();

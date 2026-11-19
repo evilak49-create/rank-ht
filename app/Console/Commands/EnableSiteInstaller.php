@@ -15,12 +15,10 @@ class EnableSiteInstaller extends Command
 
     public function handle(InstallerAccess $access): int
     {
-        $template = base_path('.env.example');
         $stateFile = storage_path(InstallerAccess::STATE_FILE);
         $private = dirname($stateFile);
         $checks = [
             '当前命令行 PHP 未启用 pdo_mysql：'.PHP_BINARY => extension_loaded('pdo_mysql'),
-            '.env.example 不存在或当前用户无法读取：'.$template => is_file($template) && is_readable($template),
             'storage/app/private 不存在或当前用户无法写入：'.$private => is_dir($private) && is_writable($private),
             '安装状态文件不可写或不是普通文件：'.$stateFile => ! is_link($stateFile)
                 && (! file_exists($stateFile) || (is_file($stateFile) && is_readable($stateFile) && is_writable($stateFile))),
