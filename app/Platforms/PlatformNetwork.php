@@ -5,11 +5,13 @@ namespace App\Platforms;
 enum PlatformNetwork: string
 {
     case Panda = 'panda';
+    case Wg = 'wg';
 
     public function label(): string
     {
         return match ($this) {
             self::Panda => '熊猫包网',
+            self::Wg => 'WG',
         };
     }
 
@@ -27,6 +29,7 @@ enum PlatformNetwork: string
     {
         return app(match ($this) {
             self::Panda => PlatformQueryClient::class,
+            self::Wg => WgPlatformQuery::class,
         });
     }
 }

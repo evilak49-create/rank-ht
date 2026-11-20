@@ -161,6 +161,14 @@ class PlatformResource extends Resource
     {
         return match ($network) {
             null => [],
+            PlatformNetwork::Wg => [
+                TextInput::make('endpoint')->label('WG API 域名或接口地址')->url()->maxLength(2048)->required()
+                    ->helperText('请使用 WG 提供的 API 域名。该域名需加入服务器的 WG API 允许列表。'),
+                TextInput::make('site_code')->label('品牌 ID（siteCode）')->maxLength(64)->required(),
+                TextInput::make('api_key')->label('API Key')->autocomplete('off')->maxLength(255)->required(),
+                TextInput::make('secret_key')->label('Secret Key')->autocomplete('off')->required(),
+                TextInput::make('test_phone')->label('已知推广测试账号的手机号')->inputMode('tel')->required(),
+            ],
             PlatformNetwork::Panda => [
                 TextInput::make('endpoint')->label('查询接口地址')->url()->maxLength(2048)->required()
                     ->helperText('可粘贴包含查询参数的完整地址。自定义域名须加入服务器允许列表。'),

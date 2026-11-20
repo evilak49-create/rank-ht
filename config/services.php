@@ -15,6 +15,12 @@ return [
     'platform_funds' => [
         'driver' => env('PLATFORM_FUNDS_DRIVER'),
     ],
+    'wg_platform_query' => [
+        'allowed_hosts' => array_values(array_unique(array_filter(array_map(
+            fn (string $host): string => strtolower(trim($host)),
+            explode(',', (string) env('WG_PLATFORM_QUERY_ALLOWED_HOSTS', '')),
+        )))),
+    ],
     'platform_query' => [
         'allowed_hosts' => array_values(array_unique(array_filter(array_map(
             fn (string $host): string => strtolower(trim($host)),
