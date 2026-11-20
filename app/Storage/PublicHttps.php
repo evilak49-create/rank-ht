@@ -41,8 +41,8 @@ class PublicHttps
 
         // Connect to the checked address while retaining host and TLS verification.
         $options['curl'][CURLOPT_RESOLVE] = [$host.':443:'.$address];
-        $options['curl'][CURLOPT_PROXY] = '';
-        $options['curl'][CURLOPT_FOLLOWLOCATION] = false;
+        $options['proxy'] = '';
+        $options['allow_redirects'] = false;
 
         return (new CurlHandler)($request, $options);
     }
