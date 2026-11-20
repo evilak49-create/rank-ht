@@ -32,6 +32,8 @@ class PlatformParticipationTest extends TestCase
             'query_phone' => $member->phone, 'baseline_deposit_cents' => 0, 'baseline_valid_bet_cents' => 0, 'baseline_observed_at' => now(),
         ]);
         $id = $this->postJson($path, $payload)->assertCreated()->assertJsonPath('data.status', 'pending')->json('data.id');
+        $this->assertDatabaseHas('platform_reviews', ['id' => $id, 'display_name' => '119****0001']);
+        PlatformReview::findOrFail($id)->forceFill(['display_name' => 'Membro LEGACY01'])->save();
         $this->postJson($path, $payload)->assertOk()->assertJsonPath('data.id', $id);
         $second = $this->postJson($path, [...$payload, 'request_id' => (string) Str::uuid()])->assertCreated()->json('data.id');
         $this->getJson($path)->assertOk()->assertJsonCount(0, 'data');
@@ -49,7 +51,8 @@ class PlatformParticipationTest extends TestCase
             'reason' => '内容需补充',
         ])->assertHasNoActionErrors();
         $this->getJson($path)->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.rating', 2)
-            ->assertJsonPath('data.0.source', 'member')->assertDontSee($member->phone);
+            ->assertJsonPath('data.0.source', 'member')->assertJsonPath('data.0.display_name', '119****0001')
+            ->assertJsonMissingPath('data.0.member')->assertJsonMissingPath('data.0.phone')->assertDontSee($member->phone);
         $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
             ->assertJsonPath('data.review_count', 1)->assertJsonPath('data.rating', '4.8');
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\MemberPhone;
 use App\Models\Platform;
 use App\Models\PlatformReview;
 use App\Platforms\PlatformParticipation;
@@ -13,10 +14,12 @@ class PlatformReviewController extends Controller
     public function index(int $platform): JsonResponse
     {
         $record = Platform::query()->available()->findOrFail($platform);
-        $reviews = $record->reviews()->published()->latest('published_at')->latest('id')->paginate(20);
+        $reviews = $record->reviews()->published()->with('member:id,phone')->latest('published_at')->latest('id')->paginate(20);
 
         return response()->json($reviews->through(fn (PlatformReview $review): array => [
-            'id' => $review->id, 'display_name' => $review->display_name, 'rating' => $review->rating,
+            'id' => $review->id,
+            'display_name' => $review->source === 'member' ? (MemberPhone::mask($review->member?->phone) ?? '会员') : $review->display_name,
+            'rating' => $review->rating,
             'body' => $review->body, 'published_at' => $review->published_at, 'source' => $review->source,
         ]));
     }

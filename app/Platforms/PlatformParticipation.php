@@ -2,6 +2,7 @@
 
 namespace App\Platforms;
 
+use App\Auth\MemberPhone;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
@@ -43,11 +44,10 @@ class PlatformParticipation
                 ->lockForUpdate()->first();
             abort_if($binding === null, 403, '绑定该平台后可发表评价。');
 
-            $alias = strtoupper(substr(hash_hmac('sha256', $platform.':'.$account->id, config('app.key')), 0, 8));
-
             return PlatformReview::create([
                 'platform_id' => $platform, 'member_id' => $account->id, 'request_id' => $request,
-                'display_name' => 'Membro '.$alias, 'rating' => $data['rating'], 'body' => $data['body'], 'status' => 'pending',
+                'display_name' => MemberPhone::mask($account->phone) ?? '会员',
+                'rating' => $data['rating'], 'body' => $data['body'], 'status' => 'pending',
             ]);
         }, 3);
     }
