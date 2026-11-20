@@ -21,8 +21,21 @@ class PlatformController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        return $this->listPlatforms($request);
+    }
+
+    public function bindable(Request $request): JsonResponse
+    {
+        return $this->listPlatforms($request, $request->user()->id);
+    }
+
+    private function listPlatforms(Request $request, ?int $memberId = null): JsonResponse
+    {
         $filters = $request->validate(['search' => 'nullable|string|max:120']);
         $query = Platform::query()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()->orderBy('name')->orderBy('id');
+        if ($memberId !== null) {
+            $query->whereDoesntHave('bindings', fn (Builder $bindings) => $bindings->where('member_id', $memberId));
+        }
         if (filled($filters['search'] ?? null)) {
             $query->whereLike('name', '%'.$filters['search'].'%');
         }

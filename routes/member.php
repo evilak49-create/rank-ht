@@ -43,6 +43,7 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
     Route::get('platforms/{platform}/reviews', [PlatformReviewController::class, 'index'])->whereNumber('platform');
     Route::get('platforms/{platform}/protection-terms', [ProtectionController::class, 'publicTerms'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {
+        Route::get('platforms/bindable', [PlatformController::class, 'bindable']);
         Route::get('shipping-address', [ShippingAddressController::class, 'show']);
         Route::put('shipping-address', [ShippingAddressController::class, 'save'])->middleware('throttle:20,1,shipping-address');
         Route::get('wallet', [WalletController::class, 'show']);

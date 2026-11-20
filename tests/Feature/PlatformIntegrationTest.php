@@ -6,6 +6,7 @@ use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\AdminRole;
 use App\Models\Member;
 use App\Models\Platform;
+use App\Models\PlatformBinding;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
 use Filament\Actions\Testing\TestAction;
@@ -85,6 +86,33 @@ class PlatformIntegrationTest extends TestCase
         $this->assertNull($platform->refresh()->active_query_revision);
         $this->assertSame(2, $platform->query_revision);
         $this->getJson("/api/v1/platforms/{$platform->id}")->assertNotFound();
+    }
+
+    public function test_binding_candidates_filter_only_the_current_members_platforms_before_pagination(): void
+    {
+        $url = '/api/v1/platforms/bindable';
+        $this->getJson($url)->assertUnauthorized();
+        $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        $other = Member::create(['phone' => '11912345679', 'password' => 'member-password']);
+        for ($index = 1; $index <= 21; $index++) {
+            $platform = Platform::create([
+                'name' => sprintf('Example %02d', $index), 'promotion_url' => 'https://promotion.example.test/register', 'rating' => '4.8',
+            ]);
+            $platform->forceFill(['active_query_revision' => 1])->save();
+            $owner = $index <= 20 ? $member : $other;
+            PlatformBinding::create([
+                'member_id' => $owner->id, 'platform_id' => $platform->id, 'platform_account_id' => (string) $index,
+                'query_phone' => $owner->phone, 'baseline_deposit_cents' => 0, 'baseline_valid_bet_cents' => 0,
+                'baseline_observed_at' => now(),
+            ]);
+        }
+
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson($url.'?search=Example')->assertOk()
+            ->assertJsonPath('total', 1)->assertJsonPath('data.0.name', 'Example 21');
+        $this->getJson($url.'?search=Example%2001')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/platforms')->assertOk()->assertJsonPath('total', 21);
+        $this->getJson('/api/v1/platform-bindings')->assertOk()->assertJsonPath('total', 20);
     }
 
     public function test_three_transient_query_failures_hide_the_platform_until_a_manual_retest(): void
