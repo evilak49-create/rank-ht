@@ -168,14 +168,12 @@ class PlatformIntegrationTest extends TestCase
         Livewire::test(ListPlatforms::class)
             ->callAction('create_platform', [
                 'name' => 'New Platform', 'promotion_url' => 'https://promotion.example.test/start', 'rating' => '5.0',
+                ...$this->queryConfig(),
             ])->assertHasNoActionErrors();
 
         $platform = Platform::query()->where('name', 'New Platform')->sole();
         $action = TestAction::make('configure_query')->table($platform);
-        Livewire::test(ListPlatforms::class)->mountAction($action)->assertActionDataSet([
-            'endpoint' => 'https://api5.v-n-r-1.com/api/backend/trpc/user.list',
-            'admin_host' => 'admin5-public.y-7-l-x.com', 'tenant_id' => 9818088, 'region_id' => 1,
-        ]);
+        Livewire::test(ListPlatforms::class)->mountAction($action)->assertActionDataSet($this->queryConfig());
         Livewire::test(ListPlatforms::class)->callAction($action, [
             ...$this->queryConfig(), 'endpoint' => 'https://denied.example.test/api/backend/trpc/user.list',
         ])->assertHasActionErrors(['endpoint']);

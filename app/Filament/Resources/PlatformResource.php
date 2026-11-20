@@ -13,7 +13,6 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Group;
@@ -106,34 +105,37 @@ class PlatformResource extends Resource
     public static function createPlatformAction(): Action
     {
         return Action::make('create_platform')->label('新增平台')
-            ->authorize(fn (): bool => self::hasPermission('platforms.edit'))
+            ->authorize(fn (): bool => self::hasPermission('platforms.edit') && self::hasPermission('platforms.configure-query'))
+            ->fillForm(fn (): array => ['network' => PlatformNetwork::Panda->value]
+                + PlatformNetwork::Panda->queryDriver()->formState(null))
             ->steps([
                 Step::make('选择包网')->schema([
                     Select::make('network')->label('包网')->options(PlatformNetwork::options())
                         ->default(PlatformNetwork::Panda->value)->required()->live()
-                        ->afterStateUpdated(fn (Set $set) => $set('configure_query_now', false)),
-                ]),
-                Step::make('平台资料')->schema(self::profileFields()),
-                Step::make('接口设置')->visible(fn (): bool => self::hasPermission('platforms.configure-query'))->schema([
-                    Toggle::make('configure_query_now')->label('同时保存接口草稿')->default(false)->live()
-                        ->afterStateUpdated(function (Get $get, Set $set, bool $state): void {
-                            $network = PlatformNetwork::tryFrom((string) $get('network'));
-                            if (! $state || $network === null || ! self::hasPermission('platforms.configure-query')) {
-                                return;
-                            }
-                            foreach ($network->queryDriver()->formState(null) as $field => $value) {
+                        ->afterStateUpdated(function (Set $set, mixed $state, mixed $old): void {
+                            abort_unless(self::hasPermission('platforms.configure-query'), 403);
+                            $selected = is_string($state) ? PlatformNetwork::tryFrom($state) : null;
+                            $previous = is_string($old) ? PlatformNetwork::tryFrom($old) : null;
+                            $defaults = $selected?->queryDriver()->formState(null) ?? [];
+                            $previousFields = array_keys($previous?->queryDriver()->formState(null) ?? []);
+                            foreach ($defaults + array_fill_keys($previousFields, null) as $field => $value) {
                                 $set($field, $value);
                             }
                         }),
-                    Group::make()->visible(fn (Get $get): bool => (bool) $get('configure_query_now'))
-                        ->schema(fn (Get $get): array => self::queryFields(PlatformNetwork::tryFrom((string) $get('network')))),
+                ]),
+                Step::make('平台资料')->schema(self::profileFields()),
+                Step::make('接口设置')->schema([
+                    Group::make()->schema(function (Get $get): array {
+                        $network = $get('network');
+
+                        return self::queryFields(is_string($network) ? PlatformNetwork::tryFrom($network) : null);
+                    }),
                 ]),
             ])
             ->action(function (Action $action, #[SensitiveParameter] array $data): void {
                 $profile = Arr::only($data, ['network', 'name', 'promotion_url', 'image_upload', 'description', 'rating', 'featured_position']);
-                $query = ($data['configure_query_now'] ?? false) ? $data : null;
                 ActionForm::submit($action, fn () => app(PlatformAdministration::class)->create(
-                    PublicImageField::retain($profile, 'logo_url', null), self::operator(), $query,
+                    PublicImageField::retain($profile, 'logo_url', null), self::operator(), $data,
                 ));
             });
     }

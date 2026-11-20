@@ -17,20 +17,28 @@ class PlatformNetworkTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_create_platform_defaults_to_panda_and_can_save_its_query_draft(): void
+    public function test_create_platform_defaults_to_panda_and_requires_its_query_configuration(): void
     {
-        config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);
+        config([
+            'services.platform_query.allowed_hosts' => ['partner.example.test'],
+            'services.platform_query.defaults.token' => 'panda-test-default',
+        ]);
         $operator = $this->operator(['platforms.view', 'platforms.edit', 'platforms.configure-query']);
         $this->actingAs($operator, 'web');
         $profile = ['name' => 'Network Platform', 'promotion_url' => 'https://example.test/register', 'rating' => '4.8'];
         Livewire::test(ListPlatforms::class)->mountAction('create_platform')
             ->assertActionDataSet(['network' => 'panda'])
-            ->set('mountedActions.0.data.configure_query_now', true)
-            ->assertActionDataSet(['endpoint' => config('services.platform_query.defaults.endpoint')]);
+            ->assertActionDataSet(['endpoint' => config('services.platform_query.defaults.endpoint'), 'token' => 'panda-test-default'])
+            ->assertDontSee('同时保存接口草稿')
+            ->set('mountedActions.0.data.network', 'wg')
+            ->assertActionDataSet(['endpoint' => null, 'token' => null]);
+        Livewire::test(ListPlatforms::class)->callAction('create_platform', $profile + ['token' => null])
+            ->assertHasActionErrors(['token']);
+        $this->assertDatabaseEmpty('platforms');
         Livewire::test(ListPlatforms::class)->callAction('create_platform', $profile + ['network' => 'unregistered'])
             ->assertHasActionErrors(['network']);
         $draft = $profile + [
-            'network' => 'panda', 'configure_query_now' => true,
+            'network' => 'panda',
             'endpoint' => 'https://partner.example.test/api/backend/trpc/user.list',
             'admin_host' => 'admin.example.test', 'token' => 'test-only-token', 'account' => 'fixture',
             'fingerprint' => 'test-fingerprint', 'tenant_id' => 123, 'region_id' => 1,
@@ -51,7 +59,9 @@ class PlatformNetworkTest extends TestCase
 
     public function test_profile_editor_cannot_change_a_platform_network_or_save_credentials_without_permission(): void
     {
-        $operator = $this->operator(['platforms.edit']);
+        $operator = $this->operator(['platforms.view', 'platforms.edit']);
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListPlatforms::class)->assertActionHidden('create_platform');
         $service = app(PlatformAdministration::class);
         $profile = ['name' => 'Existing Platform', 'promotion_url' => 'https://example.test/register', 'rating' => '4.8'];
         $platform = $service->create($profile, $operator);

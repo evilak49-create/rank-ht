@@ -43,7 +43,6 @@ class WgPlatformQueryTest extends TestCase
         $this->actingAs($operator, 'web');
         Livewire::test(ListPlatforms::class)->callAction('create_platform', [
             'network' => 'wg', 'name' => 'WG test', 'promotion_url' => 'https://example.test/register', 'rating' => '4.8',
-            'configure_query_now' => true,
         ] + $this->configuration())->assertHasNoActionErrors();
         $platform = Platform::query()->sole();
         $this->assertSame(self::ENDPOINT, $platform->draft_query['endpoint']);
