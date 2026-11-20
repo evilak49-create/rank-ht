@@ -3,6 +3,7 @@
 namespace App\RedPackets;
 
 use App\Models\Member;
+use App\Models\PixPayoutChannel;
 use App\Models\PixTask;
 use App\Models\PixWithdrawal;
 use App\Models\RedPacketRound;
@@ -17,6 +18,10 @@ use Illuminate\Validation\ValidationException;
 
 class PixWithdrawals
 {
+    private const MANUAL_CHANNEL = '人工 Pix 转账';
+
+    private const SIMULATOR_CHANNEL = 'Pix 模拟渠道（测试）';
+
     public function __construct(
         private readonly RedPackets $packets,
         private readonly RedPacketLedger $ledger,
@@ -36,7 +41,8 @@ class PixWithdrawals
                 return $existing;
             }
 
-            abort_if($amount === null && ! $this->channel->isAvailable(), 503, 'Pix 出款暂未开放。');
+            abort_if($amount === null && ! $this->channel->isAvailable()
+                && ! PixPayoutChannel::query()->where('enabled', true)->exists(), 503, 'Pix 出款暂未开放。');
             abort_if($owner->pix_cpf === null, 422, '请先设置 Pix CPF。');
             $round = null;
             if ($amount === null) {
@@ -61,18 +67,51 @@ class PixWithdrawals
         }, 3);
     }
 
-    public function approve(PixWithdrawal $order, User $operator): void
+    public function payoutOptions(PixWithdrawal $order): array
+    {
+        $options = [];
+        foreach (PixPayoutChannel::query()->where('enabled', true)->orderBy('id')->pluck('name', 'id') as $id => $name) {
+            $options['provider:'.$id] = $name;
+        }
+        if ($order->red_packet_round_id === null) {
+            $options['manual'] = self::MANUAL_CHANNEL;
+        }
+        if ($this->channel->isAvailable()) {
+            $options['simulator'] = self::SIMULATOR_CHANNEL;
+        }
+
+        return $options;
+    }
+
+    public function approve(PixWithdrawal $order, User $operator, ?string $selection = null): void
     {
         abort_unless($operator->hasPermission('pix.review'), 403);
-        $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member) use ($operator): void {
+        $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member) use ($operator, $selection): void {
             if ($current->status !== 'pending') {
                 return;
             }
             abort_if($member->disabled_at !== null, 409, '会员账号已禁用。');
-            $automated = $this->channel->isAvailable();
-            abort_if($round !== null && ! $automated, 503, 'Pix 出款暂未开放。');
 
-            $current->forceFill(['status' => 'processing', 'reviewer_id' => $operator->id, 'reviewed_at' => now()])->save();
+            if ($selection === null) {
+                $selection = $this->channel->isAvailable() ? 'simulator' : 'manual';
+                abort_if($selection === 'manual' && $round !== null, 503, '请选择红包的 Pix 出款渠道。');
+            }
+            $provider = null;
+            if (preg_match('/\Aprovider:([1-9][0-9]{0,18})\z/', $selection, $matches)) {
+                $provider = PixPayoutChannel::query()->where('enabled', true)->lockForUpdate()->find($matches[1]);
+            }
+            $automated = $selection === 'simulator' && $this->channel->isAvailable();
+            $channelName = match (true) {
+                $provider !== null => $provider->name,
+                $automated => self::SIMULATOR_CHANNEL,
+                $selection === 'manual' && $round === null => self::MANUAL_CHANNEL,
+                default => throw ValidationException::withMessages(['channel' => '请选择可用的出款渠道。']),
+            };
+
+            $current->forceFill([
+                'status' => 'processing', 'reviewer_id' => $operator->id, 'reviewed_at' => now(),
+                'payout_channel_id' => $provider?->id, 'payout_channel_name' => $channelName,
+            ])->save();
             if ($automated) {
                 $current->task()->create(['next_run_at' => now()]);
             }
@@ -84,7 +123,7 @@ class PixWithdrawals
     {
         abort_unless($operator->hasPermission('pix.review'), 403);
         $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($operator, $reason): void {
-            if ($current->status !== 'pending' && ! ($round === null && $task === null && $current->status === 'processing')) {
+            if ($current->status !== 'pending' && ! ($current->status === 'processing' && $current->usesManualPayout($task))) {
                 return;
             }
 
@@ -103,13 +142,13 @@ class PixWithdrawals
 
         try {
             $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($operator, $reference): void {
-                abort_unless($round === null && $task === null, 409, '该订单不适用人工出款。');
+                abort_unless($current->usesManualPayout($task), 409, '该订单不适用人工出款。');
                 if ($current->status === 'paid' && $current->manual_transfer_reference === $reference) {
                     return;
                 }
                 abort_unless($current->status === 'processing', 409, '该订单尚未审核或已结单。');
                 $current->forceFill(['manual_transfer_reference' => $reference]);
-                $this->finish($current, null, $member, null, 'paid', $reference);
+                $this->finish($current, $round, $member, null, 'paid', $reference);
                 $this->event($current, 'paid_manually', $operator);
             });
         } catch (UniqueConstraintViolationException) {

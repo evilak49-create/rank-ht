@@ -7,6 +7,7 @@ use App\Filament\Resources\RedPacketRoundResource\Pages\ListRedPacketRounds;
 use App\Jobs\DeliverPixWithdrawal;
 use App\Models\AdminRole;
 use App\Models\Member;
+use App\Models\PixPayoutChannel;
 use App\Models\PixWithdrawal;
 use App\Models\User;
 use App\RedPackets\InvitationRewards;
@@ -225,6 +226,28 @@ class RedPacketTest extends TestCase
             ->assertServiceUnavailable();
         $this->postJson('/api/v1/pix/simulator-callback')->assertNotFound();
         $this->assertDatabaseEmpty('pix_withdrawals');
+    }
+
+    public function test_selected_manual_channel_can_settle_a_red_packet_after_the_channel_is_disabled(): void
+    {
+        config(['services.pix.driver' => 'disabled']);
+        $provider = PixPayoutChannel::create(['name' => 'Pix 人工渠道', 'enabled' => true]);
+        [, $order] = $this->readyOrder();
+        $operator = $this->operator(['pix.review']);
+        $withdrawals = app(PixWithdrawals::class);
+        $withdrawals->approve($order, $operator, 'provider:'.$provider->id);
+        $provider->update(['enabled' => false]);
+        $this->assertSame('processing', $order->refresh()->status);
+        $this->assertDatabaseHas('red_packet_rounds', ['id' => $order->red_packet_round_id, 'frozen_cents' => 10000]);
+        $this->assertDatabaseEmpty('pix_tasks');
+
+        $withdrawals->confirmManualTransfer($order, $operator, 'PIX-ORDER-001');
+        $withdrawals->confirmManualTransfer($order, $operator, 'PIX-ORDER-001');
+        $this->assertSame('paid', $order->refresh()->status);
+        $this->assertSame('PIX-ORDER-001', $order->channel_reference);
+        $this->assertSame($provider->id, $order->payout_channel_id);
+        $this->assertDatabaseHas('red_packet_rounds', ['id' => $order->red_packet_round_id, 'balance_cents' => 0, 'frozen_cents' => 0]);
+        $this->assertSame(1, DB::table('pix_events')->where('pix_withdrawal_id', $order->id)->where('event', 'paid_manually')->count());
     }
 
     private function readyOrder(): array

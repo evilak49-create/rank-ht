@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\PixWithdrawalResource\Pages\ListPixWithdrawals;
 use App\Models\AdminRole;
 use App\Models\Member;
+use App\Models\PixPayoutChannel;
 use App\Models\PixWithdrawal;
 use App\Models\User;
 use App\RedPackets\PixDelivery;
@@ -76,6 +77,43 @@ class CashWithdrawalTest extends TestCase
         $this->assertSame(1000, $member->refresh()->available_balance_cents);
         $this->assertSame(0, $member->held_balance_cents);
         $this->assertDatabaseCount('cash_balance_entries', 2);
+    }
+
+    public function test_staff_can_configure_channels_and_choose_one_for_a_pending_withdrawal(): void
+    {
+        config(['services.pix.driver' => 'disabled']);
+        [$member, $operator] = $this->scenario();
+        $id = $this->postJson('/api/v1/cash-wallet/withdrawals', [
+            'request_id' => (string) Str::uuid(), 'amount_cents' => 250,
+        ])->assertCreated()->json('data.id');
+        $order = PixWithdrawal::findOrFail($id);
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListPixWithdrawals::class)->assertActionHidden('add_channel');
+        $operator->roles()->firstOrFail()->update(['permissions' => ['pix.view', 'pix.review', 'pix.manage-channels']]);
+        Livewire::test(ListPixWithdrawals::class)->callAction('add_channel', ['name' => '渠道甲'])->assertHasNoActionErrors()
+            ->callAction('add_channel', ['name' => '渠道乙'])->assertHasNoActionErrors();
+        $first = PixPayoutChannel::where('name', '渠道甲')->sole();
+        $second = PixPayoutChannel::where('name', '渠道乙')->sole();
+        Livewire::test(ListPixWithdrawals::class)->callAction('channel_availability', ['channel' => $second->id, 'enabled' => false])
+            ->assertHasNoActionErrors();
+
+        $approve = TestAction::make('approve')->table($order);
+        Livewire::test(ListPixWithdrawals::class)->callAction($approve, [])->assertHasActionErrors(['channel' => 'required']);
+        Livewire::test(ListPixWithdrawals::class)->callAction($approve, ['channel' => 'provider:'.$second->id])->assertHasActionErrors(['channel']);
+        $this->assertSame('pending', $order->refresh()->status);
+        Livewire::test(ListPixWithdrawals::class)->callAction($approve, ['channel' => 'provider:'.$first->id])->assertHasNoActionErrors();
+        $this->assertSame('processing', $order->refresh()->status);
+        $this->assertSame($first->id, $order->payout_channel_id);
+        $this->assertSame('渠道甲', $order->payout_channel_name);
+        $this->assertDatabaseEmpty('pix_tasks');
+
+        app(PixWithdrawals::class)->approve($order, $operator, 'manual');
+        $this->assertSame($first->id, $order->refresh()->payout_channel_id);
+        Livewire::test(ListPixWithdrawals::class)->callAction(TestAction::make('manual_paid')->table($order), [
+            'reference' => 'CHANNEL-TRANSFER-1',
+        ])->assertHasNoActionErrors();
+        $this->assertSame('paid', $order->refresh()->status);
+        $this->assertSame(0, $member->refresh()->held_balance_cents);
     }
 
     public function test_member_withdrawal_history_combines_both_sources_and_summarizes_statuses(): void

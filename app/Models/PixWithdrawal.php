@@ -16,7 +16,7 @@ class PixWithdrawal extends Model
     {
         return [
             'cpf_snapshot' => 'encrypted', 'amount_cents' => 'integer',
-            'reviewed_at' => 'datetime', 'paid_at' => 'datetime',
+            'reviewed_at' => 'datetime', 'paid_at' => 'datetime', 'payout_channel_id' => 'integer',
         ];
     }
 
@@ -28,5 +28,15 @@ class PixWithdrawal extends Model
     public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewer_id');
+    }
+
+    public function usesManualPayout(?PixTask $task): bool
+    {
+        return $task === null && ($this->payout_channel_id !== null || $this->red_packet_round_id === null);
     }
 }

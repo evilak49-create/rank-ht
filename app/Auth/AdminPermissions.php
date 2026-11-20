@@ -33,6 +33,7 @@ class AdminPermissions
         'red-packets.view' => '查看红包和邀请记录',
         'pix.view' => '查看 Pix 提现',
         'pix.review' => '审核 Pix 提现或查单',
+        'pix.manage-channels' => '管理 Pix 出款渠道',
         'pix.resume' => '恢复 Pix 出款',
         'protection.claims.view' => '查看申诉案件和凭证',
         'protection.terms.manage' => '发布保障条款',
