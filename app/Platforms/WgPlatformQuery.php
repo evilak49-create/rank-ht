@@ -3,9 +3,11 @@
 namespace App\Platforms;
 
 use App\Auth\MemberPhone;
+use App\Storage\PublicHttps;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
+use DomainException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -35,7 +37,7 @@ class WgPlatformQuery implements PlatformQueryDriver
             $settings['endpoint'] = rtrim($settings['endpoint'], '/').self::PATH;
         }
         if (! $this->acceptsEndpoint($settings['endpoint'])) {
-            throw ValidationException::withMessages(['endpoint' => '请输入 WG 服务器允许列表中的 HTTPS 域名或会员详情接口地址。']);
+            throw ValidationException::withMessages(['endpoint' => '请输入 WG 提供的 HTTPS 域名或完整的会员详情接口地址。']);
         }
 
         return $settings;
@@ -85,9 +87,12 @@ class WgPlatformQuery implements PlatformQueryDriver
 
         try {
             $response = Http::asJson()->acceptJson()->withoutRedirecting()->connectTimeout(3)->timeout(8)
+                ->setHandler(app(PublicHttps::class))
                 ->post($endpoint, ['apiKey' => $apiKey, 'reqTime' => $time, 'reqData' => $encrypted, 'sign' => $signature]);
         } catch (ConnectionException) {
             throw new PlatformQueryFailure('transient');
+        } catch (DomainException) {
+            throw new PlatformQueryFailure('public_endpoint');
         }
 
         if (in_array($response->status(), [401, 403], true)) {
@@ -107,11 +112,9 @@ class WgPlatformQuery implements PlatformQueryDriver
     {
         $url = parse_url($endpoint);
 
-        return ($url['scheme'] ?? null) === 'https'
-            && in_array(strtolower($url['host'] ?? ''), config('services.wg_platform_query.allowed_hosts', []), true)
-            && ($url['port'] ?? 443) === 443
+        return PublicHttps::host($endpoint) !== null
             && ($url['path'] ?? null) === self::PATH
-            && array_intersect_key($url, array_flip(['user', 'pass', 'query', 'fragment'])) === [];
+            && ! isset($url['query']) && ! isset($url['fragment']);
     }
 
     private function decryptResponse(#[SensitiveParameter] string $response, #[SensitiveParameter] string $key): array

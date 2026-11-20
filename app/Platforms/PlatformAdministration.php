@@ -196,7 +196,7 @@ class PlatformAdministration
             return;
         }
 
-        $count = $result === 'transient' ? min(3, $platform->query_failures + 1) : 3;
+        $count = in_array($result, ['transient', 'public_endpoint'], true) ? min(3, $platform->query_failures + 1) : 3;
         $platform->forceFill(['query_failures' => $count]);
         if ($count === 3) {
             $platform->forceFill([

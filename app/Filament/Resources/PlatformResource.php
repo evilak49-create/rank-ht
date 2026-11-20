@@ -168,7 +168,7 @@ class PlatformResource extends Resource
             null => [],
             PlatformNetwork::Wg => [
                 TextInput::make('endpoint')->label('WG API 域名或接口地址')->url()->maxLength(2048)->required()
-                    ->helperText('请使用 WG 提供的 API 域名。该域名需加入服务器的 WG API 允许列表。'),
+                    ->helperText('可直接填写 WG 提供的 HTTPS 域名，系统会补全会员详情接口路径。'),
                 TextInput::make('site_code')->label('品牌 ID（siteCode）')->maxLength(64)->required(),
                 TextInput::make('api_key')->label('API Key')->autocomplete('off')->maxLength(255)->required(),
                 TextInput::make('secret_key')->label('Secret Key')->autocomplete('off')->required(),

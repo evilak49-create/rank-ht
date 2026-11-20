@@ -2,10 +2,10 @@
 
 namespace App\Storage;
 
+use DomainException;
 use GuzzleHttp\Handler\CurlHandler;
 use GuzzleHttp\Promise\PromiseInterface;
 use Psr\Http\Message\RequestInterface;
-use RuntimeException;
 
 class PublicHttps
 {
@@ -26,7 +26,7 @@ class PublicHttps
     public function __invoke(RequestInterface $request, array $options): PromiseInterface
     {
         $host = self::host((string) $request->getUri());
-        $addresses = $host === null ? [] : dns_get_record($host, DNS_A | DNS_AAAA);
+        $addresses = $host === null ? [] : @dns_get_record($host, DNS_A | DNS_AAAA);
         $address = null;
         foreach ($addresses ?: [] as $record) {
             $value = $record['ip'] ?? $record['ipv6'] ?? '';
@@ -36,7 +36,7 @@ class PublicHttps
             }
         }
         if ($address === null) {
-            throw new RuntimeException('Object storage must resolve to a public HTTPS address.');
+            throw new DomainException('The endpoint must resolve to a public HTTPS address.');
         }
 
         // Connect to the checked address while retaining host and TLS verification.

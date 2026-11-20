@@ -14,6 +14,7 @@ use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -28,8 +29,27 @@ class WgPlatformQueryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['services.wg_platform_query.allowed_hosts' => ['wg.example.test']]);
         Http::preventStrayRequests();
+    }
+
+    public function test_wg_accepts_https_hostnames_without_a_configured_allowlist(): void
+    {
+        $driver = PlatformNetwork::Wg->queryDriver();
+        $settings = $driver->validateConfiguration([...$this->configuration(), 'endpoint' => 'https://yai65.cg.ink/']);
+
+        $this->assertSame(str_replace('wg.example.test', 'yai65.cg.ink', self::ENDPOINT), $settings['endpoint']);
+        $settings = $driver->validateConfiguration([...$this->configuration(), 'endpoint' => 'https://new-wg.example.test/']);
+        $this->assertSame(str_replace('wg.example.test', 'new-wg.example.test', self::ENDPOINT), $settings['endpoint']);
+        Http::assertNothingSent();
+    }
+
+    public function test_wg_rejects_a_local_address_even_without_a_domain_allowlist(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        PlatformNetwork::Wg->queryDriver()->validateConfiguration([
+            ...$this->configuration(), 'endpoint' => 'https://127.0.0.1/',
+        ]);
     }
 
     public function test_interface_test_preserves_and_queries_a_non_phone_account(): void
