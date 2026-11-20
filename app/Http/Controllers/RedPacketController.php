@@ -19,6 +19,7 @@ class RedPacketController extends Controller
         return response()->json(['data' => [
             'invite_code' => $code, 'invite_url' => '/?invite_code='.$code.'#register/invite',
             'round' => $round === null ? null : $this->round($round),
+            'page_copy' => $packets->pageCopy(),
         ]])->header('Cache-Control', 'private, no-store');
     }
 

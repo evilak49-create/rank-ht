@@ -10,6 +10,8 @@ use App\Points\PointRules;
 use App\RedPackets\RedPackets;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -59,6 +61,28 @@ class RedPacketRoundResource extends Resource
     public static function getPages(): array
     {
         return ['index' => ListRedPacketRounds::route('/')];
+    }
+
+    public static function pageCopyAction(): Action
+    {
+        return Action::make('configure_page_copy')->label('设置红包活动文案')
+            ->authorize(fn () => self::allowed('red-packets.manage'))
+            ->fillForm(fn (): array => app(RedPackets::class)->pageCopy())
+            ->schema([
+                TextInput::make('opening_title')->label('活动标题')->required()->maxLength(80),
+                Textarea::make('opening_description')->label('活动简介')->maxLength(240)->rows(2),
+                TextInput::make('open_label')->label('拆红包按钮文案')->required()->maxLength(30),
+                TextInput::make('balance_title')->label('累计红包标题')->required()->maxLength(80),
+                TextInput::make('invite_label')->label('邀请按钮文案')->required()->maxLength(30),
+                TextInput::make('rules_title')->label('活动规则标题')->required()->maxLength(80),
+                RichEditor::make('rules_html')->label('活动规则')->required()->fileAttachments(false)
+                    ->toolbarButtons([
+                        ['h2', 'h3', 'bold', 'italic', 'underline'],
+                        ['bulletList', 'orderedList', 'blockquote', 'link'],
+                        ['undo', 'redo'],
+                    ])->helperText('保存后会更新会员红包页面的文案。'),
+            ])->action(fn (array $data) => app(RedPackets::class)->savePageCopy($data, Filament::auth()->user()))
+            ->successNotificationTitle('红包活动文案已更新');
     }
 
     private static function money(int $state): string

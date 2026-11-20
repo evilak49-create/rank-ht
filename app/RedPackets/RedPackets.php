@@ -7,11 +7,26 @@ use App\Models\RedPacketRound;
 use App\Models\RedPacketRule;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
+use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
 
 class RedPackets
 {
     public const PERMISSIONS = ['red-packets.manage', 'red-packets.view', 'pix.view', 'pix.review', 'pix.resume'];
+
+    private const DEFAULT_PAGE_COPY = [
+        'opening_title' => '现金红包',
+        'opening_description' => null,
+        'open_label' => '拆开红包',
+        'balance_title' => '累计红包',
+        'invite_label' => '邀请好友',
+        'rules_title' => '活动规则',
+        'rules_html' => '<p>拆开红包后可获得本轮提现目标金额 85% 至 95% 的初始奖励。好友通过邀请链接注册后，每次按剩余差额的 50% 至 70% 发放奖励。差额低于 R$ 0,10 时，下次有效邀请可补齐。</p>'
+            .'<p>邀请链接可跨轮次使用。达到本轮目标后产生的有效邀请，将在下一轮结算。达标后可通过 Pix 提现。</p>',
+    ];
+
 
     public function __construct(private readonly InvitationRewards $invitations, private readonly RedPacketLedger $ledger) {}
 
@@ -81,10 +96,57 @@ class RedPackets
             throw ValidationException::withMessages(['threshold' => '提现门槛必须大于零。']);
         }
 
-        return DB::transaction(function () use ($cents, $operator): RedPacketRule {
-            RedPacketRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
+        return $this->version(['threshold_cents' => $cents], $operator);
+    }
 
-            return RedPacketRule::create(['threshold_cents' => $cents, 'user_id' => $operator->id]);
+    public function pageCopy(): array
+    {
+        $active = RedPacketRule::query()->latest('id')->firstOrFail();
+        $copy = array_intersect_key($active->page_copy ?? [], self::DEFAULT_PAGE_COPY) + self::DEFAULT_PAGE_COPY;
+        $copy['rules_html'] = $this->sanitizeRules($copy['rules_html']);
+
+        return $copy;
+    }
+
+    public function savePageCopy(array $input, User $operator): RedPacketRule
+    {
+        abort_unless($operator->hasPermission('red-packets.manage'), 403);
+        $copy = Validator::make($input, [
+            'opening_title' => ['required', 'string', 'max:80'],
+            'opening_description' => ['nullable', 'string', 'max:240'],
+            'open_label' => ['required', 'string', 'max:30'],
+            'balance_title' => ['required', 'string', 'max:80'],
+            'invite_label' => ['required', 'string', 'max:30'],
+            'rules_title' => ['required', 'string', 'max:80'],
+            'rules_html' => ['required', 'string', 'max:20000'],
+        ])->validate();
+        $copy['rules_html'] = $this->sanitizeRules($copy['rules_html']);
+        $plain = html_entity_decode(strip_tags($copy['rules_html']), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (! preg_match('/[^\s\x{00a0}]/u', $plain)) {
+            throw ValidationException::withMessages(['rules_html' => '请填写可显示的活动规则。']);
+        }
+
+        return $this->version(['page_copy' => $copy], $operator);
+    }
+
+    private function sanitizeRules(string $html): string
+    {
+        $config = (new HtmlSanitizerConfig)->allowElement('a', ['href', 'title'])
+            ->allowElement('ol', ['start'])->allowLinkSchemes(['https', 'http'])->allowRelativeLinks();
+        foreach (['p', 'br', 'h2', 'h3', 'strong', 'b', 'em', 'i', 'u', 'blockquote', 'ul', 'li'] as $element) {
+            $config = $config->allowElement($element);
+        }
+
+        return (new HtmlSanitizer($config))->sanitize($html);
+    }
+
+    private function version(array $changes, User $operator): RedPacketRule
+    {
+        return DB::transaction(function () use ($changes, $operator): RedPacketRule {
+            RedPacketRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
+            $active = RedPacketRule::query()->latest('id')->lockForUpdate()->firstOrFail();
+
+            return RedPacketRule::create($changes + ['user_id' => $operator->id] + $active->only(['threshold_cents', 'page_copy']));
         }, 3);
     }
 

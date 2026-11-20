@@ -184,6 +184,37 @@ class RedPacketTest extends TestCase
         $this->assertDatabaseCount('red_packet_invites', 2);
     }
 
+    public function test_activity_copy_can_be_edited_and_public_rules_keep_only_supported_markup(): void
+    {
+        $member = Member::create(['phone' => '11900000555', 'password' => 'member-password'])->refresh();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $round = app(RedPackets::class)->open($member, (string) Str::uuid());
+        $this->getJson('/api/v1/red-packets')->assertOk()
+            ->assertJsonPath('data.page_copy.opening_title', '现金红包');
+
+        $operator = $this->operator(['red-packets.manage']);
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListRedPacketRounds::class)->callAction('configure_page_copy', [
+            'opening_title' => '好友红包活动', 'opening_description' => '邀请好友累积奖励。',
+            'open_label' => '打开红包', 'balance_title' => '本轮累计', 'invite_label' => '邀请伙伴',
+            'rules_title' => '参与说明',
+            'rules_html' => '<h2>领取步骤</h2><ul><li><strong>邀请好友</strong></li></ul><iframe>去除内容</iframe>',
+        ])->assertHasNoActionErrors();
+        Livewire::test(ListRedPacketRounds::class)->callAction('configure_threshold', ['threshold' => '125.50'])->assertHasNoActionErrors();
+
+        $this->actingAs($member, 'member');
+        $response = $this->getJson('/api/v1/red-packets')->assertOk()
+            ->assertJsonPath('data.page_copy.opening_title', '好友红包活动')
+            ->assertJsonPath('data.page_copy.rules_title', '参与说明')
+            ->assertJsonPath('data.round.id', $round->id)
+            ->assertJsonPath('data.round.threshold_cents', 10000);
+        $rules = $response->json('data.page_copy.rules_html');
+        $this->assertStringContainsString('<strong>邀请好友</strong>', $rules);
+        $this->assertStringNotContainsString('<iframe', $rules);
+        $new = Member::create(['phone' => '11900000666', 'password' => 'member-password']);
+        $this->assertSame(12550, app(RedPackets::class)->open($new->refresh(), (string) Str::uuid())->threshold_cents);
+    }
+
     public function test_production_disables_the_simulator(): void
     {
         config(['services.pix.driver' => 'simulator', 'services.pix.simulator_callback_key' => str_repeat('k', 32)]);
