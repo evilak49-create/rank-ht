@@ -9,6 +9,7 @@ use App\Platforms\PlatformAdministration;
 use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -81,24 +82,26 @@ class PlatformResource extends Resource
                     default => $query,
                 }),
         ])->recordActions([
-            PlatformReviewBatchResource::generateAction(),
-            Action::make('reviews')->label('查看评价')->visible(fn (): bool => PlatformReviewResource::canViewAny())
-                ->url(fn (Platform $record): string => PlatformReviewResource::getUrl('index', [
-                    'filters' => ['platform' => ['value' => $record->id]],
-                ])),
-            Action::make('edit_profile')->label('编辑资料')
-                ->authorize(fn (): bool => self::hasPermission('platforms.edit'))
-                ->schema(self::profileFields())
-                ->fillForm(fn (Platform $record): array => $record->only([
-                    'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position',
-                ]))
-                ->action(fn (Action $action, Platform $record, array $data) => ActionForm::submit($action, fn () => app(PlatformAdministration::class)->update(
-                    $record, PublicImageField::retain($data, 'logo_url', $record->logo_url), self::operator(),
-                ))),
-            self::configureQueryAction(),
-            self::testQueryAction(),
-            self::statusAction(true),
-            self::statusAction(false),
+            ActionGroup::make([
+                PlatformReviewBatchResource::generateAction(),
+                Action::make('reviews')->label('查看评价')->visible(fn (): bool => PlatformReviewResource::canViewAny())
+                    ->url(fn (Platform $record): string => PlatformReviewResource::getUrl('index', [
+                        'filters' => ['platform' => ['value' => $record->id]],
+                    ])),
+                Action::make('edit_profile')->label('编辑资料')
+                    ->authorize(fn (): bool => self::hasPermission('platforms.edit'))
+                    ->schema(self::profileFields())
+                    ->fillForm(fn (Platform $record): array => $record->only([
+                        'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position',
+                    ]))
+                    ->action(fn (Action $action, Platform $record, array $data) => ActionForm::submit($action, fn () => app(PlatformAdministration::class)->update(
+                        $record, PublicImageField::retain($data, 'logo_url', $record->logo_url), self::operator(),
+                    ))),
+                self::configureQueryAction(),
+                self::testQueryAction(),
+                self::statusAction(true),
+                self::statusAction(false),
+            ])->label('操作')->button()->color('gray'),
         ]);
     }
 

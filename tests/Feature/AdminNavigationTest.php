@@ -3,12 +3,18 @@
 namespace Tests\Feature;
 
 use App\Auth\AdminPermissions;
+use App\Filament\Resources\MemberResource\Pages\ListMembers;
+use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\AdminRole;
+use App\Models\Member;
+use App\Models\Platform;
 use App\Models\User;
+use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class AdminNavigationTest extends TestCase
@@ -38,6 +44,23 @@ class AdminNavigationTest extends TestCase
 
         $this->assertSame(['内容与客服' => ['Banner', '公告管理', '帮助中心']], $this->groupedItems());
         $this->get('/admin/support-settings')->assertForbidden();
+    }
+
+    public function test_platform_and_member_rows_each_render_one_named_action_menu(): void
+    {
+        $this->signInWith(array_keys(AdminPermissions::LABELS));
+        Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        Platform::create(['name' => 'Menu Platform', 'promotion_url' => 'https://example.test', 'rating' => '4.8']);
+
+        foreach ([ListPlatforms::class => 'configure_query', ListMembers::class => 'reset_password'] as $page => $entry) {
+            $component = Livewire::test($page)->assertSee('操作');
+            $actions = $component->instance()->getTable()->getRecordActions();
+            $this->assertCount(1, $actions);
+            $menu = array_values($actions)[0];
+            $this->assertInstanceOf(ActionGroup::class, $menu);
+            $this->assertSame('操作', $menu->getLabel());
+            $this->assertArrayHasKey($entry, $menu->getFlatActions());
+        }
     }
 
     private function signInWith(array $permissions): void

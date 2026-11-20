@@ -8,6 +8,7 @@ use App\Models\Member;
 use App\Models\User;
 use App\Points\PointRules;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -63,11 +64,13 @@ class MemberResource extends Resource
                 SelectFilter::make('platforms')->label('绑定平台')->relationship('platforms', 'name')->searchable(),
             ])
             ->recordActions([
-                self::changePhoneAction(),
-                self::resetPasswordAction(),
-                self::adjustPointsAction(),
-                self::statusAction(true),
-                self::statusAction(false),
+                ActionGroup::make([
+                    self::changePhoneAction(),
+                    self::resetPasswordAction(),
+                    self::adjustPointsAction(),
+                    self::statusAction(true),
+                    self::statusAction(false),
+                ])->label('操作')->button()->color('gray'),
             ]);
     }
 
