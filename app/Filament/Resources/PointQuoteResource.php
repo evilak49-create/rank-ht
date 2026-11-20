@@ -18,7 +18,7 @@ class PointQuoteResource extends Resource
 
     protected static ?string $pluralModelLabel = '兑换查询记录';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分管理';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
 
     protected static ?int $navigationSort = 30;
 

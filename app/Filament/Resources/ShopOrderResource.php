@@ -21,9 +21,9 @@ class ShopOrderResource extends Resource
 
     protected static ?string $pluralModelLabel = '商品订单';
 
-    protected static string|\UnitEnum|null $navigationGroup = '商城管理';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 50;
 
     private const STATUSES = ['pending' => '待发货', 'shipped' => '已发货', 'cancelled' => '已取消'];
 

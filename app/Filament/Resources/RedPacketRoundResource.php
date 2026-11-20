@@ -21,9 +21,9 @@ class RedPacketRoundResource extends Resource
 
     protected static ?string $pluralModelLabel = '红包轮次';
 
-    protected static string|\UnitEnum|null $navigationGroup = '活动管理';
+    protected static string|\UnitEnum|null $navigationGroup = '会员与活动';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 30;
 
     public static function canViewAny(): bool
     {

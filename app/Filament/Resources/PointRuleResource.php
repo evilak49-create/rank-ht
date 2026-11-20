@@ -21,7 +21,7 @@ class PointRuleResource extends Resource
 
     protected static ?string $pluralModelLabel = '规则配置';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分管理';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
 
     protected static ?int $navigationSort = 10;
 

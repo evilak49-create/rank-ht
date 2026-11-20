@@ -28,7 +28,9 @@ class MemberResource extends Resource
 
     protected static ?string $pluralModelLabel = '会员列表';
 
-    protected static string|\UnitEnum|null $navigationGroup = '会员管理';
+    protected static string|\UnitEnum|null $navigationGroup = '会员与活动';
+
+    protected static ?int $navigationSort = 10;
 
     public static function canViewAny(): bool
     {

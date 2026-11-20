@@ -22,9 +22,9 @@ class ProductResource extends Resource
 
     protected static ?string $pluralModelLabel = '商品管理';
 
-    protected static string|\UnitEnum|null $navigationGroup = '商城管理';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 40;
 
     public static function canViewAny(): bool
     {

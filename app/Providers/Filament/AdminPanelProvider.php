@@ -61,14 +61,10 @@ class AdminPanelProvider extends PanelProvider
             ->authGuard('web')
             ->brandName('返利网运营后台')
             ->navigationGroups([
-                NavigationGroup::make('会员管理'),
-                NavigationGroup::make('平台管理'),
-                NavigationGroup::make('积分管理'),
-                NavigationGroup::make('商城管理'),
-                NavigationGroup::make('活动管理'),
-                NavigationGroup::make('保障与申诉'),
-                NavigationGroup::make('内容管理'),
-                NavigationGroup::make('客服管理'),
+                NavigationGroup::make('会员与活动'),
+                NavigationGroup::make('平台与保障'),
+                NavigationGroup::make('积分与兑换'),
+                NavigationGroup::make('内容与客服'),
                 NavigationGroup::make('系统设置'),
             ])
             ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class])

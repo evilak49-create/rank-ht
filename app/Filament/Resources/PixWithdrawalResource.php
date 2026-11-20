@@ -24,9 +24,9 @@ class PixWithdrawalResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Pix 提现审核';
 
-    protected static string|\UnitEnum|null $navigationGroup = '活动管理';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 70;
 
     private const STATUSES = [
         'pending' => '待审核', 'processing' => '出款处理中', 'unresolved' => '结果待确认',

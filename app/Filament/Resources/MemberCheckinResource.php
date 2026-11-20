@@ -22,9 +22,9 @@ class MemberCheckinResource extends Resource
 
     protected static ?string $pluralModelLabel = '签到记录';
 
-    protected static string|\UnitEnum|null $navigationGroup = '活动管理';
+    protected static string|\UnitEnum|null $navigationGroup = '会员与活动';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 20;
 
     public static function canViewAny(): bool
     {

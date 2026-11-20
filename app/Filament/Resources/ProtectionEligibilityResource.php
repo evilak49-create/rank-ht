@@ -22,9 +22,9 @@ class ProtectionEligibilityResource extends Resource
 
     protected static ?string $pluralModelLabel = '保障资格';
 
-    protected static string|\UnitEnum|null $navigationGroup = '保障与申诉';
+    protected static string|\UnitEnum|null $navigationGroup = '平台与保障';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 50;
 
     public static function canViewAny(): bool
     {

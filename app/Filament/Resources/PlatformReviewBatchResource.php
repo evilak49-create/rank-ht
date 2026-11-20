@@ -25,7 +25,7 @@ class PlatformReviewBatchResource extends Resource
 
     protected static ?string $pluralModelLabel = 'AI 平台说明批次';
 
-    protected static string|\UnitEnum|null $navigationGroup = '平台管理';
+    protected static string|\UnitEnum|null $navigationGroup = '平台与保障';
 
     protected static ?int $navigationSort = 30;
 

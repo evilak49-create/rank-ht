@@ -23,9 +23,9 @@ class PlatformFundOrderResource extends Resource
 
     protected static ?string $pluralModelLabel = '平台资金兑换';
 
-    protected static string|\UnitEnum|null $navigationGroup = '商城管理';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 60;
 
     private const STATUSES = [
         'pending' => '待审核', 'rejected' => '已驳回', 'processing' => '发放中',

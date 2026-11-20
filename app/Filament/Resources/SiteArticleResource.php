@@ -23,7 +23,7 @@ abstract class SiteArticleResource extends Resource
 {
     protected static ?string $model = SiteArticle::class;
 
-    protected static string|\UnitEnum|null $navigationGroup = '内容管理';
+    protected static string|\UnitEnum|null $navigationGroup = '内容与客服';
 
     protected static string $articleType;
 

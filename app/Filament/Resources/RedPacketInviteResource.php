@@ -18,9 +18,9 @@ class RedPacketInviteResource extends Resource
 
     protected static ?string $pluralModelLabel = '红包邀请记录';
 
-    protected static string|\UnitEnum|null $navigationGroup = '活动管理';
+    protected static string|\UnitEnum|null $navigationGroup = '会员与活动';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 40;
 
     public static function canViewAny(): bool
     {
