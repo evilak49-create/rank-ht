@@ -6,6 +6,7 @@ use App\Filament\Resources\MemberResource\Pages\ListMembers;
 use App\Members\MemberAdministration;
 use App\Models\Member;
 use App\Models\User;
+use App\Points\PointRules;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Hidden;
@@ -50,6 +51,8 @@ class MemberResource extends Resource
                 TextColumn::make('last_login_at')->label('最后登录时间')->dateTime()->sortable(),
                 TextColumn::make('platforms.name')->label('绑定平台')->badge(),
                 TextColumn::make('points_balance')->label('可用积分')->numeric()->sortable(),
+            TextColumn::make('available_balance_cents')->label('可用余额')
+                ->formatStateUsing(fn (int $state): string => 'R$ '.PointRules::display($state, 2))->sortable(),
                 TextColumn::make('disabled_at')->label('状态')
                     ->state(fn (Member $record): string => $record->disabled_at === null ? '正常' : '禁用')
                     ->badge()->color(fn (string $state): string => $state === '正常' ? 'success' : 'danger'),

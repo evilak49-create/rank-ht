@@ -20,7 +20,7 @@ class PixDelivery
             return;
         }
 
-        $claim = $this->withdrawals->withLockedOrder($order, function (PixWithdrawal $current, RedPacketRound $round, Member $member, ?PixTask $task): ?array {
+        $claim = $this->withdrawals->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task): ?array {
             if (! in_array($current->status, ['processing', 'unresolved'], true) || $task?->paused_at !== null
                 || $task?->next_run_at === null || $task->next_run_at->isFuture() || $task->lease_until?->isFuture()) {
                 return null;
@@ -54,27 +54,27 @@ class PixDelivery
             $result = new PixResult('unknown');
         }
 
-        $this->withdrawals->withLockedOrder($current, function (PixWithdrawal $order, RedPacketRound $round, Member $member, ?PixTask $task) use ($key, $result): void {
+        $this->withdrawals->withLockedOrder($current, function (PixWithdrawal $order, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($key, $result): void {
             if ($task?->lease_key === $key) {
-                $this->applyResult($order, $round, $task, $result);
+                $this->applyResult($order, $round, $member, $task, $result);
             }
         });
     }
 
     public function reconcile(PixWithdrawal $order, PixResult $result): void
     {
-        $this->withdrawals->withLockedOrder($order, function (PixWithdrawal $current, RedPacketRound $round, Member $member, ?PixTask $task) use ($result): void {
+        $this->withdrawals->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($result): void {
             if (in_array($current->status, ['processing', 'unresolved'], true) && $task?->send_started_at !== null) {
-                $this->applyResult($current, $round, $task, $result);
+                $this->applyResult($current, $round, $member, $task, $result);
             }
         });
     }
 
-    private function applyResult(PixWithdrawal $order, RedPacketRound $round, PixTask $task, PixResult $result): void
+    private function applyResult(PixWithdrawal $order, ?RedPacketRound $round, Member $member, PixTask $task, PixResult $result): void
     {
         $reference = $result->reference;
         if ($result->status === 'failed' || ($result->status === 'paid' && filled($reference) && strlen($reference) <= 190)) {
-            $this->withdrawals->finish($order, $round, $task, $result->status, $result->status === 'paid' ? $reference : null);
+            $this->withdrawals->finish($order, $round, $member, $task, $result->status, $result->status === 'paid' ? $reference : null);
             $this->withdrawals->event($order, $result->status);
 
             return;

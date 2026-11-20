@@ -103,7 +103,7 @@ class PlatformController extends Controller
     {
         $memberId = $request->user()->id;
         $confirmedQuotes = fn (Builder $quotes) => $quotes
-            ->where('member_id', $memberId)->whereNotNull('confirmed_at')->whereNotNull('point_entry_id');
+            ->where('member_id', $memberId)->whereNotNull('confirmed_at');
 
         return PlatformBinding::query()->where('member_id', $memberId)->with('platform:id,name,logo_url')
             ->withSum(['pointQuotes as redeemed_points' => $confirmedQuotes], 'estimated_points')

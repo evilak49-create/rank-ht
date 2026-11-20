@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PointQuoteResource\Pages\ListPointQuotes;
 use App\Models\PointQuote;
 use App\Models\User;
+use App\Points\PointRules;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -27,7 +28,7 @@ class PointQuoteResource extends Resource
     private const ELIGIBILITY = [
         'eligible' => '可兑换', 'paused' => '已暂停', 'stale_snapshot' => '快照过旧',
         'regressed' => '累计值回落', 'no_deposit' => '暂无待兑存款', 'insufficient_wager' => '流水未达标',
-        'insufficient_points' => '不足 1 积分', 'out_of_range' => '超出支持范围',
+        'insufficient_points' => '无可入账积分或返利', 'out_of_range' => '超出支持范围',
     ];
 
     public static function canViewAny(): bool
@@ -44,6 +45,8 @@ class PointQuoteResource extends Resource
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('platform.name')->label('平台')->searchable(),
             TextColumn::make('estimated_points')->label('预计积分')->numeric(),
+            TextColumn::make('rebate_cents')->label('返利金额')
+                ->formatStateUsing(fn (int $state): string => 'R$ '.PointRules::display($state, 2)),
             TextColumn::make('eligibility')->label('资格')->badge()->formatStateUsing(fn (string $state) => self::ELIGIBILITY[$state]),
             TextColumn::make('status')->label('状态')->badge()->state(fn (PointQuote $record) => self::STATUS[$record->status()]),
             TextColumn::make('point_rule_id')->label('规则版本'),

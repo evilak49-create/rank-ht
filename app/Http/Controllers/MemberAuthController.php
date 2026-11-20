@@ -205,6 +205,7 @@ class MemberAuthController extends Controller
             'phone' => $member->phone,
             'phone_verified_at' => $member->phone_verified_at?->toISOString(),
             'points_balance' => $member->points_balance ?? 0,
+            'available_balance_cents' => $member->available_balance_cents ?? 0,
             'last_login_at' => $member->last_login_at?->toISOString(),
         ];
     }

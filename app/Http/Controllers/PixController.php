@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PixWithdrawal;
+use App\Points\CashBalance;
 use App\RedPackets\Cpf;
 use App\RedPackets\PixWithdrawals;
 use App\RedPackets\RedPackets;
@@ -33,16 +34,45 @@ class PixController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())->latest('id')->paginate(20);
+        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNotNull('red_packet_round_id')->latest('id')->paginate(20);
 
         return response()->json($orders->through($this->data(...)))->header('Cache-Control', 'private, no-store');
     }
 
     public function show(Request $request, int $order): JsonResponse
     {
-        $withdrawal = PixWithdrawal::query()->whereBelongsTo($request->user())->findOrFail($order);
+        $withdrawal = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNotNull('red_packet_round_id')->findOrFail($order);
 
         return response()->json(['data' => $this->data($withdrawal)])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function cashBalance(Request $request): JsonResponse
+    {
+        $member = $request->user();
+
+        return response()->json(['data' => [
+            'available_balance_cents' => $member->available_balance_cents,
+            'held_balance_cents' => $member->held_balance_cents,
+            'masked_cpf' => Cpf::mask($member->pix_cpf),
+        ]]);
+    }
+
+    public function cashWithdrawals(Request $request): JsonResponse
+    {
+        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNull('red_packet_round_id')->latest('id')->paginate(20);
+
+        return response()->json($orders->through($this->data(...)));
+    }
+
+    public function withdrawCash(Request $request, PixWithdrawals $withdrawals): JsonResponse
+    {
+        $data = $request->validate([
+            'request_id' => ['required', 'uuid'],
+            'amount_cents' => ['required', 'integer', 'min:1', 'max:'.CashBalance::MAX_CENTS],
+        ]);
+        $order = $withdrawals->submit($request->user(), $data['request_id'], (int) $data['amount_cents']);
+
+        return response()->json(['data' => $this->data($order)], 201);
     }
 
     private function data(PixWithdrawal $order): array

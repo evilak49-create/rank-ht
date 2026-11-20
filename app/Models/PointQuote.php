@@ -6,13 +6,13 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['member_id', 'platform_id', 'platform_binding_id', 'point_rule_id', 'baseline_version', 'estimated_points', 'eligibility', 'snapshot', 'expires_at'])]
+#[Fillable(['member_id', 'platform_id', 'platform_binding_id', 'point_rule_id', 'baseline_version', 'estimated_points', 'rebate_cents', 'eligibility', 'snapshot', 'expires_at'])]
 class PointQuote extends Model
 {
     protected function casts(): array
     {
         return [
-            'baseline_version' => 'integer', 'estimated_points' => 'integer', 'snapshot' => 'array',
+            'baseline_version' => 'integer', 'estimated_points' => 'integer', 'rebate_cents' => 'integer', 'snapshot' => 'array',
             'expires_at' => 'datetime', 'confirmed_at' => 'datetime',
         ];
     }

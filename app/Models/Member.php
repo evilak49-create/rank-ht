@@ -21,6 +21,8 @@ class Member extends Authenticatable
             'disabled_at' => 'datetime',
             'session_version' => 'integer',
             'points_balance' => 'integer',
+            'available_balance_cents' => 'integer',
+            'held_balance_cents' => 'integer',
             'pix_cpf' => 'encrypted',
         ];
     }

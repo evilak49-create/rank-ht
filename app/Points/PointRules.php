@@ -32,12 +32,41 @@ class PointRules
             throw ValidationException::withMessages([$ratio === 0 ? 'points_per_brl' : 'wager_multiplier' => '请输入大于零的数值。']);
         }
 
-        return DB::transaction(function () use ($operator, $ratio, $wager): PointRule {
-            PointRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
+        return $this->version([
+            'points_per_brl_micros' => $ratio, 'wager_multiplier_micros' => $wager,
+        ], $operator);
+    }
 
-            return PointRule::create([
-                'points_per_brl_micros' => $ratio, 'wager_multiplier_micros' => $wager, 'user_id' => $operator->id,
-            ]);
+    public function saveRebate(array $data, User $operator): PointRule
+    {
+        abort_unless($operator->hasPermission('points.manage-rules'), 403);
+        $fields = Validator::make($data, [
+            'rebate_percent' => ['required', 'regex:/\A[0-9]{1,3}(?:\.[0-9]{1,6})?\z/'],
+            'rebate_wager_multiplier' => ['required', 'regex:/\A[0-9]{1,5}(?:\.[0-9]{1,6})?\z/'],
+        ])->validate();
+        $percent = $this->toUnits($fields['rebate_percent']);
+        $wager = $this->toUnits($fields['rebate_wager_multiplier']);
+        if ($percent > 100 * self::SCALE) {
+            throw ValidationException::withMessages(['rebate_percent' => '返利比例须在 0% 至 100% 之间。']);
+        }
+        if ($wager === 0) {
+            throw ValidationException::withMessages(['rebate_wager_multiplier' => '投注倍数必须大于零。']);
+        }
+
+        return $this->version([
+            'rebate_percent_micros' => $percent, 'rebate_wager_multiplier_micros' => $wager,
+        ], $operator);
+    }
+
+    private function version(array $changes, User $operator): PointRule
+    {
+        return DB::transaction(function () use ($changes, $operator): PointRule {
+            PointRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
+            $active = PointRule::query()->latest('id')->lockForUpdate()->firstOrFail();
+
+            return PointRule::create($changes + ['user_id' => $operator->id] + $active->only([
+                'points_per_brl_micros', 'wager_multiplier_micros', 'rebate_percent_micros', 'rebate_wager_multiplier_micros',
+            ]));
         }, 3);
     }
 

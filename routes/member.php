@@ -73,6 +73,9 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
         Route::get('pix-withdrawals', [PixController::class, 'index']);
         Route::get('pix-withdrawals/{order}', [PixController::class, 'show'])->whereNumber('order');
         Route::post('pix-withdrawals', [PixController::class, 'submit'])->middleware('throttle:10,1');
+        Route::get('cash-wallet', [PixController::class, 'cashBalance']);
+        Route::get('cash-wallet/withdrawals', [PixController::class, 'cashWithdrawals']);
+        Route::post('cash-wallet/withdrawals', [PixController::class, 'withdrawCash'])->middleware('throttle:6,1');
         Route::get('check-in', [CheckinController::class, 'status']);
         Route::post('check-in', [CheckinController::class, 'record']);
         Route::get('platform-bindings', [PlatformController::class, 'bindings']);

@@ -18,7 +18,7 @@ class PlatformBinding extends Model
         return [
             'baseline_observed_at' => 'datetime', 'baseline_deposit_cents' => 'integer',
             'baseline_valid_bet_cents' => 'integer', 'baseline_version' => 'integer',
-            'point_remainder' => 'integer', 'settlement_paused_at' => 'datetime',
+            'point_remainder' => 'integer', 'rebate_remainder' => 'integer', 'settlement_paused_at' => 'datetime',
         ];
     }
 

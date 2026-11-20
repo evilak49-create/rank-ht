@@ -11,6 +11,7 @@ use App\RedPackets\PixWithdrawals;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -39,6 +40,7 @@ class PixWithdrawalResource extends Resource
         'send_started' => '领取出款任务', 'lookup_started' => '开始查单', 'paid' => '确认到账',
         'failed' => '确认失败并解冻', 'result_unknown' => '渠道结果待确认', 'needs_review' => '转人工核对',
         'cpf_viewed' => '查看完整 CPF',
+        'manual_approved' => '审核通过，待人工出款', 'paid_manually' => '已登记人工出款',
     ];
 
     public static function canViewAny(): bool
@@ -56,12 +58,15 @@ class PixWithdrawalResource extends Resource
         return $table->defaultSort('id', 'desc')->columns([
             TextColumn::make('order_number')->label('订单号')->searchable(),
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
+            TextColumn::make('funding_source')->label('提现来源')
+                ->state(fn (PixWithdrawal $record): string => $record->red_packet_round_id === null ? '可用余额' : '红包'),
             TextColumn::make('masked_cpf')->label('申请时 CPF')->state(fn (PixWithdrawal $record): ?string => Cpf::mask($record->cpf_snapshot)),
             TextColumn::make('amount_cents')->label('提现金额')->formatStateUsing(fn (int $state) => 'R$ '.PointRules::display($state, 2)),
             TextColumn::make('status')->label('状态')->badge()->formatStateUsing(fn (string $state) => self::STATUSES[$state]),
             TextColumn::make('hold')->label('处理提示')->state(fn (PixWithdrawal $record): ?string => match (true) {
                 $record->task?->needs_review_at !== null && $record->status === 'unresolved' => '待人工核对',
                 $record->task?->paused_at !== null => '已暂停出款',
+                self::awaitingManualTransfer($record) => '待人工出款',
                 $record->status === 'pending' && $record->member->disabled_at !== null => '会员禁用，暂停审核',
                 default => null,
             }),
@@ -75,9 +80,17 @@ class PixWithdrawalResource extends Resource
                     ->authorize(fn () => self::allowed('pix.review'))->visible(self::mayReview(...))
                     ->action(fn (PixWithdrawal $record) => app(PixWithdrawals::class)->approve($record, self::operator())),
                 Action::make('reject')->label('驳回并解冻')->color('danger')
-                    ->authorize(fn () => self::allowed('pix.review'))->visible(self::mayReview(...))
+                    ->authorize(fn () => self::allowed('pix.review'))
+                    ->visible(fn (PixWithdrawal $record): bool => self::mayReview($record) || self::awaitingManualTransfer($record))
                     ->schema([Textarea::make('reason')->label('驳回原因')->maxLength(300)->required()])
                     ->action(fn (PixWithdrawal $record, array $data) => app(PixWithdrawals::class)->reject($record, self::operator(), $data['reason'])),
+                Action::make('manual_paid')->label('登记人工出款')->authorize(fn () => self::allowed('pix.review'))
+                    ->visible(self::awaitingManualTransfer(...))
+                    ->modalDescription('完成 Pix 转账后，填写实际转账流水号。')
+                    ->schema([
+                        TextInput::make('reference')->label('Pix 转账流水号')->maxLength(190)->required()
+                            ->rule('regex:/\A[A-Za-z0-9._-]+\z/'),
+                    ])->action(fn (PixWithdrawal $record, array $data) => app(PixWithdrawals::class)->confirmManualTransfer($record, self::operator(), $data['reference'])),
                 Action::make('resume')->label('恢复出款')->requiresConfirmation()
                     ->authorize(fn () => self::allowed('pix.resume'))
                     ->visible(fn (PixWithdrawal $record): bool => $record->status === 'processing'
@@ -117,6 +130,11 @@ class PixWithdrawalResource extends Resource
     private static function mayReview(PixWithdrawal $record): bool
     {
         return $record->status === 'pending' && $record->member->disabled_at === null;
+    }
+
+    private static function awaitingManualTransfer(PixWithdrawal $record): bool
+    {
+        return $record->red_packet_round_id === null && $record->status === 'processing' && $record->task === null;
     }
 
     private static function allowed(string $permission): bool

@@ -16,6 +16,6 @@ class ListPointRules extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [PointRuleResource::updateAction(), PointRuleResource::updateFundRateAction()];
+        return [PointRuleResource::updateAction(), PointRuleResource::updateRebateAction(), PointRuleResource::updateFundRateAction()];
     }
 }

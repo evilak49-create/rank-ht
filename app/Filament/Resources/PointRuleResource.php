@@ -38,6 +38,8 @@ class PointRuleResource extends Resource
             TextColumn::make('id')->label('版本'),
             TextColumn::make('points_per_brl_micros')->label('每 R$1 对应积分')->formatStateUsing(fn (int $state) => PointRules::display($state)),
             TextColumn::make('wager_multiplier_micros')->label('流水倍数')->formatStateUsing(fn (int $state) => PointRules::display($state)),
+            TextColumn::make('rebate_percent_micros')->label('返利比例')->formatStateUsing(fn (int $state) => PointRules::display($state).'%'),
+            TextColumn::make('rebate_wager_multiplier_micros')->label('返利投注倍数')->formatStateUsing(fn (int $state) => PointRules::display($state))->placeholder('未设置'),
             TextColumn::make('operator.username')->label('操作账号')->placeholder('初始化'),
             TextColumn::make('created_at')->label('生效时间')->dateTime(),
         ]);
@@ -67,6 +69,30 @@ class PointRuleResource extends Resource
     public static function getPages(): array
     {
         return ['index' => ListPointRules::route('/')];
+    }
+
+    public static function updateRebateAction(): Action
+    {
+        return Action::make('update_rebate_rule')->label('设置返利规则')
+            ->authorize(fn (): bool => self::canViewAny())
+            ->schema([
+                TextInput::make('rebate_percent')->label('返利比例（%）')->inputMode('decimal')->required()
+                    ->rules(['numeric', 'min:0', 'max:100', 'regex:/\A[0-9]{1,3}(?:\.[0-9]{1,6})?\z/'])->helperText('填 0 时关闭返利。'),
+                TextInput::make('rebate_wager_multiplier')->label('返利投注倍数')->inputMode('decimal')->required()
+                    ->rules(['numeric', 'min:0.000001', 'regex:/\A[0-9]{1,5}(?:\.[0-9]{1,6})?\z/']),
+            ])->fillForm(function (): array {
+                $active = PointRule::query()->latest('id')->firstOrFail();
+
+                return [
+                    'rebate_percent' => PointRules::display($active->rebate_percent_micros),
+                    'rebate_wager_multiplier' => PointRules::display($active->rebate_wager_multiplier_micros ?? $active->wager_multiplier_micros),
+                ];
+            })->successNotificationTitle('返利规则已更新')
+            ->action(function (array $data): void {
+                $operator = Filament::auth()->user();
+                abort_unless($operator instanceof User, 403);
+                app(PointRules::class)->saveRebate($data, $operator);
+            });
     }
 
     public static function updateFundRateAction(): Action
