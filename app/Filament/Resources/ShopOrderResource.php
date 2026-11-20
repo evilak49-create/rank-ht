@@ -76,10 +76,13 @@ class ShopOrderResource extends Resource
                     ]),
                 Action::make('ship')->label('登记发货')->authorize(fn (): bool => self::allowed('shop.ship-orders'))
                     ->visible(fn (ShopOrder $record): bool => $record->status === 'pending')
-                    ->schema([
-                        TextInput::make('carrier')->label('承运商')->maxLength(120)->required(),
-                        TextInput::make('tracking_number')->label('物流单号')->maxLength(120)->required(),
-                    ])->action(fn (ShopOrder $record, array $data) => app(PhysicalShop::class)->ship($record, $data, self::operator())),
+                    ->schema(self::shippingFields())
+                    ->action(fn (ShopOrder $record, array $data) => app(PhysicalShop::class)->ship($record, $data, self::operator())),
+                Action::make('edit_tracking')->label('更正物流信息')->authorize(fn (): bool => self::allowed('shop.ship-orders'))
+                    ->visible(fn (ShopOrder $record): bool => $record->status === 'shipped')
+                    ->fillForm(fn (ShopOrder $record): array => $record->only(['carrier', 'tracking_number']))
+                    ->schema(self::shippingFields())
+                    ->action(fn (ShopOrder $record, array $data) => app(PhysicalShop::class)->correctTracking($record, $data, self::operator())),
                 Action::make('cancel_order')->label('取消订单')->color('danger')
                     ->authorize(fn (): bool => self::allowed('shop.cancel-orders'))
                     ->visible(fn (ShopOrder $record): bool => $record->status === 'pending')
@@ -91,6 +94,14 @@ class ShopOrderResource extends Resource
     public static function getPages(): array
     {
         return ['index' => ListShopOrders::route('/')];
+    }
+
+    private static function shippingFields(): array
+    {
+        return [
+            TextInput::make('carrier')->label('承运商')->maxLength(120)->required(),
+            TextInput::make('tracking_number')->label('物流单号')->maxLength(120)->required(),
+        ];
     }
 
     private static function allowed(string $permission): bool

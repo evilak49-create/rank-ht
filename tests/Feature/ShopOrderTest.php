@@ -61,11 +61,42 @@ class ShopOrderTest extends TestCase
         foreach ($request['address'] as $field => $value) {
             $details->assertSchemaComponentStateSet('address.'.$field, $value);
         }
+        Livewire::test(ListShopOrders::class)
+            ->assertActionHidden(TestAction::make('edit_tracking')->table($nextOrder))
+            ->assertActionHidden(TestAction::make('edit_tracking')->table($order));
         Livewire::test(ListShopOrders::class)->callAction(TestAction::make('ship')->table($nextOrder), [
             'carrier' => 'Test Carrier', 'tracking_number' => 'TRACK-123',
         ])->assertHasNoActionErrors();
 
         $this->actingAs($member, 'member')->getJson("/api/v1/shop/orders/$next")
             ->assertOk()->assertJsonPath('data.status', 'shipped')->assertJsonPath('data.tracking_number', 'TRACK-123');
+
+        $shippedOrder = $nextOrder->refresh();
+        $shippedAt = $shippedOrder->shipped_at;
+        $this->travel(1)->hour();
+
+        $viewer = User::factory()->create(['panel_enabled' => true]);
+        $viewer->roles()->attach(AdminRole::create(['name' => 'shop-viewer', 'permissions' => ['shop.view-orders']]));
+        $this->actingAs($viewer, 'web');
+        Livewire::test(ListShopOrders::class)
+            ->assertActionHidden(TestAction::make('edit_tracking')->table($shippedOrder));
+
+        $editor = User::factory()->create(['panel_enabled' => true]);
+        $editor->roles()->attach(AdminRole::create(['name' => 'shipping', 'permissions' => ['shop.view-orders', 'shop.ship-orders']]));
+        $this->actingAs($editor, 'web');
+        Livewire::test(ListShopOrders::class)
+            ->mountAction(TestAction::make('edit_tracking')->table($shippedOrder))
+            ->assertActionDataSet(['carrier' => 'Test Carrier', 'tracking_number' => 'TRACK-123'])
+            ->setActionData(['carrier' => 'Correios', 'tracking_number' => 'TRACK-456'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertEquals($shippedAt, $shippedOrder->refresh()->shipped_at);
+        $this->assertSame($operator->id, $shippedOrder->user_id);
+        $this->assertSame(0, $product->refresh()->stock);
+        $this->assertSame(8, $member->refresh()->points_balance);
+        $this->actingAs($member, 'member')->getJson("/api/v1/shop/orders/$next")->assertOk()
+            ->assertJsonPath('data.status', 'shipped')->assertJsonPath('data.carrier', 'Correios')
+            ->assertJsonPath('data.tracking_number', 'TRACK-456');
     }
 }

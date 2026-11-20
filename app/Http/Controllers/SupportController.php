@@ -21,9 +21,13 @@ class SupportController extends Controller
         $data = $request->validate([
             'question' => ['required', 'string', 'max:500'],
             'language' => ['nullable', 'in:pt-BR,zh-CN'],
+            'history' => ['sometimes', 'array', 'list', 'max:6'],
+            'history.*' => ['required', 'array:question,answer'],
+            'history.*.question' => ['required', 'string', 'max:500'],
+            'history.*.answer' => ['required', 'string', 'max:1400'],
         ]);
 
-        return response()->json(['data' => $support->ask($data['question'], $data['language'] ?? 'pt-BR')])
+        return response()->json(['data' => $support->ask($data['question'], $data['language'] ?? 'pt-BR', $data['history'] ?? [])])
             ->header('Cache-Control', 'private, no-store');
     }
 }

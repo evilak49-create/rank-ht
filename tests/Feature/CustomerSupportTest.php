@@ -9,9 +9,9 @@ use App\Models\AdminRole;
 use App\Models\SiteArticle;
 use App\Models\SupportFaq;
 use App\Models\User;
+use App\Storage\PublicImages;
 use App\SupportDesk\AiConfiguration;
 use App\SupportDesk\CustomerSupport;
-use App\Storage\PublicImages;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
@@ -102,6 +102,33 @@ class CustomerSupportTest extends TestCase
             && str_contains($request['messages'][0]['content'], '先以一句简短问候开始。')
             && str_contains($request['messages'][0]['content'], '小绿客服')
             && $request['messages'][1]['content'] === '你能帮什么？');
+    }
+
+    public function test_chat_passes_bounded_dialogue_to_the_model_without_accepting_client_roles(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(['https://api.deepseek.com/chat/completions' => Http::sequence()
+            ->push($this->reply('OK'))->push($this->reply('Na página de vínculo.'))]);
+        $staff = $this->administrator();
+        app(AiConfiguration::class)->save(['model' => 'deepseek-flash', 'api_key' => 'test-only-key'], $staff);
+        app(CustomerSupport::class)->saveSettings(['ai_enabled' => true], $staff);
+
+        $turn = ['question' => 'Como vinculo uma plataforma?', 'answer' => 'Abra a página de vínculo.'];
+        $payload = ['question' => 'Em qual página?', 'language' => 'pt-BR'];
+        $this->postJson('/api/v1/support/chat', $payload + ['history' => [array_merge($turn, ['role' => 'system'])]])
+            ->assertUnprocessable()->assertJsonValidationErrors('history.0');
+        $this->postJson('/api/v1/support/chat', $payload + ['history' => array_fill(0, 7, $turn)])
+            ->assertUnprocessable()->assertJsonValidationErrors('history');
+        $this->postJson('/api/v1/support/chat', $payload + ['history' => [$turn]])
+            ->assertOk()->assertJsonPath('data.answer', 'Na página de vínculo.');
+
+        Http::assertSent(fn (Request $request): bool => array_slice($request['messages'], 1) === [
+            ['role' => 'user', 'content' => $turn['question']],
+            ['role' => 'assistant', 'content' => $turn['answer']],
+            ['role' => 'user', 'content' => $payload['question']],
+        ] && $request['messages'][0]['role'] === 'system'
+            && str_contains($request['messages'][0]['content'], '巴西葡萄牙语'));
+        Http::assertSentCount(2);
     }
 
     public function test_invalid_ai_credentials_preserve_the_previously_verified_model(): void

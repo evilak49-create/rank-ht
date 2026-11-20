@@ -66,13 +66,33 @@ class PhysicalShop
     public function ship(ShopOrder $order, array $data, User $operator): void
     {
         abort_unless($operator->hasPermission('shop.ship-orders'), 403);
-        $shipping = Validator::make($data, ['carrier' => 'required|string|max:120', 'tracking_number' => 'required|string|max:120'])->validate();
+        $shipping = $this->validateShipping($data);
 
         DB::transaction(function () use ($order, $shipping, $operator): void {
             $current = ShopOrder::query()->lockForUpdate()->findOrFail($order->id);
             abort_unless($current->status === 'pending', 409, '只有待发货订单可以登记发货。');
             $current->forceFill([...$shipping, 'status' => 'shipped', 'shipped_at' => now(), 'user_id' => $operator->id])->save();
         }, 3);
+    }
+
+    public function correctTracking(ShopOrder $order, array $data, User $operator): void
+    {
+        abort_unless($operator->hasPermission('shop.ship-orders'), 403);
+        $shipping = $this->validateShipping($data);
+
+        DB::transaction(function () use ($order, $shipping): void {
+            $current = ShopOrder::query()->lockForUpdate()->findOrFail($order->id);
+            abort_unless($current->status === 'shipped', 409, '只有已发货订单可以更正物流信息。');
+            $current->forceFill($shipping)->save();
+        }, 3);
+    }
+
+    private function validateShipping(array $data): array
+    {
+        return Validator::make($data, [
+            'carrier' => 'required|string|max:120',
+            'tracking_number' => 'required|string|max:120',
+        ])->validate();
     }
 
     public function cancel(ShopOrder $order, string $reason, User $operator): void
