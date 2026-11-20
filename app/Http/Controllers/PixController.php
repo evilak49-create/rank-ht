@@ -46,6 +46,24 @@ class PixController extends Controller
         return response()->json(['data' => $this->data($withdrawal)])->header('Cache-Control', 'private, no-store');
     }
 
+    public function history(Request $request): JsonResponse
+    {
+        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())
+            ->select(['id', 'order_number', 'red_packet_round_id', 'amount_cents', 'status', 'review_reason', 'created_at', 'paid_at'])
+            ->latest('created_at')->latest('id')->paginate(20);
+
+        return response()->json($orders->through(fn (PixWithdrawal $order): array => [
+            'id' => $order->id, 'order_number' => $order->order_number, 'amount_cents' => $order->amount_cents,
+            'source' => $order->red_packet_round_id === null ? 'balance' : 'red_packet',
+            'status' => match ($order->status) {
+                'paid' => 'succeeded',
+                'failed', 'rejected' => 'failed',
+                default => 'reviewing',
+            },
+            'review_reason' => $order->review_reason, 'created_at' => $order->created_at, 'paid_at' => $order->paid_at,
+        ]))->header('Cache-Control', 'private, no-store');
+    }
+
     public function cashBalance(Request $request): JsonResponse
     {
         $member = $request->user();

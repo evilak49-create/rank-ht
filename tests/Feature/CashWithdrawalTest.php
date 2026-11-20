@@ -10,6 +10,7 @@ use App\Models\User;
 use App\RedPackets\PixDelivery;
 use App\RedPackets\PixResult;
 use App\RedPackets\PixWithdrawals;
+use App\RedPackets\RedPackets;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -75,6 +76,43 @@ class CashWithdrawalTest extends TestCase
         $this->assertSame(1000, $member->refresh()->available_balance_cents);
         $this->assertSame(0, $member->held_balance_cents);
         $this->assertDatabaseCount('cash_balance_entries', 2);
+    }
+
+    public function test_member_withdrawal_history_combines_both_sources_and_summarizes_statuses(): void
+    {
+        $url = '/api/v1/withdrawal-history';
+        $this->getJson($url)->assertUnauthorized();
+        [$member] = $this->scenario();
+        $other = Member::create(['phone' => '11900000555', 'password' => 'member-password']);
+        $round = app(RedPackets::class)->open($member->refresh(), (string) Str::uuid());
+        $entries = [
+            ['pending', 'reviewing', null],
+            ['processing', 'reviewing', $round->id],
+            ['unresolved', 'reviewing', null],
+            ['paid', 'succeeded', $round->id],
+            ['failed', 'failed', null],
+            ['rejected', 'failed', $round->id],
+        ];
+        $expected = [];
+        foreach ($entries as [$status, $summary, $roundId]) {
+            $order = PixWithdrawal::create([
+                'order_number' => (string) Str::uuid(), 'request_id' => (string) Str::uuid(),
+                'member_id' => $member->id, 'red_packet_round_id' => $roundId,
+                'amount_cents' => 250, 'cpf_snapshot' => '52998224725', 'status' => $status,
+            ]);
+            $expected[] = [$order->id, $roundId === null ? 'balance' : 'red_packet', $summary];
+        }
+        $unrelated = PixWithdrawal::create([
+            'order_number' => (string) Str::uuid(), 'request_id' => (string) Str::uuid(),
+            'member_id' => $other->id, 'red_packet_round_id' => null,
+            'amount_cents' => 1000, 'cpf_snapshot' => '52998224725', 'status' => 'paid',
+        ]);
+
+        $history = $this->getJson($url)->assertOk()->assertJsonPath('total', 6)
+            ->assertJsonPath('data.0.amount_cents', 250)->assertJsonMissingPath('data.0.masked_cpf')
+            ->assertDontSee('52998224725')->assertDontSee($unrelated->order_number);
+        $actual = array_map(fn (array $order): array => [$order['id'], $order['source'], $order['status']], $history->json('data'));
+        $this->assertSame(array_reverse($expected), $actual);
     }
 
     private function scenario(): array
