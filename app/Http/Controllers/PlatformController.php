@@ -7,8 +7,10 @@ use App\Auth\MemberPhone;
 use App\Auth\MemberVerification;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
+use App\Models\PointRule;
 use App\Platforms\BindPlatformAccount;
 use App\Platforms\PlatformParticipation;
+use App\Points\PointRules;
 use App\Protection\ProtectionClaims;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -53,9 +55,30 @@ class PlatformController extends Controller
 
     public function show(string $platform): JsonResponse
     {
-        return response()->json([
-            'data' => $this->platformData(Platform::query()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()->findOrFail($platform)),
-        ]);
+        $record = Platform::query()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()->findOrFail($platform);
+
+        return response()->json(['data' => [...$this->platformData($record), 'point_rule' => $this->pointRuleData()]]);
+    }
+
+    public function pointRule(string $platform): JsonResponse
+    {
+        abort_unless(Platform::query()->available()->whereKey($platform)->exists(), 404);
+
+        return response()->json(['data' => $this->pointRuleData()]);
+    }
+
+    private function pointRuleData(): ?array
+    {
+        $rule = PointRule::query()->latest('id')->first();
+
+        return $rule === null ? null : [
+            'points_per_brl' => PointRules::display($rule->points_per_brl_micros),
+            'wager_multiplier' => PointRules::display($rule->wager_multiplier_micros),
+            'rebate_percent' => PointRules::display($rule->rebate_percent_micros),
+            'rebate_wager_multiplier' => $rule->rebate_percent_micros > 0
+                ? PointRules::display($rule->rebate_wager_multiplier_micros ?? $rule->wager_multiplier_micros)
+                : null,
+        ];
     }
 
     public function favorites(Request $request): JsonResponse

@@ -35,7 +35,7 @@ class PlatformAdministration
             $draft = $network->queryDriver()->validateConfiguration($query);
         }
 
-        return $this->saveProfile(new Platform(['network' => $network]), $data, $operator, $draft);
+        return $this->saveProfile(new Platform(['network' => $network]), $data + ['rating' => Platform::DEFAULT_RATING], $operator, $draft);
     }
 
     public function update(Platform $platform, array $data, User $operator): Platform

@@ -109,7 +109,7 @@ class PlatformResource extends Resource
     {
         return Action::make('create_platform')->label('新增平台')
             ->authorize(fn (): bool => self::hasPermission('platforms.edit') && self::hasPermission('platforms.configure-query'))
-            ->fillForm(fn (): array => ['network' => PlatformNetwork::Panda->value]
+            ->fillForm(fn (): array => ['network' => PlatformNetwork::Panda->value, 'rating' => Platform::DEFAULT_RATING]
                 + PlatformNetwork::Panda->queryDriver()->formState(null))
             ->steps([
                 Step::make('选择包网')->schema([

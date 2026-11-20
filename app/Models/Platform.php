@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Hidden(['draft_query', 'active_query'])]
 class Platform extends Model
 {
+    public const DEFAULT_RATING = 5;
+
     protected $attributes = ['network' => PlatformNetwork::Panda->value];
 
     protected function casts(): array

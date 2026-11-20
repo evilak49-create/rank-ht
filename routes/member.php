@@ -40,6 +40,7 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
     Route::get('platforms', [PlatformController::class, 'index']);
     Route::get('platforms/featured', [PlatformController::class, 'featured']);
     Route::get('platforms/{platform}', [PlatformController::class, 'show'])->whereNumber('platform');
+    Route::get('platforms/{platform}/point-rule', [PlatformController::class, 'pointRule'])->whereNumber('platform');
     Route::get('platforms/{platform}/reviews', [PlatformReviewController::class, 'index'])->whereNumber('platform');
     Route::get('platforms/{platform}/protection-terms', [ProtectionController::class, 'publicTerms'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {

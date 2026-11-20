@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\AdminRole;
 use App\Models\Platform;
+use App\Models\PointRule;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,7 +28,7 @@ class PlatformNetworkTest extends TestCase
         $this->actingAs($operator, 'web');
         $profile = ['name' => 'Network Platform', 'promotion_url' => 'https://example.test/register', 'rating' => '4.8'];
         Livewire::test(ListPlatforms::class)->mountAction('create_platform')
-            ->assertActionDataSet(['network' => 'panda'])
+            ->assertActionDataSet(['network' => 'panda', 'rating' => 5])
             ->assertActionDataSet(['endpoint' => config('services.platform_query.defaults.endpoint'), 'token' => 'panda-test-default'])
             ->assertDontSee('同时保存接口草稿')
             ->set('mountedActions.0.data.network', 'wg')
@@ -56,6 +57,33 @@ class PlatformNetworkTest extends TestCase
         $this->assertSame('推广 Test+_@01', $platform->draft_query['test_phone']);
         $this->assertStringNotContainsString('test-only-token', DB::table('platforms')->sole()->draft_query);
         $this->getJson('/api/v1/platforms')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_public_platform_rule_reflects_the_latest_points_and_rebate_configuration(): void
+    {
+        $platform = app(PlatformAdministration::class)->create([
+            'name' => 'Rules Platform', 'promotion_url' => 'https://example.test/register',
+        ], $this->operator(['platforms.edit']));
+        $this->assertSame('5.0', $platform->rating);
+        $url = '/api/v1/platforms/'.$platform->id.'/point-rule';
+        $this->getJson($url)->assertNotFound();
+        $platform->forceFill(['active_query_revision' => 1])->save();
+
+        PointRule::create([
+            'points_per_brl_micros' => 12500, 'wager_multiplier_micros' => 2250000,
+            'rebate_percent_micros' => 3250000, 'rebate_wager_multiplier_micros' => 4500000,
+        ]);
+        $this->getJson($url)->assertOk()->assertExactJson(['data' => [
+            'points_per_brl' => '0.012500', 'wager_multiplier' => '2.250000',
+            'rebate_percent' => '3.250000', 'rebate_wager_multiplier' => '4.500000',
+        ]]);
+
+        PointRule::create([
+            'points_per_brl_micros' => 25000, 'wager_multiplier_micros' => 1000000,
+            'rebate_percent_micros' => 0, 'rebate_wager_multiplier_micros' => 5000000,
+        ]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.points_per_brl', '0.025000')
+            ->assertJsonPath('data.rebate_percent', '0.000000')->assertJsonPath('data.rebate_wager_multiplier', null);
     }
 
     public function test_profile_editor_cannot_change_a_platform_network_or_save_credentials_without_permission(): void
