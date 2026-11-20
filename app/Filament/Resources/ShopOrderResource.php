@@ -10,7 +10,9 @@ use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -55,6 +57,23 @@ class ShopOrderResource extends Resource
             TextColumn::make('cancellation_reason')->label('取消原因')->toggleable(isToggledHiddenByDefault: true),
         ])->filters([SelectFilter::make('status')->label('状态')->options(self::STATUSES)])
             ->recordActions([
+                Action::make('view_details')->label('查看详情')->authorize(self::canViewAny(...))
+                    ->modalHeading('商品订单详情')->modalSubmitAction(false)->modalCancelActionLabel('关闭')
+                    ->schema([
+                        TextEntry::make('order_number')->label('订单号')->copyable(),
+                        TextEntry::make('product_name')->label('商品'),
+                        Section::make('收货信息')->columns(2)->schema([
+                            TextEntry::make('address.recipient')->label('收件人')->placeholder('—'),
+                            TextEntry::make('address.phone')->label('收件电话')->placeholder('—')->copyable(),
+                            TextEntry::make('address.postal_code')->label('邮编（CEP）')->placeholder('—')->copyable(),
+                            TextEntry::make('address.state')->label('州')->placeholder('—'),
+                            TextEntry::make('address.city')->label('城市')->placeholder('—'),
+                            TextEntry::make('address.district')->label('街区')->placeholder('—'),
+                            TextEntry::make('address.street')->label('街道')->placeholder('—'),
+                            TextEntry::make('address.number')->label('门牌号')->placeholder('—'),
+                            TextEntry::make('address.complement')->label('补充地址')->placeholder('—')->columnSpanFull(),
+                        ]),
+                    ]),
                 Action::make('ship')->label('登记发货')->authorize(fn (): bool => self::allowed('shop.ship-orders'))
                     ->visible(fn (ShopOrder $record): bool => $record->status === 'pending')
                     ->schema([

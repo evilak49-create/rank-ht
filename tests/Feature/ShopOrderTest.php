@@ -28,8 +28,9 @@ class ShopOrderTest extends TestCase
 
         $request = [
             'product_id' => $product->id, 'request_id' => (string) Str::uuid(),
-            'address' => ['recipient' => 'Example', 'phone' => $member->phone, 'postal_code' => '01001-000',
-                'state' => 'SP', 'city' => 'São Paulo', 'street' => 'Praça da Sé', 'number' => '10'],
+            'address' => ['recipient' => 'Maria', 'phone' => '11987654321', 'postal_code' => '01001-000',
+                'state' => 'SP', 'city' => 'São Paulo', 'district' => 'Sé', 'street' => 'Praça da Sé',
+                'number' => '10', 'complement' => 'Apto 12'],
         ];
         $this->postJson('/api/v1/shop/orders', [...$request, 'quantity' => 2])->assertUnprocessable();
         $id = $this->postJson('/api/v1/shop/orders', $request)->assertCreated()->assertJsonPath('data.status', 'pending')->json('data.id');
@@ -52,8 +53,15 @@ class ShopOrderTest extends TestCase
 
         $next = $this->postJson('/api/v1/shop/orders', [...$request, 'request_id' => (string) Str::uuid()])
             ->assertCreated()->json('data.id');
-        $this->actingAs($operator, 'web')->get('/admin/shop-orders')->assertOk();
-        Livewire::test(ListShopOrders::class)->callAction(TestAction::make('ship')->table(ShopOrder::findOrFail($next)), [
+        $this->putJson('/api/v1/shipping-address', [...$request['address'], 'street' => 'Novo endereço'])->assertOk();
+
+        $this->actingAs($operator, 'web')->get('/admin/shop-orders')->assertOk()->assertSee('查看详情');
+        $nextOrder = ShopOrder::findOrFail($next);
+        $details = Livewire::test(ListShopOrders::class)->mountAction(TestAction::make('view_details')->table($nextOrder));
+        foreach ($request['address'] as $field => $value) {
+            $details->assertSchemaComponentStateSet('address.'.$field, $value);
+        }
+        Livewire::test(ListShopOrders::class)->callAction(TestAction::make('ship')->table($nextOrder), [
             'carrier' => 'Test Carrier', 'tracking_number' => 'TRACK-123',
         ])->assertHasNoActionErrors();
 
