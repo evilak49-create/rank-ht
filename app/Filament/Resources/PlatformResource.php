@@ -172,7 +172,7 @@ class PlatformResource extends Resource
                 TextInput::make('site_code')->label('品牌 ID（siteCode）')->maxLength(64)->required(),
                 TextInput::make('api_key')->label('API Key')->autocomplete('off')->maxLength(255)->required(),
                 TextInput::make('secret_key')->label('Secret Key')->autocomplete('off')->required(),
-                TextInput::make('test_phone')->label('已知推广测试账号的手机号')->inputMode('tel')->required(),
+                TextInput::make('test_phone')->label('已知推广测试账号的账号')->required(),
             ],
             PlatformNetwork::Panda => [
                 TextInput::make('endpoint')->label('查询接口地址')->url()->maxLength(2048)->required()
@@ -184,7 +184,7 @@ class PlatformResource extends Resource
                 TextInput::make('tenant_id')->label('租户 ID')->integer()->minValue(1)->required(),
                 TextInput::make('region_id')->label('区域 ID')->integer()->minValue(0)->required(),
                 TextInput::make('client_language')->label('请求语言')->maxLength(24)->required(),
-                TextInput::make('test_phone')->label('已知推广测试账号的手机号')->inputMode('tel')->required(),
+                TextInput::make('test_phone')->label('已知推广测试账号的账号')->required(),
             ],
         };
     }

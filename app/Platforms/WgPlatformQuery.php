@@ -22,13 +22,12 @@ class WgPlatformQuery implements PlatformQueryDriver
 
     public function validateConfiguration(#[SensitiveParameter] array $data): array
     {
-        $data['test_phone'] = MemberPhone::normalize($data['test_phone'] ?? null);
         $settings = Validator::make($data, [
             'endpoint' => ['required', 'string', 'max:2048', 'url:https'],
             'site_code' => ['required', 'string', 'max:64', 'regex:/\A[A-Za-z0-9._-]+\z/'],
             'api_key' => ['required', 'string', 'max:255', 'regex:/\A[A-Za-z0-9._-]+\z/'],
             'secret_key' => ['required', 'string', 'regex:/\A[^\x00-\x1F\x7F]{16}\z/'],
-            'test_phone' => ['required', MemberPhone::RULE],
+            'test_phone' => ['required', 'string'],
         ], ['secret_key.regex' => 'WG Secret Key 必须为 16 字节。'])->validate();
 
         $parts = parse_url($settings['endpoint']);
@@ -49,7 +48,23 @@ class WgPlatformQuery implements PlatformQueryDriver
         return Arr::only($saved ?? [], array_keys($fields)) + $fields;
     }
 
+    public function lookupTestAccount(#[SensitiveParameter] array $config): ?PlatformAccount
+    {
+        $account = $config['test_phone'];
+        $phone = MemberPhone::normalize($account);
+        if (preg_match(substr(MemberPhone::RULE, strlen('regex:')), $phone)) {
+            return $this->lookup($config, $phone) ?? $this->query($config, ['username' => $account]);
+        }
+
+        return $this->query($config, ['username' => $account]);
+    }
+
     public function lookup(#[SensitiveParameter] array $config, string $phone): ?PlatformAccount
+    {
+        return $this->query($config, ['mobilePhone' => $phone]);
+    }
+
+    private function query(#[SensitiveParameter] array $config, array $filter): ?PlatformAccount
     {
         $endpoint = $config['endpoint'] ?? '';
         $key = $config['secret_key'] ?? '';
@@ -58,7 +73,7 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('configuration');
         }
 
-        $data = json_encode(['siteCode' => $config['site_code'], 'mobilePhone' => $phone], JSON_THROW_ON_ERROR);
+        $data = json_encode(['siteCode' => $config['site_code'], ...$filter], JSON_THROW_ON_ERROR);
         $ciphertext = openssl_encrypt($data, self::CIPHER, $key, OPENSSL_RAW_DATA);
         if ($ciphertext === false) {
             throw new PlatformQueryFailure('configuration');

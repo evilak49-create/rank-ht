@@ -2,7 +2,6 @@
 
 namespace App\Platforms;
 
-use App\Auth\MemberPhone;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -17,7 +16,6 @@ class PlatformQueryClient implements PlatformQueryDriver
 
     public function validateConfiguration(#[SensitiveParameter] array $data): array
     {
-        $data['test_phone'] = MemberPhone::normalize($data['test_phone'] ?? null);
         if (is_string($data['endpoint'] ?? null)) {
             // The request parameters are generated from the saved settings and lookup phone.
             $data['endpoint'] = preg_replace('/\?[^#]*/', '', trim($data['endpoint']));
@@ -35,7 +33,7 @@ class PlatformQueryClient implements PlatformQueryDriver
             'tenant_id' => 'required|integer|min:1',
             'region_id' => 'required|integer|min:0',
             'client_language' => ['required', 'string', 'max:24', 'regex:/\A[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{2,8})*\z/'],
-            'test_phone' => ['required', MemberPhone::RULE],
+            'test_phone' => ['required', 'string'],
         ])->validate();
 
         if (! $this->acceptsEndpoint($configuration['endpoint'])) {
@@ -69,6 +67,11 @@ class PlatformQueryClient implements PlatformQueryDriver
             && ! array_key_exists('pass', $parts)
             && ! array_key_exists('query', $parts)
             && ! array_key_exists('fragment', $parts);
+    }
+
+    public function lookupTestAccount(#[SensitiveParameter] array $config): ?PlatformAccount
+    {
+        return $this->lookup($config, $config['test_phone']);
     }
 
     public function lookup(#[SensitiveParameter] array $config, string $phone): ?PlatformAccount

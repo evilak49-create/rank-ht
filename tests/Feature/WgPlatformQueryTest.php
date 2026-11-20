@@ -32,6 +32,23 @@ class WgPlatformQueryTest extends TestCase
         Http::preventStrayRequests();
     }
 
+    public function test_interface_test_preserves_and_queries_a_non_phone_account(): void
+    {
+        $driver = PlatformNetwork::Wg->queryDriver();
+        $account = '推广 Test+_@01';
+        $configuration = $driver->validateConfiguration([...$this->configuration(), 'test_phone' => $account]);
+        $this->assertSame($account, $configuration['test_phone']);
+        $this->fakeResponse(['total' => 1, 'list' => [[
+            'useridx' => 4000000001, 'currency' => 'BRL', 'totalDeposit' => 0, 'validBet' => 0,
+        ]]]);
+        $this->assertSame('4000000001', $driver->lookupTestAccount($configuration)?->id);
+        Http::assertSent(function (Request $request) use ($account): bool {
+            $plain = openssl_decrypt(base64_decode($request['reqData'], true), 'aes-128-ecb', self::KEY, OPENSSL_RAW_DATA);
+
+            return json_decode($plain, true, flags: JSON_THROW_ON_ERROR) === ['siteCode' => '0025', 'username' => $account];
+        });
+    }
+
     public function test_wg_uses_its_own_configuration_and_binds_with_documented_cumulative_amounts(): void
     {
         $operator = User::factory()->create();

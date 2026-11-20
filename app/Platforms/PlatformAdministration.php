@@ -79,7 +79,7 @@ class PlatformAdministration
         }
 
         try {
-            $result = $snapshot->network->queryDriver()->lookup($configuration, $configuration['test_phone']) === null ? 'not_found' : 'passed';
+            $result = $snapshot->network->queryDriver()->lookupTestAccount($configuration) === null ? 'not_found' : 'passed';
         } catch (PlatformQueryFailure $failure) {
             $result = $failure->kind;
         }

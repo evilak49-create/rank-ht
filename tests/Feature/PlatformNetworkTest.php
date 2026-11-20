@@ -42,7 +42,7 @@ class PlatformNetworkTest extends TestCase
             'endpoint' => 'https://partner.example.test/api/backend/trpc/user.list',
             'admin_host' => 'admin.example.test', 'token' => 'test-only-token', 'account' => 'fixture',
             'fingerprint' => 'test-fingerprint', 'tenant_id' => 123, 'region_id' => 1,
-            'client_language' => 'zh-CN', 'test_phone' => '11912345678',
+            'client_language' => 'zh-CN', 'test_phone' => '推广 Test+_@01',
         ];
         Livewire::test(ListPlatforms::class)->callAction('create_platform', [
             ...$draft, 'endpoint' => 'https://denied.example.test/api/backend/trpc/user.list',
@@ -53,6 +53,7 @@ class PlatformNetworkTest extends TestCase
         $platform = Platform::query()->sole();
         $this->assertDatabaseHas('platforms', ['id' => $platform->id, 'network' => 'panda', 'query_revision' => 1, 'active_query_revision' => null]);
         $this->assertSame('test-only-token', $platform->draft_query['token']);
+        $this->assertSame('推广 Test+_@01', $platform->draft_query['test_phone']);
         $this->assertStringNotContainsString('test-only-token', DB::table('platforms')->sole()->draft_query);
         $this->getJson('/api/v1/platforms')->assertOk()->assertJsonCount(0, 'data');
     }
