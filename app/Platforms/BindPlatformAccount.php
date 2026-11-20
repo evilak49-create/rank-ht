@@ -14,7 +14,6 @@ use Illuminate\Validation\ValidationException;
 class BindPlatformAccount
 {
     public function __construct(
-        private readonly PlatformQueryClient $client,
         private readonly PlatformAdministration $platforms,
         private readonly SmsChallenges $sms,
         private readonly MemberVerification $verification,
@@ -39,7 +38,7 @@ class BindPlatformAccount
         }
 
         try {
-            $account = $this->client->lookup($platform->active_query, $phone);
+            $account = $platform->network->queryDriver()->lookup($platform->active_query, $phone);
         } catch (PlatformQueryFailure $failure) {
             $this->platforms->recordQueryOutcome($platform, $failure->kind);
             if ($failure->kind === 'ambiguous') {
@@ -56,7 +55,7 @@ class BindPlatformAccount
             return DB::transaction(function () use ($member, $platform, $phone, $code, $purpose, $account, $useSms): PlatformBinding {
                 $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
                 abort_unless($current->status() === 'available', 404);
-                abort_if($current->active_query_revision !== $platform->active_query_revision, 409, '平台配置已更新，请重试。');
+                abort_if($current->network !== $platform->network || $current->active_query_revision !== $platform->active_query_revision, 409, '平台配置已更新，请重试。');
 
                 $owner = Member::query()->lockForUpdate()->findOrFail($member->id);
                 abort_if($owner->disabled_at !== null, 403, '会员账号已禁用。');

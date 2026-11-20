@@ -2,13 +2,59 @@
 
 namespace App\Platforms;
 
+use App\Auth\MemberPhone;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use JsonException;
+use SensitiveParameter;
 
-class PlatformQueryClient
+class PlatformQueryClient implements PlatformQueryDriver
 {
     private const QUERY_PATH = '/api/backend/trpc/user.list';
+
+    public function validateConfiguration(#[SensitiveParameter] array $data): array
+    {
+        $data['test_phone'] = MemberPhone::normalize($data['test_phone'] ?? null);
+        if (is_string($data['endpoint'] ?? null)) {
+            // The request parameters are generated from the saved settings and lookup phone.
+            $data['endpoint'] = preg_replace('/\?[^#]*/', '', trim($data['endpoint']));
+        }
+        if (is_string($data['token'] ?? null)) {
+            $data['token'] = preg_replace('/\ABearer +/i', '', trim($data['token']));
+        }
+        $data['client_language'] ??= config('services.platform_query.defaults.client_language', 'zh-CN');
+        $configuration = Validator::make($data, [
+            'endpoint' => ['required', 'string', 'max:2048', 'url:https'],
+            'admin_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
+            'token' => ['required', 'string', 'max:4096', 'not_regex:/[[:cntrl:]]/'],
+            'account' => ['required', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
+            'fingerprint' => ['required', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
+            'tenant_id' => 'required|integer|min:1',
+            'region_id' => 'required|integer|min:0',
+            'client_language' => ['required', 'string', 'max:24', 'regex:/\A[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{2,8})*\z/'],
+            'test_phone' => ['required', MemberPhone::RULE],
+        ])->validate();
+
+        if (! $this->acceptsEndpoint($configuration['endpoint'])) {
+            throw ValidationException::withMessages([
+                'endpoint' => '请输入允许列表中的 HTTPS 查询端点，路径须为 /api/backend/trpc/user.list。',
+            ]);
+        }
+
+        return $configuration;
+    }
+
+    public function formState(#[SensitiveParameter] ?array $saved): array
+    {
+        $defaults = config('services.platform_query.defaults', []);
+
+        return Arr::only($saved === null ? $defaults : $saved + ['client_language' => $defaults['client_language'] ?? 'zh-CN'], [
+            'endpoint', 'admin_host', 'token', 'account', 'fingerprint', 'tenant_id', 'region_id', 'test_phone', 'client_language',
+        ]);
+    }
 
     public function acceptsEndpoint(string $endpoint): bool
     {
@@ -25,7 +71,7 @@ class PlatformQueryClient
             && ! array_key_exists('fragment', $parts);
     }
 
-    public function lookup(array $config, string $phone): ?PlatformAccount
+    public function lookup(#[SensitiveParameter] array $config, string $phone): ?PlatformAccount
     {
         if (! $this->acceptsEndpoint($config['endpoint'])) {
             throw new PlatformQueryFailure('configuration');

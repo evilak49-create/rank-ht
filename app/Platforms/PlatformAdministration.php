@@ -2,17 +2,16 @@
 
 namespace App\Platforms;
 
-use App\Auth\MemberPhone;
 use App\Models\Platform;
 use App\Models\PlatformFundTask;
 use App\Models\User;
 use App\Storage\PublicImages;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use SensitiveParameter;
 
 class PlatformAdministration
 {
@@ -21,13 +20,22 @@ class PlatformAdministration
         'platforms.test-query', 'platforms.change-status',
     ];
 
-    public function __construct(private readonly PlatformQueryClient $client, private readonly PublicImages $images) {}
+    public function __construct(private readonly PublicImages $images) {}
 
-    public function create(array $data, User $operator): Platform
+    public function create(array $data, User $operator, #[SensitiveParameter] ?array $query = null): Platform
     {
         abort_unless($operator->hasPermission('platforms.edit'), 403);
+        $profile = Validator::make($data + ['network' => PlatformNetwork::Panda->value], [
+            'network' => ['required', 'string', Rule::enum(PlatformNetwork::class)],
+        ])->validate();
+        $network = PlatformNetwork::from($profile['network']);
+        $draft = null;
+        if ($query !== null) {
+            abort_unless($operator->hasPermission('platforms.configure-query'), 403);
+            $draft = $network->queryDriver()->validateConfiguration($query);
+        }
 
-        return $this->saveProfile(new Platform, $data, $operator);
+        return $this->saveProfile(new Platform(['network' => $network]), $data, $operator, $draft);
     }
 
     public function update(Platform $platform, array $data, User $operator): Platform
@@ -37,36 +45,11 @@ class PlatformAdministration
         return $this->saveProfile($platform, $data, $operator);
     }
 
-    public function saveQuery(Platform $platform, array $data, User $operator): void
+    public function saveQuery(Platform $platform, #[SensitiveParameter] array $data, User $operator): void
     {
         abort_unless($operator->hasPermission('platforms.configure-query'), 403);
 
-        $data['test_phone'] = MemberPhone::normalize($data['test_phone'] ?? null);
-        if (is_string($data['endpoint'] ?? null)) {
-            // The request parameters are generated from the saved settings and lookup phone.
-            $data['endpoint'] = preg_replace('/\?[^#]*/', '', trim($data['endpoint']));
-        }
-        if (is_string($data['token'] ?? null)) {
-            $data['token'] = preg_replace('/\ABearer +/i', '', trim($data['token']));
-        }
-        $data['client_language'] ??= config('services.platform_query.defaults.client_language', 'zh-CN');
-        $configuration = Validator::make($data, [
-            'endpoint' => ['required', 'string', 'max:2048', 'url:https'],
-            'admin_host' => ['required', 'string', 'max:253', 'regex:/\A[a-zA-Z0-9.-]+\z/'],
-            'token' => ['required', 'string', 'max:4096', 'not_regex:/[[:cntrl:]]/'],
-            'account' => ['required', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
-            'fingerprint' => ['required', 'string', 'max:255', 'not_regex:/[[:cntrl:]]/'],
-            'tenant_id' => 'required|integer|min:1',
-            'region_id' => 'required|integer|min:0',
-            'client_language' => ['required', 'string', 'max:24', 'regex:/\A[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{2,8})*\z/'],
-            'test_phone' => ['required', MemberPhone::RULE],
-        ])->validate();
-
-        if (! $this->client->acceptsEndpoint($configuration['endpoint'])) {
-            throw ValidationException::withMessages([
-                'endpoint' => '请输入允许列表中的 HTTPS 查询端点，路径须为 /api/backend/trpc/user.list。',
-            ]);
-        }
+        $configuration = $platform->network->queryDriver()->validateConfiguration($data);
 
         DB::transaction(function () use ($platform, $configuration, $operator): void {
             $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
@@ -81,12 +64,7 @@ class PlatformAdministration
     public function queryForm(Platform $platform, User $operator): array
     {
         abort_unless($operator->hasPermission('platforms.configure-query'), 403);
-        $saved = $platform->draft_query ?? $platform->active_query;
-        $defaults = config('services.platform_query.defaults', []);
-
-        return Arr::only($saved === null ? $defaults : $saved + ['client_language' => $defaults['client_language'] ?? 'zh-CN'], [
-            'endpoint', 'admin_host', 'token', 'account', 'fingerprint', 'tenant_id', 'region_id', 'test_phone', 'client_language',
-        ]);
+        return $platform->network->queryDriver()->formState($platform->draft_query ?? $platform->active_query);
     }
 
     public function testQuery(Platform $platform, User $operator): string
@@ -101,7 +79,7 @@ class PlatformAdministration
         }
 
         try {
-            $result = $this->client->lookup($configuration, $configuration['test_phone']) === null ? 'not_found' : 'passed';
+            $result = $snapshot->network->queryDriver()->lookup($configuration, $configuration['test_phone']) === null ? 'not_found' : 'passed';
         } catch (PlatformQueryFailure $failure) {
             $result = $failure->kind;
         }
@@ -109,7 +87,7 @@ class PlatformAdministration
         return DB::transaction(function () use ($snapshot, $isDraft, $configuration, $operator, $result): string {
             $current = Platform::query()->lockForUpdate()->findOrFail($snapshot->id);
             $revision = $isDraft ? $snapshot->query_revision : $snapshot->active_query_revision;
-            if ($current->query_revision !== $snapshot->query_revision
+            if ($current->network !== $snapshot->network || $current->query_revision !== $snapshot->query_revision
                 || $current->active_query_revision !== $snapshot->active_query_revision) {
                 $this->audit($current, $operator, 'query_tested', $revision, 'stale');
 
@@ -157,7 +135,7 @@ class PlatformAdministration
     {
         DB::transaction(function () use ($snapshot, $result): void {
             $current = Platform::query()->lockForUpdate()->findOrFail($snapshot->id);
-            if ($current->active_query_revision !== $snapshot->active_query_revision || $current->query_unhealthy_at !== null) {
+            if ($current->network !== $snapshot->network || $current->active_query_revision !== $snapshot->active_query_revision || $current->query_unhealthy_at !== null) {
                 return;
             }
 
@@ -166,12 +144,12 @@ class PlatformAdministration
         }, 3);
     }
 
-    private function saveProfile(Platform $platform, array $data, User $operator): Platform
+    private function saveProfile(Platform $platform, array $data, User $operator, #[SensitiveParameter] ?array $draft = null): Platform
     {
-        return $this->images->apply($data, 'logo_url', fn (array $profile) => $this->persistProfile($platform, $profile, $operator));
+        return $this->images->apply($data, 'logo_url', fn (array $profile) => $this->persistProfile($platform, $profile, $operator, $draft));
     }
 
-    private function persistProfile(Platform $platform, array $data, User $operator): Platform
+    private function persistProfile(Platform $platform, array $data, User $operator, #[SensitiveParameter] ?array $draft): Platform
     {
         $position = Rule::unique('platforms', 'featured_position');
         if ($platform->exists) {
@@ -188,10 +166,17 @@ class PlatformAdministration
         ], ['featured_position.unique' => '该精选位置已被占用。'])->validate();
 
         try {
-            return DB::transaction(function () use ($platform, $operator, $profile): Platform {
+            return DB::transaction(function () use ($platform, $operator, $profile, $draft): Platform {
                 $action = $platform->exists ? 'profile_updated' : 'created';
-                $platform->fill($profile)->save();
+                $platform->fill($profile);
+                if ($draft !== null) {
+                    $platform->forceFill(['draft_query' => $draft, 'query_revision' => 1]);
+                }
+                $platform->save();
                 $this->audit($platform, $operator, $action);
+                if ($draft !== null) {
+                    $this->audit($platform, $operator, 'query_configured', $platform->query_revision);
+                }
 
                 return $platform->refresh();
             });

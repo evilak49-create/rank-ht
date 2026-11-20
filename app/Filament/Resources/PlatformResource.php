@@ -6,17 +6,26 @@ use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\Platform;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
+use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\Wizard\Step;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
+use SensitiveParameter;
 
 class PlatformResource extends Resource
 {
@@ -44,6 +53,7 @@ class PlatformResource extends Resource
         return $table->defaultSort('id', 'desc')->columns([
             TextColumn::make('id')->label('ID')->sortable(),
             TextColumn::make('name')->label('平台名称')->searchable(),
+            TextColumn::make('network')->label('包网')->state(fn (Platform $record): string => $record->network->label()),
             TextColumn::make('bindings_count')->label('绑定人数')->counts('bindings')->sortable(),
             TextColumn::make('rating')->label('评分')->sortable(),
             TextColumn::make('featured_position')->label('精选顺序')->sortable(),
@@ -61,6 +71,7 @@ class PlatformResource extends Resource
                 ->formatStateUsing(fn (string $state): string => PlatformQueryFailure::label($state)),
             TextColumn::make('query_tested_at')->label('最近测试时间')->dateTime()->sortable(),
         ])->filters([
+            SelectFilter::make('network')->label('包网')->options(PlatformNetwork::options()),
             SelectFilter::make('status')->label('状态')->options(self::STATUS_LABELS)
                 ->query(fn (Builder $query, array $data): Builder => match ($data['value'] ?? null) {
                     'available' => $query->available(),
@@ -96,9 +107,35 @@ class PlatformResource extends Resource
     {
         return Action::make('create_platform')->label('新增平台')
             ->authorize(fn (): bool => self::hasPermission('platforms.edit'))
-            ->schema(self::profileFields())
-            ->action(fn (Action $action, array $data) => ActionForm::submit($action,
-                fn () => app(PlatformAdministration::class)->create(PublicImageField::retain($data, 'logo_url', null), self::operator())));
+            ->steps([
+                Step::make('选择包网')->schema([
+                    Select::make('network')->label('包网')->options(PlatformNetwork::options())
+                        ->default(PlatformNetwork::Panda->value)->required()->live()
+                        ->afterStateUpdated(fn (Set $set) => $set('configure_query_now', false)),
+                ]),
+                Step::make('平台资料')->schema(self::profileFields()),
+                Step::make('接口设置')->visible(fn (): bool => self::hasPermission('platforms.configure-query'))->schema([
+                    Toggle::make('configure_query_now')->label('同时保存接口草稿')->default(false)->live()
+                        ->afterStateUpdated(function (Get $get, Set $set, bool $state): void {
+                            $network = PlatformNetwork::tryFrom((string) $get('network'));
+                            if (! $state || $network === null || ! self::hasPermission('platforms.configure-query')) {
+                                return;
+                            }
+                            foreach ($network->queryDriver()->formState(null) as $field => $value) {
+                                $set($field, $value);
+                            }
+                        }),
+                    Group::make()->visible(fn (Get $get): bool => (bool) $get('configure_query_now'))
+                        ->schema(fn (Get $get): array => self::queryFields(PlatformNetwork::tryFrom((string) $get('network')))),
+                ]),
+            ])
+            ->action(function (Action $action, #[SensitiveParameter] array $data): void {
+                $profile = Arr::only($data, ['network', 'name', 'promotion_url', 'image_upload', 'description', 'rating', 'featured_position']);
+                $query = ($data['configure_query_now'] ?? false) ? $data : null;
+                ActionForm::submit($action, fn () => app(PlatformAdministration::class)->create(
+                    PublicImageField::retain($profile, 'logo_url', null), self::operator(), $query,
+                ));
+            });
     }
 
     public static function getPages(): array
@@ -110,8 +147,21 @@ class PlatformResource extends Resource
     {
         return Action::make('configure_query')->label('接口设置')
             ->authorize(fn (): bool => self::hasPermission('platforms.configure-query'))
+            ->modalDescription(fn (Platform $record): string => $record->network->label())
             ->modalSubmitActionLabel('保存接口配置')
-            ->schema([
+            ->schema(fn (Platform $record): array => self::queryFields($record->network))
+            ->fillForm(fn (Platform $record): array => app(PlatformAdministration::class)->queryForm($record, self::operator()))
+            ->action(function (Action $action, Platform $record, #[SensitiveParameter] array $data): void {
+                ActionForm::submit($action, fn () => app(PlatformAdministration::class)->saveQuery($record, $data, self::operator()));
+                Notification::make()->title('查询接口配置已保存')->body('点击「测试查询」验证，测试通过后生效。')->success()->send();
+            });
+    }
+
+    private static function queryFields(?PlatformNetwork $network): array
+    {
+        return match ($network) {
+            null => [],
+            PlatformNetwork::Panda => [
                 TextInput::make('endpoint')->label('查询接口地址')->url()->maxLength(2048)->required()
                     ->helperText('可粘贴包含查询参数的完整地址。自定义域名须加入服务器允许列表。'),
                 TextInput::make('admin_host')->label('合作方后台域名')->maxLength(253)->required(),
@@ -122,11 +172,8 @@ class PlatformResource extends Resource
                 TextInput::make('region_id')->label('区域 ID')->integer()->minValue(0)->required(),
                 TextInput::make('client_language')->label('请求语言')->maxLength(24)->required(),
                 TextInput::make('test_phone')->label('已知推广测试账号的手机号')->inputMode('tel')->required(),
-            ])->fillForm(fn (Platform $record): array => app(PlatformAdministration::class)->queryForm($record, self::operator()))
-            ->action(function (Action $action, Platform $record, array $data): void {
-                ActionForm::submit($action, fn () => app(PlatformAdministration::class)->saveQuery($record, $data, self::operator()));
-                Notification::make()->title('查询接口配置已保存')->body('点击「测试查询」验证，测试通过后生效。')->success()->send();
-            });
+            ],
+        };
     }
 
     private static function testQueryAction(): Action

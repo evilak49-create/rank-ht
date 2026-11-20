@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Platforms\PlatformNetwork;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -9,14 +10,17 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position'])]
+#[Fillable(['name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position', 'network'])]
 #[Hidden(['draft_query', 'active_query'])]
 class Platform extends Model
 {
+    protected $attributes = ['network' => PlatformNetwork::Panda->value];
+
     protected function casts(): array
     {
         return [
             'rating' => 'decimal:1',
+            'network' => PlatformNetwork::class,
             'manually_disabled' => 'boolean',
             'active_query' => 'encrypted:array',
             'draft_query' => 'encrypted:array',

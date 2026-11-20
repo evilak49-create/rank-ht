@@ -9,7 +9,6 @@ use App\Models\PointQuote;
 use App\Models\PointRule;
 use App\Platforms\PlatformAccount;
 use App\Platforms\PlatformAdministration;
-use App\Platforms\PlatformQueryClient;
 use App\Platforms\PlatformQueryFailure;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +19,6 @@ class PointSettlement
     private const SETTLEMENT_SCALE = 100_000_000;
 
     public function __construct(
-        private readonly PlatformQueryClient $client,
         private readonly PlatformAdministration $platforms,
         private readonly PointWallet $wallet,
         private readonly CashBalance $cash,
@@ -33,7 +31,7 @@ class PointSettlement
         $rule = PointRule::query()->latest('id')->firstOrFail();
 
         try {
-            $account = $this->client->lookup($platform->active_query, $binding->query_phone);
+            $account = $platform->network->queryDriver()->lookup($platform->active_query, $binding->query_phone);
         } catch (PlatformQueryFailure $failure) {
             $this->platforms->recordQueryOutcome($platform, $failure->kind);
             abort($failure->kind === 'ambiguous' ? 409 : 503, $failure->getMessage());
@@ -45,7 +43,7 @@ class PointSettlement
         return DB::transaction(function () use ($member, $binding, $platform, $rule, $account): PointQuote {
             $currentPlatform = Platform::query()->lockForUpdate()->findOrFail($platform->id);
             abort_unless($currentPlatform->status() === 'available', 404);
-            abort_unless($currentPlatform->active_query_revision === $platform->active_query_revision, 409, '平台配置已变更，请重新查询。');
+            abort_unless($currentPlatform->network === $platform->network && $currentPlatform->active_query_revision === $platform->active_query_revision, 409, '平台配置已变更，请重新查询。');
 
             $this->lockMember($member);
             $current = PlatformBinding::query()->lockForUpdate()->findOrFail($binding->id);
