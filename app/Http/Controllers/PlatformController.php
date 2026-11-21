@@ -19,7 +19,10 @@ use Illuminate\Http\Response;
 
 class PlatformController extends Controller
 {
-    private const PUBLIC_FIELDS = ['id', 'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position'];
+    private const PUBLIC_FIELDS = [
+        'id', 'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position',
+        'guarantee_amount_brl', 'max_rebate_percent',
+    ];
 
     public function index(Request $request): JsonResponse
     {

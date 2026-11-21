@@ -8,6 +8,7 @@ use App\Models\Platform;
 use App\Models\PointRule;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -40,6 +41,7 @@ class PlatformNetworkTest extends TestCase
             ->assertHasActionErrors(['network']);
         $draft = $profile + [
             'network' => 'panda',
+            'guarantee_amount_brl' => '1000000.50', 'max_rebate_percent' => '4.125',
             'endpoint' => 'https://partner.example.test/api/backend/trpc/user.list',
             'admin_host' => 'admin.example.test', 'token' => 'test-only-token', 'account' => 'fixture',
             'fingerprint' => 'test-fingerprint', 'tenant_id' => 123, 'region_id' => 1,
@@ -57,6 +59,22 @@ class PlatformNetworkTest extends TestCase
         $this->assertSame('推广 Test+_@01', $platform->draft_query['test_phone']);
         $this->assertStringNotContainsString('test-only-token', DB::table('platforms')->sole()->draft_query);
         $this->getJson('/api/v1/platforms')->assertOk()->assertJsonCount(0, 'data');
+
+        $platform->forceFill(['active_query_revision' => 1])->save();
+        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+            ->assertJsonPath('data.guarantee_amount_brl', '1000000.50')
+            ->assertJsonPath('data.max_rebate_percent', '4.125000');
+
+        $edit = TestAction::make('edit_profile')->table($platform);
+        Livewire::test(ListPlatforms::class)->mountAction($edit)
+            ->assertActionDataSet(['guarantee_amount_brl' => '1000000.50', 'max_rebate_percent' => '4.125000']);
+        Livewire::test(ListPlatforms::class)->callAction($edit, ['max_rebate_percent' => '100.001'])
+            ->assertHasActionErrors(['max_rebate_percent']);
+        Livewire::test(ListPlatforms::class)->callAction($edit, ['guarantee_amount_brl' => null, 'max_rebate_percent' => '8'])
+            ->assertHasNoActionErrors();
+        $this->getJson('/api/v1/platforms')->assertOk()
+            ->assertJsonPath('data.0.guarantee_amount_brl', null)
+            ->assertJsonPath('data.0.max_rebate_percent', '8.000000');
     }
 
     public function test_public_platform_rule_reflects_the_latest_points_and_rebate_configuration(): void

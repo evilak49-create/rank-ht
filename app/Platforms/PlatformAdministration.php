@@ -162,6 +162,8 @@ class PlatformAdministration
             'logo_url' => PublicImages::urlRules(),
             'description' => 'nullable|string|max:2000',
             'rating' => 'required|numeric|between:1,5|decimal:0,1',
+            'guarantee_amount_brl' => 'nullable|numeric|between:0,9999999999.99|decimal:0,2',
+            'max_rebate_percent' => 'nullable|numeric|between:0,100|decimal:0,6',
             'featured_position' => ['nullable', 'integer', 'between:1,10', $position],
         ], ['featured_position.unique' => '该精选位置已被占用。'])->validate();
 
