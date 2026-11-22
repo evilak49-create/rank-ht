@@ -15,8 +15,6 @@ use Throwable;
 
 class PlatformReviewBatches
 {
-    public const LABEL = 'AI 生成';
-
     public function __construct(private readonly AiConfiguration $configuration, private readonly DeepSeek $provider) {}
 
     public function submit(Platform $platform, User $operator, int $quantity, string $request): PlatformReviewBatch
@@ -124,7 +122,7 @@ class PlatformReviewBatches
                 $rows[] = [
                     'platform_id' => $current->platform_id, 'platform_review_batch_id' => $current->id,
                     'batch_position' => $position + 1, 'request_id' => (string) Str::uuid(),
-                    'member_id' => null, 'rating' => null, 'display_name' => $review['display_name'].' · '.self::LABEL, 'source' => 'ai',
+                    'member_id' => null, 'rating' => null, 'display_name' => $review['display_name'], 'source' => 'ai',
                     'body' => $review['body'], 'status' => 'approved', 'published_at' => $time,
                     'created_at' => $time, 'updated_at' => $time,
                 ];

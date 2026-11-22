@@ -8,6 +8,7 @@ use App\Models\PlatformReview;
 use App\Platforms\PlatformParticipation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class PlatformReviewController extends Controller
 {
@@ -18,7 +19,9 @@ class PlatformReviewController extends Controller
 
         return response()->json($reviews->through(fn (PlatformReview $review): array => [
             'id' => $review->id,
-            'display_name' => $review->source === 'member' ? (MemberPhone::mask($review->member?->phone) ?? '会员') : $review->display_name,
+            'display_name' => $review->source === 'member'
+                ? (MemberPhone::mask($review->member?->phone) ?? '会员')
+                : Str::chopEnd($review->display_name, ' · AI 生成'),
             'rating' => $review->rating,
             'body' => $review->body, 'published_at' => $review->published_at, 'source' => $review->source,
         ]));

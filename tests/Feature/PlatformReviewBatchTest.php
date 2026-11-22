@@ -6,6 +6,7 @@ use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Jobs\GeneratePlatformReviewBatch;
 use App\Models\AdminRole;
 use App\Models\Platform;
+use App\Models\PlatformReview;
 use App\Models\PlatformReviewBatch;
 use App\Models\User;
 use App\Platforms\PlatformReviewBatches;
@@ -47,8 +48,11 @@ class PlatformReviewBatchTest extends TestCase
         $platform->forceFill(['active_query_revision' => 1])->save();
         $this->getJson('/api/v1/platforms/'.$platform->id.'/reviews')->assertOk()
             ->assertJsonPath('data.0.source', 'ai')->assertJsonPath('data.0.rating', null)
-            ->assertJsonPath('data.0.display_name', '119****1010 · AI 生成')
+            ->assertJsonPath('data.0.display_name', '119****1010')
             ->assertJsonPath('data.0.body', 'A reputação e a estabilidade merecem atenção. Variação 10.');
+        PlatformReview::query()->latest('id')->firstOrFail()->update(['display_name' => '119****1010 · AI 生成']);
+        $this->getJson('/api/v1/platforms/'.$platform->id.'/reviews')->assertOk()
+            ->assertJsonPath('data.0.display_name', '119****1010')->assertJsonPath('data.0.source', 'ai');
         $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()->assertJsonPath('data.review_count', 20)
             ->assertJsonPath('data.member_review_count', 0)->assertJsonPath('data.rating', '4.8');
         Http::assertSentCount(3);
@@ -79,7 +83,7 @@ class PlatformReviewBatchTest extends TestCase
         $batch = PlatformReviewBatch::query()->sole();
         $service->process($batch->id);
         $this->assertSame('succeeded', $batch->refresh()->status);
-        $this->assertDatabaseHas('platform_reviews', ['source' => 'ai', 'member_id' => null, 'display_name' => '219****4321 · AI 生成']);
+        $this->assertDatabaseHas('platform_reviews', ['source' => 'ai', 'member_id' => null, 'display_name' => '219****4321']);
         $this->assertDatabaseCount('platform_reviews', 1);
     }
 

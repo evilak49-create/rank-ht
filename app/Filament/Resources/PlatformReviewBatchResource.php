@@ -80,7 +80,7 @@ class PlatformReviewBatchResource extends Resource
             ->schema([
                 Hidden::make('request_id')->required(),
                 TextInput::make('quantity')->label('生成条数')->required()->integer()->minValue(1)->maxValue(30)
-                    ->helperText('输入 1–30 条。前台会标注 AI 生成。'),
+                    ->helperText('输入 1–30 条。评价昵称显示为脱敏号码。'),
             ])->fillForm(fn (Platform|PlatformReviewBatch $record): array => [
                 'request_id' => (string) Str::uuid(),
                 'quantity' => $record instanceof PlatformReviewBatch ? $record->quantity : 10,
