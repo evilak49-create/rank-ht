@@ -151,6 +151,45 @@ class PointSettlementTest extends TestCase
         $this->assertDatabaseEmpty('cash_balance_entries');
     }
 
+    public function test_bound_totals_and_cash_only_settlement_do_not_award_points(): void
+    {
+        [$member, $binding] = $this->scenario();
+        $binding->forceFill(['point_remainder' => 25000000])->save();
+        PointRule::query()->firstOrFail()->forceFill([
+            'wager_multiplier_micros' => 4000000,
+            'rebate_wager_multiplier_micros' => 1000000,
+            'rebate_percent_micros' => 3000000,
+        ])->save();
+
+        $path = "/api/v1/platform-bindings/{$binding->id}";
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson("$path/totals")->assertOk()
+            ->assertJsonPath('data.total_deposit_cents', '16000')
+            ->assertJsonPath('data.total_valid_bet_cents', '17000');
+        $this->assertDatabaseEmpty('point_quotes');
+
+        $quote = $this->postJson("$path/point-quotes", ['cash_only' => true])->assertCreated()
+            ->assertJsonPath('data.cash_only', true)
+            ->assertJsonPath('data.eligibility', 'eligible')
+            ->assertJsonPath('data.estimated_points', 0)
+            ->assertJsonPath('data.rebate_cents', 450)->json('data.id');
+        $this->postJson("/api/v1/point-quotes/$quote/confirm")->assertOk();
+        $this->postJson("/api/v1/point-quotes/$quote/confirm")->assertOk();
+        $this->assertSame(0, $member->refresh()->points_balance);
+        $this->assertSame(450, $member->available_balance_cents);
+        $this->assertSame(25000000, $binding->refresh()->point_remainder);
+        $this->assertDatabaseCount('cash_balance_entries', 1);
+        $this->assertDatabaseEmpty('point_entries');
+    }
+
+    public function test_bound_totals_are_only_available_to_the_binding_owner(): void
+    {
+        [, $binding] = $this->scenario();
+        $stranger = Member::create(['phone' => '21912345678', 'password' => 'member-password']);
+        $this->actingAs($stranger, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson("/api/v1/platform-bindings/{$binding->id}/totals")->assertNotFound();
+    }
+
     private function scenario(int $deposit = 16000): array
     {
         config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);

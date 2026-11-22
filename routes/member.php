@@ -82,6 +82,8 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
         Route::post('check-in', [CheckinController::class, 'record']);
         Route::get('platform-bindings', [PlatformController::class, 'bindings']);
         Route::get('platform-bindings/{binding}', [PlatformController::class, 'binding'])->whereNumber('binding');
+        Route::get('platform-bindings/{binding}/totals', [PointSettlementController::class, 'totals'])
+            ->whereNumber('binding')->middleware('throttle:15,1,binding-totals');
         Route::post('platform-bindings/{binding}/point-quotes', [PointSettlementController::class, 'quote'])
             ->whereNumber('binding')->middleware('throttle:10,1');
         Route::post('point-quotes/{quote}/confirm', [PointSettlementController::class, 'confirm'])
