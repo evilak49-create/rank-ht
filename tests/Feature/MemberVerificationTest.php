@@ -57,6 +57,21 @@ class MemberVerificationTest extends TestCase
         $this->postJson('/api/v1/auth/login', ['phone' => $member->phone, 'password' => 'new-password'])->assertOk();
     }
 
+    public function test_each_image_expires_independently_and_submitting_it_does_not_consume_another(): void
+    {
+        DB::table('member_verification_settings')->where('id', 1)->update(['sms_enabled' => false]);
+        [$old, $oldAnswer] = $this->challenge('register');
+        $this->travel(2)->minutes();
+        [$fresh, $freshAnswer] = $this->challenge('register');
+        $this->travel(1)->minutes();
+        $data = ['phone' => '11912345678', 'password' => 'test-password'];
+
+        $this->postJson('/api/v1/auth/register', $data + ['challenge_id' => $old, 'code' => $oldAnswer])
+            ->assertUnprocessable()->assertJsonValidationErrors('code');
+        $this->postJson('/api/v1/auth/register', $data + ['challenge_id' => $fresh, 'code' => $freshAnswer])
+            ->assertCreated();
+    }
+
     public function test_image_mode_can_bind_without_sms_and_does_not_mark_the_phone_as_verified(): void
     {
         DB::table('member_verification_settings')->where('id', 1)->update(['sms_enabled' => false]);
@@ -72,12 +87,17 @@ class MemberVerificationTest extends TestCase
         $this->postJson($url, ['phone' => $member->phone])->assertUnprocessable()->assertJsonValidationErrors('challenge_id');
         [$challenge, $answer] = $this->challenge('platform_binding');
         $this->assertSame(4, strlen($answer));
+        [$anotherChallenge] = $this->challenge('platform_binding');
+        $this->assertNotSame($challenge, $anotherChallenge);
         $this->postJson($url, [
             'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer.'A',
         ])->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->postJson($url, [
-            'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer,
+            'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => strtolower($answer),
         ])->assertCreated()->assertJsonPath('data.platform_account_id', '123456');
+        $this->postJson($url, [
+            'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer,
+        ])->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'query_phone' => $member->phone]);
         $this->assertNull($member->refresh()->phone_verified_at);
         $this->assertDatabaseEmpty('sms_challenges');
