@@ -11,6 +11,7 @@ use App\Platforms\PlatformAdministration;
 use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
 use Filament\Actions\Testing\TestAction;
+use Filament\Notifications\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -150,6 +151,53 @@ class WgPlatformQueryTest extends TestCase
             $this->assertSame('ip_not_allowed', $failure->kind);
             $this->assertSame('WG 出口 IP 不在白名单范围，请联系 WG 核对站点配置', $failure->getMessage());
         }
+    }
+
+    public function test_wg_interface_test_can_capture_the_original_response_body(): void
+    {
+        $body = "{\n  \"code\":1116001004, \"data\":\"trace-id\", \"failed\":true\n}";
+        Http::fake([self::ENDPOINT => Http::response($body)]);
+        $driver = PlatformNetwork::Wg->queryDriver();
+        $captured = null;
+
+        try {
+            $driver->lookupTestAccount($driver->validateConfiguration($this->configuration()), function (string $response) use (&$captured): void {
+                $captured = $response;
+            });
+            $this->fail('The gateway explicitly rejected the source IP.');
+        } catch (PlatformQueryFailure $failure) {
+            $this->assertSame('ip_not_allowed', $failure->kind);
+        }
+
+        $this->assertSame($body, $captured);
+    }
+
+    public function test_admin_query_notification_shows_the_provider_body_or_explains_its_absence(): void
+    {
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => 'WG diagnostics', 'permissions' => [
+            'platforms.view', 'platforms.configure-query', 'platforms.test-query',
+        ]]));
+        $platform = (new Platform)->forceFill([
+            'network' => 'wg',
+            'name' => 'WG test',
+            'promotion_url' => 'https://example.test/register',
+            'rating' => '5.0',
+            'draft_query' => PlatformNetwork::Wg->queryDriver()->validateConfiguration($this->configuration()),
+        ]);
+        $platform->save();
+        $this->actingAs($operator, 'web');
+
+        $body = '{"code":1116001004,"data":"<script>trace</script>"}';
+        Http::fake([self::ENDPOINT => Http::sequence()->push($body)->push('', 502)]);
+        $action = TestAction::make('test_query')->table($platform);
+
+        Livewire::test(ListPlatforms::class)->callAction($action)
+            ->assertNotified(Notification::make()->danger()->persistent()
+                ->title(PlatformQueryFailure::label('ip_not_allowed'))->body('服务商响应原文<pre>'.e($body).'</pre>'));
+        Livewire::test(ListPlatforms::class)->callAction($action)
+            ->assertNotified(Notification::make()->danger()->persistent()
+                ->title(PlatformQueryFailure::label('transient'))->body('服务商返回了空响应（HTTP 502）。'));
     }
 
     private function configuration(): array

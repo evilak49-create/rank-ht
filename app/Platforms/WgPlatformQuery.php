@@ -7,6 +7,7 @@ use App\Storage\PublicHttps;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
+use Closure;
 use DomainException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
@@ -50,15 +51,16 @@ class WgPlatformQuery implements PlatformQueryDriver
         return Arr::only($saved ?? [], array_keys($fields)) + $fields;
     }
 
-    public function lookupTestAccount(#[SensitiveParameter] array $config): ?PlatformAccount
+    public function lookupTestAccount(#[SensitiveParameter] array $config, ?Closure $onResponse = null): ?PlatformAccount
     {
         $account = $config['test_phone'];
         $phone = MemberPhone::normalize($account);
         if (preg_match(substr(MemberPhone::RULE, strlen('regex:')), $phone)) {
-            return $this->lookup($config, $phone) ?? $this->query($config, ['username' => $account]);
+            return $this->query($config, ['mobilePhone' => $phone], $onResponse)
+                ?? $this->query($config, ['username' => $account], $onResponse);
         }
 
-        return $this->query($config, ['username' => $account]);
+        return $this->query($config, ['username' => $account], $onResponse);
     }
 
     public function lookup(#[SensitiveParameter] array $config, string $phone): ?PlatformAccount
@@ -66,7 +68,7 @@ class WgPlatformQuery implements PlatformQueryDriver
         return $this->query($config, ['mobilePhone' => $phone]);
     }
 
-    private function query(#[SensitiveParameter] array $config, array $filter): ?PlatformAccount
+    private function query(#[SensitiveParameter] array $config, array $filter, ?Closure $onResponse = null): ?PlatformAccount
     {
         $endpoint = $config['endpoint'] ?? '';
         $key = $config['secret_key'] ?? '';
@@ -93,6 +95,11 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('transient');
         } catch (DomainException) {
             throw new PlatformQueryFailure('public_endpoint');
+        }
+
+        if ($onResponse !== null) {
+            $body = mb_scrub(str_replace([$key, $apiKey, $encrypted, $signature], '[已隐藏]', $response->body()));
+            $onResponse(mb_strlen($body) > 8000 ? mb_substr($body, 0, 8000)."\n[响应过长，已截断]" : $body, $response->status());
         }
 
         if (in_array($response->status(), [401, 403], true)) {

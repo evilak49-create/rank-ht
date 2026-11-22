@@ -202,9 +202,25 @@ class PlatformResource extends Resource
             ->visible(fn (Platform $record): bool => $record->getRawOriginal('draft_query') !== null || $record->active_query_revision !== null)
             ->authorize(fn (): bool => self::hasPermission('platforms.test-query'))
             ->action(function (Platform $record): void {
-                $result = app(PlatformAdministration::class)->testQuery($record, self::operator());
-                Notification::make()->title(PlatformQueryFailure::label($result))
-                    ->status($result === 'passed' ? 'success' : 'danger')->send();
+                $responseBody = null;
+                $httpStatus = null;
+                $result = app(PlatformAdministration::class)->testQuery($record, self::operator(), function (string $body, int $status) use (&$responseBody, &$httpStatus): void {
+                    $responseBody = $body;
+                    $httpStatus = $status;
+                });
+                $notice = Notification::make()
+                    ->title(PlatformQueryFailure::label($result))
+                    ->status($result === 'passed' ? 'success' : 'danger');
+                if ($record->network === PlatformNetwork::Wg && self::hasPermission('platforms.configure-query') && $result !== 'stale') {
+                    $details = match (true) {
+                        $httpStatus === null => '本次测试没有收到服务商的 HTTP 响应。',
+                        trim($responseBody) === '' => "服务商返回了空响应（HTTP {$httpStatus}）。",
+                        default => '服务商响应原文<pre>'.e($responseBody).'</pre>',
+                    };
+                    $notice->body($details)->persistent();
+                }
+
+                $notice->send();
             });
     }
 

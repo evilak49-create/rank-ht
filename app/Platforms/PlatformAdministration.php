@@ -6,6 +6,7 @@ use App\Models\Platform;
 use App\Models\PlatformFundTask;
 use App\Models\User;
 use App\Storage\PublicImages;
+use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -67,7 +68,7 @@ class PlatformAdministration
         return $platform->network->queryDriver()->formState($platform->draft_query ?? $platform->active_query);
     }
 
-    public function testQuery(Platform $platform, User $operator): string
+    public function testQuery(Platform $platform, User $operator, ?Closure $onResponse = null): string
     {
         abort_unless($operator->hasPermission('platforms.test-query'), 403);
 
@@ -79,7 +80,11 @@ class PlatformAdministration
         }
 
         try {
-            $result = $snapshot->network->queryDriver()->lookupTestAccount($configuration) === null ? 'not_found' : 'passed';
+            $driver = $snapshot->network->queryDriver();
+            $account = $driver instanceof WgPlatformQuery && $operator->hasPermission('platforms.configure-query')
+                ? $driver->lookupTestAccount($configuration, $onResponse)
+                : $driver->lookupTestAccount($configuration);
+            $result = $account === null ? 'not_found' : 'passed';
         } catch (PlatformQueryFailure $failure) {
             $result = $failure->kind;
         }
