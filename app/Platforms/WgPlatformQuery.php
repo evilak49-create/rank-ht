@@ -154,6 +154,22 @@ class WgPlatformQuery implements PlatformQueryDriver
 
     private function account(#[SensitiveParameter] array $data, string $siteCode): ?PlatformAccount
     {
+        if (array_key_exists('accountDetailInfo', $data)) {
+            $detail = $data['accountDetailInfo'];
+            if (! in_array($data['result'] ?? null, [0, '0'], true) || ! is_array($detail) || array_is_list($detail)) {
+                throw new PlatformQueryFailure('schema');
+            }
+
+            return $this->accountFromRow([
+                'useridx' => $detail['userIdx'] ?? null,
+                'siteCode' => $detail['siteCode'] ?? null,
+                // WG's account detail endpoint omits currency for the configured BRL site.
+                'currency' => array_key_exists('currency', $detail) ? $detail['currency'] : 'BRL',
+                'totalDeposit' => $detail['totalPayAmount'] ?? null,
+                'validBet' => $detail['validBet'] ?? null,
+            ], $siteCode);
+        }
+
         if (! in_array($data['result'] ?? 0, [0, '0'], true)) {
             throw new PlatformQueryFailure('schema');
         }
@@ -173,9 +189,14 @@ class WgPlatformQuery implements PlatformQueryDriver
         if ($total !== 1 || count($rows) !== 1 || ! is_array($rows[0])) {
             throw new PlatformQueryFailure('schema');
         }
-        $row = $rows[0];
+
+        return $this->accountFromRow(['siteCode' => $rows[0]['siteCode'] ?? $siteCode] + $rows[0], $siteCode);
+    }
+
+    private function accountFromRow(#[SensitiveParameter] array $row, string $siteCode): PlatformAccount
+    {
         $id = $row['useridx'] ?? null;
-        $reportedSite = $row['siteCode'] ?? $siteCode;
+        $reportedSite = $row['siteCode'] ?? null;
         if ((! is_int($id) && ! is_string($id)) || ! preg_match('/\A[1-9][0-9]{0,39}\z/', (string) $id)
             || (! is_string($reportedSite) && ! is_int($reportedSite)) || (string) $reportedSite !== $siteCode
             || ($row['currency'] ?? null) !== 'BRL') {

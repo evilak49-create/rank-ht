@@ -89,10 +89,11 @@ class WgPlatformQueryTest extends TestCase
         Livewire::test(ListPlatforms::class)->mountAction(TestAction::make('configure_query')->table($platform))
             ->assertActionDataSet(['site_code' => '0025', 'api_key' => 'test-merchant']);
 
-        $this->fakeResponse(['result' => 0, 'total' => 1, 'list' => [[
-            'useridx' => 4000000001, 'siteCode' => '0025', 'currency' => 'BRL',
-            'totalDeposit' => 1234.56, 'validBet' => '7654.321', 'email' => 'ignored@example.test',
-        ]]]);
+        $this->fakeResponse(['result' => 0, 'accountDetailInfo' => [
+            'userIdx' => 4000000001, 'siteCode' => '0025',
+            'totalPayAmount' => '1234.56', 'finalDepositAmount' => 50, 'validBet' => 7654.321,
+            'email' => 'ignored@example.test',
+        ]]);
         $this->assertSame('passed', $service->testQuery($platform, $operator));
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password', 'phone_verified_at' => now()]);
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
@@ -125,9 +126,9 @@ class WgPlatformQueryTest extends TestCase
 
     public function test_wg_does_not_treat_an_incomplete_money_response_as_zero(): void
     {
-        $this->fakeResponse(['total' => 1, 'list' => [[
-            'useridx' => 4000000001, 'siteCode' => '0025', 'currency' => 'BRL', 'totalDeposit' => 0,
-        ]]]);
+        $this->fakeResponse(['result' => 0, 'accountDetailInfo' => [
+            'userIdx' => 4000000001, 'siteCode' => '0025', 'totalPayAmount' => '0',
+        ]]);
         $driver = PlatformNetwork::from('wg')->queryDriver();
         try {
             $driver->lookup($driver->validateConfiguration($this->configuration()), '11912345678');
