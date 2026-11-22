@@ -142,12 +142,12 @@ class PlatformController extends Controller
     {
         $bindings = $this->ownedBindings($request)->latest('id')->paginate(20);
 
-        return response()->json($bindings->through(fn (PlatformBinding $binding): array => $this->bindingData($binding, includeAccountId: true)));
+        return response()->json($bindings->through(fn (PlatformBinding $binding): array => $this->bindingData($binding)));
     }
 
     public function binding(Request $request, string $binding): JsonResponse
     {
-        return response()->json(['data' => $this->bindingData($this->ownedBindings($request)->findOrFail($binding))]);
+        return response()->json(['data' => $this->bindingData($this->ownedBindings($request)->findOrFail($binding), detail: true)]);
     }
 
     public function recharges(Request $request, string $binding, PlatformRecharges $recharges): JsonResponse
@@ -192,7 +192,7 @@ class PlatformController extends Controller
 
         $record = $this->ownedBindings($request)->findOrFail($record->id);
 
-        return response()->json(['data' => $this->bindingData($record, includeAccountId: true)], 201);
+        return response()->json(['data' => $this->bindingData($record)], 201);
     }
 
     private function validatePhone(Request $request, array $verificationRules = []): array
@@ -212,7 +212,7 @@ class PlatformController extends Controller
             'member_review_count' => (int) $platform->member_review_count];
     }
 
-    private function bindingData(PlatformBinding $binding, bool $includeAccountId = false): array
+    private function bindingData(PlatformBinding $binding, bool $detail = false): array
     {
         return [
             'id' => $binding->id,
@@ -220,7 +220,8 @@ class PlatformController extends Controller
             'platform_name' => $binding->platform->name,
             'logo_url' => $binding->platform->logo_url,
             'masked_platform_account' => ProtectionClaims::maskAccount($binding->platform_account_id),
-            ...($includeAccountId ? ['platform_account_id' => $binding->platform_account_id] : []),
+            'platform_account_id' => $binding->platform_account_id,
+            ...($detail ? ['query_phone' => $binding->query_phone] : []),
             'redeemed_points' => (int) $binding->redeemed_points,
             'last_redeemed_at' => $binding->last_redeemed_at?->toISOString(),
             'protection_status' => $binding->protection_status,

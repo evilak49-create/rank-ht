@@ -58,6 +58,7 @@ class PlatformFundsController extends Controller
                 'review_reason', 'reviewed_at', 'paid_at', 'created_at',
             ]),
             'platform_name' => $order->platform->name,
+            'platform_account_id' => $order->platform_account_id,
             'masked_platform_account' => ProtectionClaims::maskAccount($order->platform_account_id),
             'currency' => 'BRL',
             'rate_version' => $order->fund_rate_version_id,

@@ -27,6 +27,8 @@ class CashWithdrawalTest extends TestCase
         config(['services.pix.driver' => 'disabled']);
         [$member, $operator] = $this->scenario();
         $url = '/api/v1/cash-wallet/withdrawals';
+        $cash = $this->getJson('/api/v1/cash-wallet')->assertOk()->assertJsonPath('data.cpf', $member->pix_cpf);
+        $this->assertTrue($cash->headers->hasCacheControlDirective('no-store'));
         $this->postJson($url, ['request_id' => (string) Str::uuid(), 'amount_cents' => 0])->assertUnprocessable();
         $this->postJson($url, ['request_id' => (string) Str::uuid(), 'amount_cents' => 1001])->assertConflict();
         $request = ['request_id' => (string) Str::uuid(), 'amount_cents' => 400];

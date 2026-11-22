@@ -14,14 +14,14 @@ class PixController extends Controller
 {
     public function account(Request $request): JsonResponse
     {
-        return $this->maskedAccount($request->user()->pix_cpf);
+        return $this->accountResponse($request->user()->pix_cpf);
     }
 
     public function saveAccount(Request $request, RedPackets $packets): JsonResponse
     {
         $data = $request->validate(['cpf' => ['required', 'string', 'max:14']]);
 
-        return $this->maskedAccount($packets->saveCpf($request->user(), $data['cpf']));
+        return $this->accountResponse($packets->saveCpf($request->user(), $data['cpf']));
     }
 
     public function submit(Request $request, PixWithdrawals $withdrawals): JsonResponse
@@ -43,7 +43,7 @@ class PixController extends Controller
     {
         $withdrawal = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNotNull('red_packet_round_id')->findOrFail($order);
 
-        return response()->json(['data' => $this->data($withdrawal)])->header('Cache-Control', 'private, no-store');
+        return response()->json(['data' => [...$this->data($withdrawal), 'cpf' => $withdrawal->cpf_snapshot]])->header('Cache-Control', 'private, no-store');
     }
 
     public function history(Request $request): JsonResponse
@@ -71,6 +71,7 @@ class PixController extends Controller
         return response()->json(['data' => [
             'available_balance_cents' => $member->available_balance_cents,
             'held_balance_cents' => $member->held_balance_cents,
+            'cpf' => $member->pix_cpf,
             'masked_cpf' => Cpf::mask($member->pix_cpf),
         ]]);
     }
@@ -102,8 +103,8 @@ class PixController extends Controller
         ];
     }
 
-    private function maskedAccount(?string $cpf): JsonResponse
+    private function accountResponse(?string $cpf): JsonResponse
     {
-        return response()->json(['data' => ['masked_cpf' => Cpf::mask($cpf)]])->header('Cache-Control', 'private, no-store');
+        return response()->json(['data' => ['cpf' => $cpf, 'masked_cpf' => Cpf::mask($cpf)]])->header('Cache-Control', 'private, no-store');
     }
 }

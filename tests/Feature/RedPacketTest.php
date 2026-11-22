@@ -42,7 +42,9 @@ class RedPacketTest extends TestCase
         $this->postJson('/api/v1/red-packets/open', $open)->assertOk()->assertJsonPath('data.id', $round['id']);
 
         $request = ['request_id' => (string) Str::uuid()];
-        $this->putJson('/api/v1/pix-account', ['cpf' => '529.982.247-25'])->assertOk()->assertJsonPath('data.masked_cpf', '***.***.***-25');
+        $this->putJson('/api/v1/pix-account', ['cpf' => '529.982.247-25'])->assertOk()->assertJsonPath('data.masked_cpf', '***.***.***-25')
+            ->assertJsonPath('data.cpf', '52998224725');
+        $this->getJson('/api/v1/pix-account')->assertOk()->assertJsonPath('data.cpf', '52998224725');
         $this->postJson('/api/v1/pix-withdrawals', $request)->assertConflict();
 
         $invite = $this->getJson('/api/v1/red-packets')->assertOk()->json('data');
@@ -69,7 +71,8 @@ class RedPacketTest extends TestCase
         Queue::assertPushed(DeliverPixWithdrawal::class, fn (DeliverPixWithdrawal $job) => $job->taskId === $task->id);
         (new DeliverPixWithdrawal($task->id))->handle(app(PixDelivery::class));
         app(PixDelivery::class)->process($task->id);
-        $this->getJson("/api/v1/pix-withdrawals/$withdrawal")->assertOk()->assertJsonPath('data.status', 'paid');
+        $this->getJson("/api/v1/pix-withdrawals/$withdrawal")->assertOk()
+            ->assertJsonPath('data.status', 'paid')->assertJsonPath('data.cpf', '52998224725');
         $this->assertDatabaseHas('red_packet_rounds', ['id' => $round['id'], 'balance_cents' => 0, 'frozen_cents' => 0]);
         $this->assertDatabaseCount('pix_tasks', 1);
         $this->assertDatabaseCount('point_entries', 0);

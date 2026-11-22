@@ -109,10 +109,10 @@ class ClientApiTest extends TestCase
             ->assertJsonPath('data.platform_name', 'Example')->assertJsonPath('data.redeemed_points', 0)
             ->assertJsonPath('data.last_redeemed_at', null)
             ->assertJsonPath('data.masked_platform_account', '****ount')
-            ->assertJsonMissingPath('data.platform_account_id')->assertJsonMissingPath('data.query_phone');
+            ->assertJsonPath('data.platform_account_id', 'private-account')->assertJsonPath('data.query_phone', $member->phone);
         $this->getJson('/api/v1/platform-funds/orders/'.$response->json('data.0.id'))->assertOk()
             ->assertJsonPath('data.platform_name', 'Example')->assertJsonPath('data.masked_platform_account', '****ount')
-            ->assertJsonMissingPath('data.platform_account_id');
+            ->assertJsonPath('data.platform_account_id', 'private-account');
 
         $quoteData = [
             'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_binding_id' => $binding->id,
@@ -130,12 +130,14 @@ class ClientApiTest extends TestCase
         $quote->forceFill(['confirmed_at' => now(), 'point_entry_id' => $entry->id])->save();
         $this->getJson('/api/v1/platform-bindings')->assertOk()->assertJsonPath('data.0.redeemed_points', 7)
             ->assertJsonPath('data.0.last_redeemed_at', now()->toISOString())
-            ->assertJsonPath('data.0.masked_platform_account', '****ount');
+            ->assertJsonPath('data.0.masked_platform_account', '****ount')
+            ->assertJsonPath('data.0.platform_account_id', 'private-account');
         $this->getJson('/api/v1/point-quotes/'.$quote->id)->assertOk()
             ->assertJsonPath('data.observed_deposit_cents', 12000)->assertJsonPath('data.observed_valid_bet_cents', 24000)
             ->assertJsonMissingPath('data.remainder_units');
 
         Auth::forgetGuards();
         $this->actingAs($other, 'member')->getJson('/api/v1/platform-bindings/'.$binding->id)->assertNotFound();
+        $this->getJson('/api/v1/platform-funds/orders/'.$response->json('data.0.id'))->assertNotFound();
     }
 }
