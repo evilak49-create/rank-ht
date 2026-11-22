@@ -123,7 +123,7 @@ class OssSettingsTest extends TestCase
         ], $staff);
         $this->actingAs($staff, 'web');
         Livewire::test(ListProducts::class)->mountAction('create_product')
-            ->setActionData(['name' => 'Product', 'points_price' => 100, 'is_active' => true])
+            ->setActionData(['name' => 'Product', 'price_brl' => '25.75', 'is_active' => true])
             ->set('mountedActions.0.data.image_upload', [$this->image()])
             ->callMountedAction()->assertHasNoActionErrors();
         $images = [$platform->logo_url, $banner->image_url, Product::query()->sole()->image_url];

@@ -9,6 +9,7 @@ use App\Models\PlatformBinding;
 use App\Models\PlatformFundOrder;
 use App\Models\PlatformFundTask;
 use App\Models\User;
+use App\Points\CashBalance;
 use App\Points\PointWallet;
 use Closure;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -20,7 +21,11 @@ class PlatformFunds
 {
     public const PERMISSIONS = ['funds.view', 'funds.review', 'funds.resume'];
 
-    public function __construct(private readonly PointWallet $wallet, private readonly FundChannel $channel) {}
+    public function __construct(
+        private readonly PointWallet $wallet,
+        private readonly FundChannel $channel,
+        private readonly CashBalance $cash,
+    ) {}
 
     public function rate(): array
     {
@@ -31,6 +36,13 @@ class PlatformFunds
     {
         $binding = $this->binding($member, $data['binding_id']);
         $this->requireAvailable($binding->platform, $member);
+
+        if (isset($data['amount_cents'])) {
+            $amount = (int) $data['amount_cents'];
+            abort_if($amount > $member->available_balance_cents, 409, '可用余额不足。');
+
+            return ['amount_cents' => $amount, 'balance_paid_cents' => $amount, 'currency' => 'BRL'];
+        }
 
         return $this->conversion($this->currentRate(), (int) $data['points']);
     }
@@ -46,34 +58,36 @@ class PlatformFunds
             abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
 
             $request = strtolower($data['request_id']);
+            $cashAmount = isset($data['amount_cents']) ? (int) $data['amount_cents'] : null;
             $existing = PlatformFundOrder::query()->where('member_id', $owner->id)->where('request_id', $request)->first();
             if ($existing !== null) {
-                abort_if($existing->platform_binding_id !== $binding->id || $existing->points !== (int) $data['points'], 409, '该订单请求号已使用。');
+                abort_if($existing->platform_binding_id !== $binding->id || $existing->balance_paid_cents !== $cashAmount
+                    || ($cashAmount === null && $existing->points !== (int) $data['points']), 409, '该订单请求号已使用。');
 
                 return $existing;
             }
 
             $this->requireAvailable($platform, $owner);
-            FundRateVersion::query()->oldest('id')->lockForUpdate()->firstOrFail();
-            $rate = FundRateVersion::query()->latest('id')->lockForUpdate()->firstOrFail();
-            $conversion = $this->conversion($rate, (int) $data['points']);
-            if ($rate->id !== (int) $data['rate_version']) {
-                throw new HttpResponseException(response()->json([
-                    'code' => 'rate_changed', 'message' => '兑换比例已变更，请确认新金额。', 'data' => $conversion,
-                ], 409));
-            }
+            $conversion = $cashAmount === null
+                ? $this->confirmPointConversion((int) $data['points'], (int) $data['rate_version'])
+                : ['amount_cents' => $cashAmount];
 
             $order = PlatformFundOrder::create([
                 'member_id' => $owner->id, 'platform_id' => $platform->id,
                 'platform_binding_id' => $binding->id, 'platform_account_id' => $binding->platform_account_id,
-                'request_id' => $request, 'order_number' => (string) Str::uuid(), 'fund_rate_version_id' => $rate->id,
-                'points' => $conversion['points'], 'cents_per_point' => $conversion['cents_per_point'],
+                'request_id' => $request, 'order_number' => (string) Str::uuid(), 'fund_rate_version_id' => $conversion['rate_version'] ?? null,
+                'points' => $conversion['points'] ?? 0, 'cents_per_point' => $conversion['cents_per_point'] ?? 0,
+                'balance_paid_cents' => $cashAmount,
                 'amount_cents' => $conversion['amount_cents'], 'status' => 'pending',
             ]);
-            $this->wallet->record($owner, -$order->points, [
-                'operation_key' => (string) Str::uuid(), 'reason' => '平台资金兑换',
-                'source' => 'platform_funds', 'source_id' => $order->id,
-            ]);
+            if ($cashAmount !== null) {
+                $this->cash->charge($owner, $cashAmount, 'platform_payment', $order->id);
+            } else {
+                $this->wallet->record($owner, -$order->points, [
+                    'operation_key' => (string) Str::uuid(), 'reason' => '平台资金兑换',
+                    'source' => 'platform_funds', 'source_id' => $order->id,
+                ]);
+            }
             $this->event($order, 'submitted');
 
             return $order;
@@ -152,6 +166,12 @@ class PlatformFunds
 
     public function refund(Member $lockedMember, PlatformFundOrder $order, string $reason, ?User $operator = null): void
     {
+        if ($order->balance_paid_cents !== null) {
+            $this->cash->refund($lockedMember, $order->balance_paid_cents, 'platform_refund', $order->id);
+
+            return;
+        }
+
         $this->wallet->record($lockedMember, $order->points, [
             'operation_key' => $order->order_number, 'reason' => $reason, 'user_id' => $operator?->id,
             'source' => 'platform_refund', 'source_id' => $order->id,
@@ -175,6 +195,20 @@ class PlatformFunds
         abort_if($member->disabled_at !== null, 403, '会员账号已禁用。');
         abort_unless($platform->status() === 'available', 409, '平台暂不可用，订单暂停处理。');
         abort_if($requireChannel && ! $this->channel->isAvailable($platform), 503, '该平台暂未开放资金发放。');
+    }
+
+    private function confirmPointConversion(int $points, int $version): array
+    {
+        FundRateVersion::query()->oldest('id')->lockForUpdate()->firstOrFail();
+        $rate = FundRateVersion::query()->latest('id')->lockForUpdate()->firstOrFail();
+        $conversion = $this->conversion($rate, $points);
+        if ($rate->id !== $version) {
+            throw new HttpResponseException(response()->json([
+                'code' => 'rate_changed', 'message' => '兑换比例已变更，请确认新金额。', 'data' => $conversion,
+            ], 409));
+        }
+
+        return $conversion;
     }
 
     private function conversion(FundRateVersion $rate, int $points): array

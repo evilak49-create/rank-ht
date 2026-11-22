@@ -19,6 +19,46 @@ class ShopOrderTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_balance_product_checkout_uses_the_current_price_and_refunds_once(): void
+    {
+        $product = Product::create(['name' => 'Example', 'points_price' => 12, 'stock' => 1, 'is_active' => true]);
+        $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        $member->forceFill(['points_balance' => 20, 'available_balance_cents' => 5000])->save();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => 'cash-shop', 'permissions' => ['shop.manage-products', 'shop.cancel-orders']]));
+        $shop = app(PhysicalShop::class);
+
+        $request = [
+            'product_id' => $product->id, 'request_id' => (string) Str::uuid(), 'price_cents' => 1275,
+            'address' => ['recipient' => 'Maria', 'phone' => '11987654321', 'postal_code' => '01001-000',
+                'state' => 'SP', 'city' => 'São Paulo', 'district' => 'Sé', 'street' => 'Praça da Sé', 'number' => '10'],
+        ];
+        $this->getJson('/api/v1/shop/products/'.$product->id)->assertOk()->assertJsonPath('data.price_cents', null);
+        $this->postJson('/api/v1/shop/orders', $request)->assertConflict();
+        $legacyRequest = $request;
+        unset($legacyRequest['price_cents']);
+        $this->postJson('/api/v1/shop/orders', $legacyRequest)->assertUnprocessable();
+        $shop->saveProduct($product, ['name' => 'Example', 'price_brl' => '12.75', 'is_active' => true], $operator);
+        $this->getJson('/api/v1/shop/products/'.$product->id)->assertOk()->assertJsonPath('data.price_cents', 1275);
+        $this->postJson('/api/v1/shop/orders', [...$request, 'price_cents' => 1200])->assertConflict();
+        $id = $this->postJson('/api/v1/shop/orders', $request)->assertCreated()
+            ->assertJsonPath('data.balance_paid_cents', 1275)->json('data.id');
+        $this->postJson('/api/v1/shop/orders', $request)->assertCreated()->assertJsonPath('data.id', $id);
+        $this->getJson('/api/v1/shop/redemptions')->assertOk()->assertJsonPath('data.0.balance_paid_cents', 1275);
+        $this->assertSame(3725, $member->refresh()->available_balance_cents);
+        $this->assertSame(0, $product->refresh()->stock);
+
+        $order = ShopOrder::findOrFail($id);
+        $shop->cancel($order, '商品无法发出', $operator);
+        $shop->cancel($order, '商品无法发出', $operator);
+        $this->assertSame(5000, $member->refresh()->available_balance_cents);
+        $this->assertSame(20, $member->points_balance);
+        $this->assertSame(1, $product->refresh()->stock);
+        $this->assertDatabaseCount('cash_balance_entries', 2);
+        $this->assertDatabaseEmpty('point_entries');
+    }
+
     public function test_checkout_is_idempotent_and_cancellation_restores_stock_and_points_once(): void
     {
         $product = Product::create(['name' => 'Example', 'points_price' => 12, 'stock' => 1, 'is_active' => true]);
@@ -32,9 +72,9 @@ class ShopOrderTest extends TestCase
                 'state' => 'SP', 'city' => 'São Paulo', 'district' => 'Sé', 'street' => 'Praça da Sé',
                 'number' => '10', 'complement' => 'Apto 12'],
         ];
-        $this->postJson('/api/v1/shop/orders', [...$request, 'quantity' => 2])->assertUnprocessable();
-        $id = $this->postJson('/api/v1/shop/orders', $request)->assertCreated()->assertJsonPath('data.status', 'pending')->json('data.id');
-        $this->postJson('/api/v1/shop/orders', $request)->assertCreated()->assertJsonPath('data.id', $id);
+        $shop = app(PhysicalShop::class);
+        $id = $shop->checkout($member->refresh(), $request)->id;
+        $this->assertSame($id, $shop->checkout($member, $request)->id);
         $this->assertSame(0, $product->refresh()->stock);
         $this->assertSame(8, $member->refresh()->points_balance);
 
@@ -42,7 +82,6 @@ class ShopOrderTest extends TestCase
         $operator->forceFill(['panel_enabled' => true])->save();
         $operator->roles()->attach(AdminRole::create(['name' => 'shop', 'permissions' => ['shop.cancel-orders', 'shop.view-orders', 'shop.ship-orders']]));
         $order = ShopOrder::findOrFail($id);
-        $shop = app(PhysicalShop::class);
         $shop->cancel($order, '商品无法发出', $operator);
         $shop->cancel($order, '商品无法发出', $operator);
 
@@ -51,8 +90,7 @@ class ShopOrderTest extends TestCase
         $this->assertDatabaseCount('point_entries', 2);
         $this->getJson("/api/v1/shop/orders/$id")->assertOk()->assertJsonPath('data.status', 'cancelled');
 
-        $next = $this->postJson('/api/v1/shop/orders', [...$request, 'request_id' => (string) Str::uuid()])
-            ->assertCreated()->json('data.id');
+        $next = $shop->checkout($member, [...$request, 'request_id' => (string) Str::uuid()])->id;
         $this->putJson('/api/v1/shipping-address', [...$request['address'], 'street' => 'Novo endereço'])->assertOk();
 
         $this->actingAs($operator, 'web')->get('/admin/shop-orders')->assertOk()->assertSee('查看详情');

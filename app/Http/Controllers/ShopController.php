@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 
 class ShopController extends Controller
 {
-    private const PRODUCT_FIELDS = ['id', 'name', 'description', 'image_url', 'points_price', 'stock', 'is_active', 'created_at', 'updated_at'];
+    private const PRODUCT_FIELDS = ['id', 'name', 'description', 'image_url', 'points_price', 'price_cents', 'stock', 'is_active', 'created_at', 'updated_at'];
 
     public function products(Request $request): JsonResponse
     {
@@ -37,6 +37,7 @@ class ShopController extends Controller
         $data = $request->validate([
             'product_id' => 'required|integer|min:1', 'request_id' => 'required|uuid',
             'quantity' => 'sometimes|required|integer|in:1',
+            'price_cents' => 'required|integer|between:1,2147483647',
             'address_version' => 'required_without:address|integer|min:1|prohibits:address',
             'address' => 'required_without:address_version|array:recipient,phone,postal_code,state,city,street,number,district,complement',
             ...($request->has('address') ? collect(ShippingAddressFields::rules())->mapWithKeys(fn ($rule, string $key) => ['address.'.$key => $rule])->all() : []),
@@ -63,7 +64,7 @@ class ShopController extends Controller
     {
         return [
             ...$order->only([
-                'id', 'order_number', 'product_id', 'product_name', 'points_price', 'address', 'status',
+                'id', 'order_number', 'product_id', 'product_name', 'points_price', 'balance_paid_cents', 'address', 'status',
                 'carrier', 'tracking_number', 'cancellation_reason', 'created_at', 'shipped_at', 'cancelled_at',
             ]),
             'quantity' => 1,

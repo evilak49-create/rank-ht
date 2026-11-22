@@ -16,11 +16,11 @@ class RedemptionHistoryController extends Controller
         $member = $request->user();
 
         $goods = DB::table('shop_orders')->where('member_id', $member->id)
-            ->select(['id', 'order_number', 'product_name as name', 'points_price as points', 'status', 'created_at'])
+            ->select(['id', 'order_number', 'product_name as name', 'points_price as points', 'balance_paid_cents', 'status', 'created_at'])
             ->selectRaw('? as type', ['goods']);
         $funds = DB::table('platform_fund_orders as orders')->join('platforms', 'platforms.id', '=', 'orders.platform_id')
             ->where('orders.member_id', $member->id)
-            ->select(['orders.id', 'orders.order_number', 'platforms.name', 'orders.points', 'orders.status', 'orders.created_at'])
+            ->select(['orders.id', 'orders.order_number', 'platforms.name', 'orders.points', 'orders.balance_paid_cents', 'orders.status', 'orders.created_at'])
             ->selectRaw('? as type', ['funds']);
 
         $orders = match ($filters['type'] ?? 'all') {
@@ -39,6 +39,7 @@ class RedemptionHistoryController extends Controller
             'order_number' => $order->order_number,
             'name' => $order->name,
             'points' => (int) $order->points,
+            'balance_paid_cents' => $order->balance_paid_cents === null ? null : (int) $order->balance_paid_cents,
             'status' => $order->status,
             'created_at' => $order->created_at === null ? null : Carbon::parse($order->created_at)->toISOString(),
         ]));

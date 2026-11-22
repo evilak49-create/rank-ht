@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ShippingAddress;
 use App\Models\ShopOrder;
 use App\Models\User;
+use App\Points\CashBalance;
 use App\Points\PointWallet;
 use App\Storage\PublicImages;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,11 @@ class PhysicalShop
 {
     public const PERMISSIONS = ['shop.manage-products', 'shop.view-orders', 'shop.ship-orders', 'shop.cancel-orders'];
 
-    public function __construct(private readonly PointWallet $wallet, private readonly PublicImages $images) {}
+    public function __construct(
+        private readonly PointWallet $wallet,
+        private readonly PublicImages $images,
+        private readonly CashBalance $cash,
+    ) {}
 
     public function checkout(Member $member, array $data): ShopOrder
     {
@@ -28,9 +33,11 @@ class PhysicalShop
             abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
             $request = strtolower($data['request_id']);
             $version = isset($data['address_version']) ? (int) $data['address_version'] : null;
+            $cashPrice = isset($data['price_cents']) ? (int) $data['price_cents'] : null;
             $existing = ShopOrder::query()->where('member_id', $owner->id)->where('request_id', $request)->first();
             if ($existing !== null) {
                 abort_if((int) $existing->product_id !== (int) $data['product_id'] || $existing->address_version !== $version
+                    || $existing->balance_paid_cents !== $cashPrice
                     || ($version === null && $existing->address != $data['address']), 409, '该订单请求号已使用。');
 
                 return $existing;
@@ -49,14 +56,25 @@ class PhysicalShop
                 throw ValidationException::withMessages(['product_id' => '商品库存不足。']);
             }
 
+            if ($cashPrice !== null) {
+                abort_unless($product->price_cents === $cashPrice, 409, '商品售价已更新，请重新确认。');
+            } else {
+                abort_if($product->price_cents !== null, 409, '请使用可用余额结算。');
+            }
+
             $order = ShopOrder::create([
                 'order_number' => (string) Str::uuid(), 'request_id' => $request, 'member_id' => $owner->id,
-                'product_id' => $product->id, 'product_name' => $product->name, 'points_price' => $product->points_price,
+                'product_id' => $product->id, 'product_name' => $product->name,
+                'points_price' => $cashPrice === null ? $product->points_price : 0, 'balance_paid_cents' => $cashPrice,
                 'address' => $address, 'address_version' => $version, 'status' => 'pending',
             ]);
-            $this->wallet->record($owner, -$order->points_price, [
-                'operation_key' => (string) Str::uuid(), 'reason' => '商品兑换', 'source' => 'shop_order', 'source_id' => $order->id,
-            ]);
+            if ($cashPrice !== null) {
+                $this->cash->charge($owner, $cashPrice, 'shop_payment', $order->id);
+            } else {
+                $this->wallet->record($owner, -$order->points_price, [
+                    'operation_key' => (string) Str::uuid(), 'reason' => '商品兑换', 'source' => 'shop_order', 'source_id' => $order->id,
+                ]);
+            }
             $this->moveStock($product, -1, '商品兑换', $order);
 
             return $order;
@@ -110,10 +128,14 @@ class PhysicalShop
             }
             abort_unless($current->status === 'pending', 409, '只有待发货订单可以取消。');
 
-            $this->wallet->record($owner, $current->points_price, [
-                'operation_key' => (string) Str::uuid(), 'reason' => $reason, 'user_id' => $operator->id,
-                'source' => 'shop_refund', 'source_id' => $current->id,
-            ]);
+            if ($current->balance_paid_cents !== null) {
+                $this->cash->refund($owner, $current->balance_paid_cents, 'shop_refund', $current->id);
+            } else {
+                $this->wallet->record($owner, $current->points_price, [
+                    'operation_key' => (string) Str::uuid(), 'reason' => $reason, 'user_id' => $operator->id,
+                    'source' => 'shop_refund', 'source_id' => $current->id,
+                ]);
+            }
             $this->moveStock($product, 1, $reason, $current, $operator);
             $current->forceFill([
                 'status' => 'cancelled', 'cancellation_reason' => $reason, 'cancelled_at' => now(), 'user_id' => $operator->id,
@@ -131,10 +153,16 @@ class PhysicalShop
     {
         $fields = Validator::make($data, [
             'name' => 'required|string|max:120', 'description' => 'nullable|string|max:2000',
-            'image_url' => PublicImages::urlRules(), 'points_price' => 'required|integer|between:1,2147483647',
+            'image_url' => PublicImages::urlRules(), 'points_price' => 'required_without:price_brl|integer|between:1,2147483647',
+            'price_brl' => 'required_without:points_price|numeric|between:0.01,21474836.47|decimal:0,2',
             'is_active' => 'required|boolean',
         ])->validate();
 
+        if (isset($fields['price_brl'])) {
+            $fields['price_cents'] = (int) round((float) $fields['price_brl'] * 100);
+            $fields['points_price'] ??= $product?->points_price ?? 0;
+            unset($fields['price_brl']);
+        }
         DB::transaction(function () use ($product, $fields): void {
             $record = $product === null ? new Product : Product::query()->lockForUpdate()->findOrFail($product->id);
             $record->fill($fields)->save();

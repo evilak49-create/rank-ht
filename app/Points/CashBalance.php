@@ -16,6 +16,18 @@ class CashBalance
         $this->record($member, $amount, 0, 'rebate', $quoteId);
     }
 
+    public function charge(Member $member, int $amount, string $source, int $orderId): void
+    {
+        abort_unless($amount > 0 && $amount <= $member->available_balance_cents, 409, '可用余额不足。');
+        $this->record($member, -$amount, 0, $source, $orderId);
+    }
+
+    public function refund(Member $member, int $amount, string $source, int $orderId): void
+    {
+        abort_if($amount > self::MAX_CENTS - $member->available_balance_cents - $member->held_balance_cents, 409, '余额超出可入账范围。');
+        $this->record($member, $amount, 0, $source, $orderId);
+    }
+
     public function holdWithdrawal(Member $member, int $amount, int $orderId): void
     {
         abort_unless($amount > 0 && $amount <= $member->available_balance_cents, 409, '可用余额不足。');

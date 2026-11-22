@@ -35,7 +35,7 @@ class PlatformFundOrderResource extends Resource
     private const EVENTS = [
         'submitted' => '提交兑换', 'approved' => '审核通过', 'rejected' => '审核驳回',
         'resumed' => '恢复发放', 'lookup_requested' => '人工申请查单', 'send_started' => '开始发放',
-        'lookup_started' => '开始查单', 'paid' => '确认到账', 'failed' => '确认失败并退分', 'unresolved' => '结果待确认',
+        'lookup_started' => '开始查单', 'paid' => '确认到账', 'failed' => '确认失败并退款', 'unresolved' => '结果待确认',
     ];
 
     public static function canViewAny(): bool
@@ -55,7 +55,7 @@ class PlatformFundOrderResource extends Resource
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('platform.name')->label('平台'),
             TextColumn::make('platform_account_id')->label('平台账号'),
-            TextColumn::make('points')->label('扣减积分')->numeric(),
+            TextColumn::make('balance_paid_cents')->label('余额实付')->formatStateUsing(fn (int $state): string => 'R$ '.PointRules::display($state, 2))->placeholder('历史订单'),
             TextColumn::make('amount_cents')->label('到账金额')->formatStateUsing(fn (int $state) => 'R$ '.PointRules::display($state, 2)),
             TextColumn::make('status')->label('状态')->badge()->formatStateUsing(fn (string $state) => self::STATUSES[$state]),
             TextColumn::make('hold')->label('处理提示')->state(fn (PlatformFundOrder $record): ?string => match (true) {
@@ -75,7 +75,7 @@ class PlatformFundOrderResource extends Resource
                 Action::make('approve')->label('审核通过')->requiresConfirmation()
                     ->authorize(fn () => self::allowed('funds.review'))->visible(self::mayReview(...))
                     ->action(fn (PlatformFundOrder $record) => app(PlatformFunds::class)->approve($record, self::operator())),
-                Action::make('reject')->label('驳回并退分')->color('danger')
+                Action::make('reject')->label('驳回并退款')->color('danger')
                     ->authorize(fn () => self::allowed('funds.review'))->visible(self::mayReview(...))
                     ->schema([Textarea::make('reason')->label('驳回原因')->maxLength(300)->required()])
                     ->action(fn (PlatformFundOrder $record, array $data) => app(PlatformFunds::class)->reject($record, $data['reason'], self::operator())),

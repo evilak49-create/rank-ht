@@ -41,7 +41,7 @@ class ShopOrderResource extends Resource
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('product_name')->label('商品')->searchable(),
             TextColumn::make('quantity')->label('数量')->state(1),
-            TextColumn::make('points_price')->label('消耗积分')->numeric(),
+            TextColumn::make('balance_paid_cents')->label('余额实付')->formatStateUsing(fn (int $state): string => 'R$ '.number_format($state / 100, 2, ',', '.'))->placeholder('历史订单'),
             TextColumn::make('status')->label('状态')->badge()->formatStateUsing(fn (string $state) => self::STATUSES[$state]),
             TextColumn::make('created_at')->label('创建时间')->dateTime()->sortable(),
             TextColumn::make('address.recipient')->label('收件人')->toggleable(isToggledHiddenByDefault: true),

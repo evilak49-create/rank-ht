@@ -17,6 +17,7 @@ use App\Shop\Funds\FundResult;
 use App\Shop\Funds\PlatformFunds;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -30,18 +31,32 @@ class PlatformFundsTest extends TestCase
     {
         [$member, $binding, $operator] = $this->fixture();
         $payload = ['binding_id' => $binding->id, 'points' => 3];
-        $version = $this->postJson('/api/v1/platform-funds/preview', $payload)->assertOk()->assertJsonPath('data.amount_cents', 300)->json('data.rate_version');
+        $service = app(PlatformFunds::class);
+        $this->postJson('/api/v1/platform-funds/preview', $payload)->assertUnprocessable();
+        $preview = $service->preview($member, $payload);
+        $this->assertSame(300, $preview['amount_cents']);
+        $version = $preview['rate_version'];
         app(FundRates::class)->save('1.25', $operator);
         $payload += ['request_id' => (string) Str::uuid(), 'rate_version' => $version];
-        $latest = $this->postJson('/api/v1/platform-funds/orders', $payload)->assertConflict()
-            ->assertJsonPath('code', 'rate_changed')->assertJsonPath('data.amount_cents', 375)->json('data.rate_version');
+        $this->postJson('/api/v1/platform-funds/orders', $payload)->assertUnprocessable();
+        try {
+            $service->checkout($member, $payload);
+            $this->fail('A stale rate must be rejected.');
+        } catch (HttpResponseException $error) {
+            $this->assertSame(409, $error->getResponse()->getStatusCode());
+            $response = $error->getResponse()->getData(true);
+            $this->assertSame('rate_changed', $response['code']);
+            $this->assertSame(375, $response['data']['amount_cents']);
+            $latest = $response['data']['rate_version'];
+        }
         $this->assertSame(20, $member->refresh()->points_balance);
 
         $payload['rate_version'] = $latest;
-        $orderId = $this->postJson('/api/v1/platform-funds/orders', $payload)->assertCreated()->json('data.id');
+        $orderId = $service->checkout($member, $payload)->id;
         app(FundRates::class)->save('2.00', $operator);
-        $this->postJson('/api/v1/platform-funds/orders', $payload)->assertCreated()
-            ->assertJsonPath('data.id', $orderId)->assertJsonPath('data.amount_cents', 375);
+        $retry = $service->checkout($member, $payload);
+        $this->assertSame($orderId, $retry->id);
+        $this->assertSame(375, $retry->amount_cents);
         $this->assertSame(17, $member->refresh()->points_balance);
         $this->assertDatabaseCount('point_entries', 1);
         $path = '/api/v1/wallet/entries?direction=debit&platform_id=';
@@ -146,17 +161,43 @@ class PlatformFundsTest extends TestCase
         $this->app->instance('env', 'production');
 
         $this->withSession(['_token' => 'fixture-csrf'])
-            ->postJson('/api/v1/platform-funds/preview', ['binding_id' => $binding->id, 'points' => 3, '_token' => 'fixture-csrf'])
+            ->postJson('/api/v1/platform-funds/preview', ['binding_id' => $binding->id, 'amount_cents' => 300, '_token' => 'fixture-csrf'])
             ->assertServiceUnavailable();
         $this->assertDatabaseCount('platform_fund_orders', 0);
+    }
+
+    public function test_balance_checkout_and_rejection_charge_and_refund_the_exact_reais_amount(): void
+    {
+        [$member, $binding, $operator] = $this->fixture();
+        $member->forceFill(['available_balance_cents' => 2100])->save();
+        $request = ['binding_id' => $binding->id, 'amount_cents' => 1575, 'request_id' => (string) Str::uuid()];
+        $this->postJson('/api/v1/platform-funds/preview', [...$request, 'amount_cents' => 2101])->assertConflict();
+        $this->postJson('/api/v1/platform-funds/preview', $request)->assertOk()
+            ->assertJsonPath('data.balance_paid_cents', 1575)->assertJsonPath('data.amount_cents', 1575);
+        $id = $this->postJson('/api/v1/platform-funds/orders', $request)->assertCreated()
+            ->assertJsonPath('data.balance_paid_cents', 1575)->assertJsonPath('data.rate_version', null)->json('data.id');
+        $this->postJson('/api/v1/platform-funds/orders', $request)->assertCreated()->assertJsonPath('data.id', $id);
+        $this->postJson('/api/v1/platform-funds/orders', [...$request, 'amount_cents' => 1576])->assertConflict();
+        $this->assertSame(525, $member->refresh()->available_balance_cents);
+
+        $order = PlatformFundOrder::findOrFail($id);
+        $funds = app(PlatformFunds::class);
+        $funds->reject($order, '订单无法受理', $operator);
+        $funds->reject($order, '订单无法受理', $operator);
+        $this->assertSame(2100, $member->refresh()->available_balance_cents);
+        $this->assertSame(20, $member->points_balance);
+        $this->assertDatabaseCount('cash_balance_entries', 2);
+        $this->assertDatabaseEmpty('point_entries');
     }
 
     private function makeOrder(PlatformBinding $binding): PlatformFundOrder
     {
         $payload = ['binding_id' => $binding->id, 'points' => 3, 'request_id' => (string) Str::uuid()];
-        $payload['rate_version'] = $this->postJson('/api/v1/platform-funds/preview', $payload)->assertOk()->json('data.rate_version');
+        $member = Member::findOrFail($binding->member_id);
+        $service = app(PlatformFunds::class);
+        $payload['rate_version'] = $service->preview($member, $payload)['rate_version'];
 
-        return PlatformFundOrder::findOrFail($this->postJson('/api/v1/platform-funds/orders', $payload)->assertCreated()->json('data.id'));
+        return $service->checkout($member, $payload);
     }
 
     private function fixture(): array

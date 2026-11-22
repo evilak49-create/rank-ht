@@ -38,13 +38,16 @@ class ProductResource extends Resource
         return $table->defaultSort('id', 'desc')->columns([
             TextColumn::make('id')->label('商品 ID'),
             TextColumn::make('name')->label('商品名称')->searchable(),
-            TextColumn::make('points_price')->label('所需积分')->numeric(),
+            TextColumn::make('price_cents')->label('余额售价')->formatStateUsing(fn (int $state): string => 'R$ '.number_format($state / 100, 2, ',', '.'))->placeholder('未定价'),
             TextColumn::make('stock')->label('库存')->numeric(),
             IconColumn::make('is_active')->label('上架')->boolean(),
         ])->recordActions([
             Action::make('edit_product')->label('编辑')->authorize(fn (): bool => self::canViewAny())
                 ->schema(self::fields())
-                ->fillForm(fn (Product $record) => $record->only(['name', 'description', 'image_url', 'points_price', 'is_active']))
+                ->fillForm(fn (Product $record) => [
+                    ...$record->only(['name', 'description', 'image_url', 'is_active']),
+                    'price_brl' => $record->price_cents === null ? null : number_format($record->price_cents / 100, 2, '.', ''),
+                ])
                 ->action(fn (Action $action, Product $record, array $data) => ActionForm::submit($action, fn () => app(PhysicalShop::class)->saveProduct(
                     $record, PublicImageField::retain($data, 'image_url', $record->image_url), self::operator(),
                 ))),
@@ -77,7 +80,8 @@ class ProductResource extends Resource
             PublicImageField::make('上传商品图片'),
             PublicImageField::current('image_url'),
             PublicImageField::remove('image_url'),
-            TextInput::make('points_price')->label('所需积分')->integer()->minValue(1)->required(),
+            TextInput::make('price_brl')->label('余额售价')->prefix('R$')->numeric()
+                ->minValue(0.01)->maxValue(21474836.47)->step(0.01)->rule('decimal:0,2')->required(),
             Toggle::make('is_active')->label('上架')->default(false),
         ];
     }
