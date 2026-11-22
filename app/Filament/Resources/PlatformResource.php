@@ -110,6 +110,7 @@ class PlatformResource extends Resource
     {
         return Action::make('create_platform')->label('新增平台')
             ->authorize(fn (): bool => self::hasPermission('platforms.edit') && self::hasPermission('platforms.configure-query'))
+            ->successNotificationTitle('平台已保存')
             ->fillForm(fn (): array => ['network' => PlatformNetwork::Panda->value, 'rating' => Platform::DEFAULT_RATING]
                 + PlatformNetwork::Panda->queryDriver()->formState(null))
             ->steps([
@@ -229,6 +230,8 @@ class PlatformResource extends Resource
             TextInput::make('max_rebate_percent')->label('最高返利')->numeric()->suffix('%')
                 ->minValue(0)->maxValue(100)->step(0.000001)->rule('decimal:0,6'),
             TextInput::make('featured_position')->label('首页精选位置')->integer()->minValue(1)->maxValue(10)
+                ->unique(table: Platform::class, ignoreRecord: true)
+                ->validationMessages(['unique' => '该精选位置已被占用。'])
                 ->helperText('填入 1 到 10 可加入首页精选，留空可移除。'),
         ];
     }

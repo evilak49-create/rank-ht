@@ -19,6 +19,26 @@ class PlatformNetworkTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_duplicate_featured_position_is_reported_before_leaving_platform_details(): void
+    {
+        $operator = $this->operator(['platforms.view', 'platforms.edit', 'platforms.configure-query']);
+        $this->actingAs($operator, 'web');
+        app(PlatformAdministration::class)->create([
+            'name' => 'Featured Platform', 'promotion_url' => 'https://example.test/featured', 'featured_position' => 2,
+        ], $operator);
+
+        Livewire::test(ListPlatforms::class)->mountAction('create_platform')
+            ->goToWizardStep(2)
+            ->set('mountedActions.0.data.name', 'New Platform')
+            ->set('mountedActions.0.data.promotion_url', 'https://example.test/new')
+            ->set('mountedActions.0.data.featured_position', 2)
+            ->goToWizardStep(3)
+            ->assertHasActionErrors(['featured_position' => 'unique'])
+            ->assertNotified('首页精选位置不可用');
+
+        $this->assertDatabaseCount('platforms', 1);
+    }
+
     public function test_create_platform_defaults_to_panda_and_requires_its_query_configuration(): void
     {
         config([
@@ -51,7 +71,8 @@ class PlatformNetworkTest extends TestCase
             ...$draft, 'endpoint' => 'https://denied.example.test/api/backend/trpc/user.list',
         ])->assertHasActionErrors(['endpoint']);
         $this->assertDatabaseEmpty('platforms');
-        Livewire::test(ListPlatforms::class)->callAction('create_platform', $draft)->assertHasNoActionErrors();
+        Livewire::test(ListPlatforms::class)->callAction('create_platform', $draft)
+            ->assertHasNoActionErrors()->assertNotified('平台已保存');
 
         $platform = Platform::query()->sole();
         $this->assertDatabaseHas('platforms', ['id' => $platform->id, 'network' => 'panda', 'query_revision' => 1, 'active_query_revision' => null]);
@@ -75,6 +96,13 @@ class PlatformNetworkTest extends TestCase
         $this->getJson('/api/v1/platforms')->assertOk()
             ->assertJsonPath('data.0.guarantee_amount_brl', null)
             ->assertJsonPath('data.0.max_rebate_percent', '8.000000');
+
+        $platform->forceFill(['featured_position' => 2])->save();
+        Livewire::test(ListPlatforms::class)->callAction('create_platform', [
+            ...$draft, 'name' => 'Second Platform', 'featured_position' => 2,
+        ])->assertHasActionErrors(['featured_position' => 'unique'])
+            ->assertNotified('首页精选位置不可用');
+        $this->assertDatabaseCount('platforms', 1);
     }
 
     public function test_public_platform_rule_reflects_the_latest_points_and_rebate_configuration(): void
