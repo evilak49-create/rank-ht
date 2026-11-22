@@ -23,7 +23,7 @@ class PlatformReviewBatchResource extends Resource
 {
     protected static ?string $model = PlatformReviewBatch::class;
 
-    protected static ?string $pluralModelLabel = 'AI 平台说明批次';
+    protected static ?string $pluralModelLabel = 'AI 评价批次';
 
     protected static string|\UnitEnum|null $navigationGroup = '平台与保障';
 
@@ -35,7 +35,9 @@ class PlatformReviewBatchResource extends Resource
         'provider_unavailable' => 'AI 配置暂不可用',
         'provider_error' => 'DeepSeek 请求失败',
         'invalid_selection' => '返回的条目编号或数量不合格',
-        'source_changed' => '生成期间平台简介发生变更',
+        'invalid_reviews' => '返回的评价条数、内容或号码掩码不合格',
+        'format_updated' => '旧版批次，请重新发起',
+        'source_changed' => '生成期间平台资料发生变更',
         'worker_interrupted' => '队列任务多次中断',
     ];
 
@@ -72,13 +74,13 @@ class PlatformReviewBatchResource extends Resource
 
     public static function generateAction(string $name = 'generate_descriptions'): Action
     {
-        return Action::make($name)->label('生成 AI 平台说明')
+        return Action::make($name)->label('生成评价')
             ->authorize(fn (): bool => self::canViewAny())
             ->visible(fn (Platform|PlatformReviewBatch $record): bool => $record instanceof Platform || $record->status === 'failed')
             ->schema([
                 Hidden::make('request_id')->required(),
-                TextInput::make('quantity')->label('生成条数')->required()->integer()->minValue(10)->maxValue(30)
-                    ->helperText('每条取自平台简介中的一项独立说明，前台会标注 AI 平台说明。'),
+                TextInput::make('quantity')->label('生成条数')->required()->integer()->minValue(1)->maxValue(30)
+                    ->helperText('输入 1–30 条。前台会标注 AI 生成。'),
             ])->fillForm(fn (Platform|PlatformReviewBatch $record): array => [
                 'request_id' => (string) Str::uuid(),
                 'quantity' => $record instanceof PlatformReviewBatch ? $record->quantity : 10,

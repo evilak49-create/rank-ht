@@ -19,7 +19,7 @@ class AdminPermissions
         'platforms.change-status' => '停用或启用平台',
         'platforms.view-reviews' => '查看平台评价',
         'platforms.moderate-reviews' => '审核平台评价',
-        'platforms.generate-reviews' => '批量生成 AI 平台说明',
+        'platforms.generate-reviews' => '批量生成评价',
         'shop.manage-products' => '管理商品和库存',
         'shop.view-orders' => '查看商品订单',
         'shop.ship-orders' => '登记发货',

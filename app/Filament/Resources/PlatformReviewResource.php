@@ -26,7 +26,7 @@ class PlatformReviewResource extends Resource
 
     private const STATUSES = ['pending' => '待审核', 'approved' => '已发布', 'rejected' => '已驳回'];
 
-    private const SOURCES = ['member' => '会员投稿', 'ai' => 'AI 平台说明'];
+    private const SOURCES = ['member' => '会员投稿', 'ai' => 'AI 生成'];
 
     public static function canViewAny(): bool
     {
