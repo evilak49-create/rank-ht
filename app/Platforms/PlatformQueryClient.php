@@ -2,6 +2,8 @@
 
 namespace App\Platforms;
 
+use Carbon\CarbonImmutable;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -80,44 +82,11 @@ class PlatformQueryClient implements PlatformQueryDriver
             throw new PlatformQueryFailure('configuration');
         }
 
-        try {
-            $response = Http::acceptJson()->withToken($config['token'])
-                ->withHeaders([
-                    'account' => $config['account'],
-                    'fingerprint-id' => $config['fingerprint'],
-                    'client-language' => $config['client_language'] ?? 'zh-CN',
-                    'Content-Type' => 'application/json',
-                    'Origin' => 'https://'.$config['admin_host'],
-                    'Referer' => 'https://'.$config['admin_host'].'/',
-                    'x-admin-host' => $config['admin_host'],
-                ])
-                ->withoutRedirecting()->connectTimeout(3)->timeout(8)
-                ->get($config['endpoint'], ['input' => json_encode(['json' => [
-                    'queryType' => 'phone', 'queryValue' => $phone,
-                    'regionId' => (int) $config['region_id'], 'tenantId' => (int) $config['tenant_id'],
-                    'page' => 1, 'pageSize' => 50, 'order' => [['key' => '', 'type' => 'desc']],
-                ]], JSON_THROW_ON_ERROR)]);
-        } catch (ConnectionException) {
-            throw new PlatformQueryFailure('transient');
-        }
-
-        if (in_array($response->status(), [401, 403], true)) {
-            throw new PlatformQueryFailure('authentication');
-        }
-
-        if ($response->serverError() || in_array($response->status(), [408, 429], true)) {
-            throw new PlatformQueryFailure('transient');
-        }
-
-        if (! $response->successful()) {
-            throw new PlatformQueryFailure('schema');
-        }
-
-        try {
-            $payload = json_decode($response->body(), true, 64, JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING);
-        } catch (JsonException) {
-            throw new PlatformQueryFailure('schema');
-        }
+        $payload = $this->request($config, $config['endpoint'], [
+            'queryType' => 'phone', 'queryValue' => $phone,
+            'regionId' => (int) $config['region_id'], 'tenantId' => (int) $config['tenant_id'],
+            'page' => 1, 'pageSize' => 50, 'order' => [['key' => '', 'type' => 'desc']],
+        ]);
 
         $list = $payload['result']['data']['json']['userList'] ?? null;
         $total = $this->integer($list['total'] ?? null);
@@ -149,6 +118,90 @@ class PlatformQueryClient implements PlatformQueryDriver
         }
 
         return new PlatformAccount((string) $id, $deposit, $validBet, now()->utc());
+    }
+
+    public function rechargePage(
+        #[SensitiveParameter] array $config,
+        string $accountId,
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+        int $page,
+    ): PlatformRechargePage {
+        $endpoint = $config['endpoint'] ?? '';
+        $userId = $this->integer($accountId);
+        if (! is_string($endpoint) || ! $this->acceptsEndpoint($endpoint) || $userId === null || $userId === 0) {
+            throw new PlatformQueryFailure('configuration');
+        }
+
+        $region = (int) $config['region_id'];
+        $tenant = (int) $config['tenant_id'];
+        $url = substr($endpoint, 0, -strlen(self::QUERY_PATH)).'/api/backend/trpc/assetsChange.list';
+        $payload = $this->request($config, $url, [
+            'page' => $page, 'pageSize' => PlatformRechargePage::SIZE, 'changeTypes' => ['recharge'],
+            'userId' => $userId, 'regionId' => $region, 'tenantId' => $tenant,
+            'startTime' => $start->format('Y-m-d\TH:i:s.v\Z'), 'endTime' => $end->format('Y-m-d\TH:i:s.v\Z'),
+        ]);
+        $data = $payload['result']['data']['json'] ?? [];
+
+        return PlatformRechargePage::fromProvider($data['pageData'] ?? null, $data['total'] ?? null, function (array $row) use ($userId, $region, $tenant): array {
+            $time = $row['createTime'] ?? null;
+            if ($this->integer($row['userId'] ?? null) !== $userId || $this->integer($row['regionId'] ?? null) !== $region
+                || $this->integer($row['tenantId'] ?? null) !== $tenant || ($row['changeType'] ?? null) !== 'recharge'
+                || ($row['currency'] ?? null) !== 'BRL' || ! is_string($time)
+                || ! preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})\z/', $time)) {
+                throw new PlatformQueryFailure('schema');
+            }
+            try {
+                $at = CarbonImmutable::parse($time);
+            } catch (InvalidFormatException) {
+                throw new PlatformQueryFailure('schema');
+            }
+
+            return PlatformRechargePage::record($row['id'] ?? null, $this->integer($row['amountChange'] ?? null), $at);
+        });
+    }
+
+    private function request(#[SensitiveParameter] array $config, string $endpoint, array $data): array
+    {
+        try {
+            $response = Http::acceptJson()->withToken($config['token'])
+                ->withHeaders([
+                    'account' => $config['account'],
+                    'fingerprint-id' => $config['fingerprint'],
+                    'client-language' => $config['client_language'] ?? 'zh-CN',
+                    'Content-Type' => 'application/json',
+                    'Origin' => 'https://'.$config['admin_host'],
+                    'Referer' => 'https://'.$config['admin_host'].'/',
+                    'x-admin-host' => $config['admin_host'],
+                ])
+                ->withoutRedirecting()->connectTimeout(3)->timeout(8)
+                ->get($endpoint, ['input' => json_encode(['json' => $data], JSON_THROW_ON_ERROR)]);
+        } catch (ConnectionException) {
+            throw new PlatformQueryFailure('transient');
+        }
+
+        if (in_array($response->status(), [401, 403], true)) {
+            throw new PlatformQueryFailure('authentication');
+        }
+
+        if ($response->serverError() || in_array($response->status(), [408, 429], true)) {
+            throw new PlatformQueryFailure('transient');
+        }
+
+        if (! $response->successful()) {
+            throw new PlatformQueryFailure('schema');
+        }
+
+        try {
+            $payload = json_decode($response->body(), true, 64, JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING);
+        } catch (JsonException) {
+            throw new PlatformQueryFailure('schema');
+        }
+        if (! is_array($payload) || array_is_list($payload)) {
+            throw new PlatformQueryFailure('schema');
+        }
+
+        return $payload;
     }
 
     private function integer(mixed $value): ?int

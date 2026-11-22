@@ -7,6 +7,7 @@ use App\Storage\PublicHttps;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
+use Carbon\CarbonImmutable;
 use Closure;
 use DomainException;
 use Illuminate\Http\Client\ConnectionException;
@@ -20,6 +21,8 @@ use SensitiveParameter;
 class WgPlatformQuery implements PlatformQueryDriver
 {
     private const PATH = '/api/foreign/openApi/site/user/memberApi/getAccountDetail';
+
+    private const RECHARGE_PATH = '/api/foreign/openApi/proxy/user/finance/payOrder/queryByUser';
 
     private const CIPHER = 'aes-128-ecb';
 
@@ -68,7 +71,52 @@ class WgPlatformQuery implements PlatformQueryDriver
         return $this->query($config, ['mobilePhone' => $phone]);
     }
 
+    public function rechargePage(
+        #[SensitiveParameter] array $config,
+        string $accountId,
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+        int $page,
+    ): PlatformRechargePage {
+        $data = $this->signedRequest($config, self::RECHARGE_PATH, [
+            'condition' => [
+                'userIds' => $accountId, 'startSuccessTime' => $start->timestamp, 'endSuccessTime' => $end->timestamp,
+                'payOrderType' => 2,
+            ],
+            'current' => $page, 'size' => PlatformRechargePage::SIZE,
+        ]);
+        if (! in_array($data['result'] ?? null, [0, '0'], true)) {
+            throw new PlatformQueryFailure('schema');
+        }
+
+        return PlatformRechargePage::fromProvider($data['list'] ?? null, $data['total'] ?? null, function (array $row) use ($accountId): ?array {
+            $user = $row['userId'] ?? $row['username'] ?? null;
+            if ((! is_string($user) && ! is_int($user)) || (string) $user !== $accountId) {
+                throw new PlatformQueryFailure('schema');
+            }
+            if (! in_array($row['orderStatus'] ?? null, [2, '2', 4, '4'], true)) {
+                return null;
+            }
+            $time = $row['notifyTime'] ?? null;
+            if (in_array($time, [null, 0, '0', ''], true)) {
+                $time = $row['createTime'] ?? null;
+            }
+            if ((! is_int($time) && ! is_string($time)) || ! preg_match('/\A[0-9]{10}(?:[0-9]{3})?\z/', (string) $time)
+                || ($row['payCurrency'] ?? $row['memberCurrency'] ?? null) !== 'BRL') {
+                throw new PlatformQueryFailure('schema');
+            }
+            $at = CarbonImmutable::createFromTimestampUTC((int) substr((string) $time, 0, 10));
+
+            return PlatformRechargePage::record($row['orderNo'] ?? null, $this->cents($row['amount'] ?? null), $at);
+        });
+    }
+
     private function query(#[SensitiveParameter] array $config, array $filter, ?Closure $onResponse = null): ?PlatformAccount
+    {
+        return $this->account($this->signedRequest($config, self::PATH, $filter, $onResponse), $config['site_code']);
+    }
+
+    private function signedRequest(#[SensitiveParameter] array $config, string $path, array $filter, ?Closure $onResponse = null): array
     {
         $endpoint = $config['endpoint'] ?? '';
         $key = $config['secret_key'] ?? '';
@@ -77,6 +125,7 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('configuration');
         }
 
+        $url = substr($endpoint, 0, -strlen(self::PATH)).$path;
         $data = json_encode(['siteCode' => $config['site_code'], ...$filter], JSON_THROW_ON_ERROR);
         $ciphertext = openssl_encrypt($data, self::CIPHER, $key, OPENSSL_RAW_DATA);
         if ($ciphertext === false) {
@@ -90,7 +139,7 @@ class WgPlatformQuery implements PlatformQueryDriver
         try {
             $response = Http::asJson()->acceptJson()->withoutRedirecting()->connectTimeout(3)->timeout(8)
                 ->setHandler(app(PublicHttps::class))
-                ->post($endpoint, ['apiKey' => $apiKey, 'reqTime' => $time, 'reqData' => $encrypted, 'sign' => $signature]);
+                ->post($url, ['apiKey' => $apiKey, 'reqTime' => $time, 'reqData' => $encrypted, 'sign' => $signature]);
         } catch (ConnectionException) {
             throw new PlatformQueryFailure('transient');
         } catch (DomainException) {
@@ -112,7 +161,7 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('schema');
         }
 
-        return $this->account($this->decryptResponse($response->body(), $key), $config['site_code']);
+        return $this->decryptResponse($response->body(), $key);
     }
 
     private function acceptsEndpoint(string $endpoint): bool

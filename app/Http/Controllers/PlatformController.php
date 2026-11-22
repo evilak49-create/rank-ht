@@ -10,6 +10,7 @@ use App\Models\PlatformBinding;
 use App\Models\PointRule;
 use App\Platforms\BindPlatformAccount;
 use App\Platforms\PlatformParticipation;
+use App\Platforms\PlatformRecharges;
 use App\Points\PlatformRebateTiers;
 use App\Points\PointRules;
 use App\Protection\ProtectionClaims;
@@ -147,6 +148,14 @@ class PlatformController extends Controller
     public function binding(Request $request, string $binding): JsonResponse
     {
         return response()->json(['data' => $this->bindingData($this->ownedBindings($request)->findOrFail($binding))]);
+    }
+
+    public function recharges(Request $request, string $binding, PlatformRecharges $recharges): JsonResponse
+    {
+        $request->validate(['page' => ['sometimes', 'integer', 'min:1', 'max:'.PlatformRecharges::MAX_PAGE]]);
+
+        return response()->json($recharges->list($request->user(), $binding, $request->integer('page', 1)))
+            ->header('Cache-Control', 'private, no-store');
     }
 
     private function ownedBindings(Request $request): Builder
