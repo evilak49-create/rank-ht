@@ -122,7 +122,10 @@ class WgPlatformQuery implements PlatformQueryDriver
         $envelope = $this->json($response);
         $code = $envelope['code'] ?? null;
         if (is_int($code) || is_string($code)) {
-            if (in_array((string) $code, ['16001002', '16001003', '16001004', '16001005', '16001006', '16001007', '16001008'], true)) {
+            if (in_array((string) $code, ['16001004', '1116001004'], true)) {
+                throw new PlatformQueryFailure('ip_not_allowed');
+            }
+            if (in_array((string) $code, ['16001002', '16001003', '16001005', '16001006', '16001007', '16001008'], true)) {
                 throw new PlatformQueryFailure('authentication');
             }
             if ((string) $code === '16001000') {

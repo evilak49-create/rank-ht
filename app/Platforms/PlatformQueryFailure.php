@@ -16,6 +16,7 @@ class PlatformQueryFailure extends RuntimeException
         return match ($kind) {
             'passed' => '连接通过',
             'authentication' => '合作方接口鉴权失败',
+            'ip_not_allowed' => 'WG 出口 IP 不在白名单范围，请联系 WG 核对站点配置',
             'schema' => '合作方接口响应不符合约定',
             'transient' => '合作方暂不可用，请稍后重试',
             'configuration' => '查询端点不在服务器允许列表中，或配置无效',

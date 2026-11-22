@@ -136,6 +136,22 @@ class WgPlatformQueryTest extends TestCase
         }
     }
 
+    public function test_wg_reports_ip_allowlist_rejection_for_the_live_gateway_code(): void
+    {
+        Http::fake([self::ENDPOINT => Http::response([
+            'code' => 1116001004, 'success' => false, 'failed' => true, 'data' => 'gateway error',
+        ])]);
+        $driver = PlatformNetwork::Wg->queryDriver();
+
+        try {
+            $driver->lookupTestAccount($driver->validateConfiguration($this->configuration()));
+            $this->fail('The gateway explicitly rejected the source IP.');
+        } catch (PlatformQueryFailure $failure) {
+            $this->assertSame('ip_not_allowed', $failure->kind);
+            $this->assertSame('WG 出口 IP 不在白名单范围，请联系 WG 核对站点配置', $failure->getMessage());
+        }
+    }
+
     private function configuration(): array
     {
         return [
