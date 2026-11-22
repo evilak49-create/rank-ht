@@ -26,8 +26,8 @@ class PointRules
             'points_per_brl' => ['required', 'regex:/\A[0-9]{1,5}(?:\.[0-9]{1,6})?\z/'],
             'wager_multiplier' => ['required', 'regex:/\A[0-9]{1,5}(?:\.[0-9]{1,6})?\z/'],
         ])->validate();
-        $ratio = $this->toUnits($fields['points_per_brl']);
-        $wager = $this->toUnits($fields['wager_multiplier']);
+        $ratio = self::toUnits($fields['points_per_brl']);
+        $wager = self::toUnits($fields['wager_multiplier']);
         if ($ratio === 0 || $wager === 0) {
             throw ValidationException::withMessages([$ratio === 0 ? 'points_per_brl' : 'wager_multiplier' => '请输入大于零的数值。']);
         }
@@ -44,8 +44,8 @@ class PointRules
             'rebate_percent' => ['required', 'regex:/\A[0-9]{1,3}(?:\.[0-9]{1,6})?\z/'],
             'rebate_wager_multiplier' => ['required', 'regex:/\A[0-9]{1,5}(?:\.[0-9]{1,6})?\z/'],
         ])->validate();
-        $percent = $this->toUnits($fields['rebate_percent']);
-        $wager = $this->toUnits($fields['rebate_wager_multiplier']);
+        $percent = self::toUnits($fields['rebate_percent']);
+        $wager = self::toUnits($fields['rebate_wager_multiplier']);
         if ($percent > 100 * self::SCALE) {
             throw ValidationException::withMessages(['rebate_percent' => '返利比例须在 0% 至 100% 之间。']);
         }
@@ -70,7 +70,7 @@ class PointRules
         }, 3);
     }
 
-    private function toUnits(string $value): int
+    public static function toUnits(string $value): int
     {
         [$whole, $fraction] = array_pad(explode('.', $value), 2, '');
 

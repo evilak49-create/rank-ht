@@ -13,7 +13,6 @@ use App\Points\CashBalance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -21,45 +20,61 @@ class PointSettlementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_confirming_a_quote_credits_once_and_carries_the_fraction_forward(): void
+    public function test_confirmation_requeries_for_highest_tier_and_advances_the_period_only_once(): void
     {
         [$member, $binding] = $this->scenario();
+        $binding->platform->forceFill(['rebate_tiers' => [
+            ['multiplier_micros' => 2000000, 'percent_micros' => 1000000],
+            ['multiplier_micros' => 3000000, 'percent_micros' => 2000000],
+            ['multiplier_micros' => 4000000, 'percent_micros' => 3000000],
+        ]])->save();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $base = "/api/v1/platform-bindings/{$binding->id}/point-quotes";
-        $quote = $this->postJson($base)->assertCreated()->assertJsonPath('data.estimated_points', 1)
-            ->assertJsonPath('data.remainder_after', '0.50000000')->json('data.id');
+        $blocked = $this->postJson($base)->assertCreated()->assertJsonPath('data.eligibility', 'insufficient_wager')
+            ->assertJsonPath('data.rebate_cents', 0)->json('data.id');
+        $this->postJson("/api/v1/point-quotes/$blocked/confirm")->assertConflict()
+            ->assertJsonPath('message', '当前打码未达到返利标准');
+        $this->assertSame(1000, $binding->refresh()->baseline_deposit_cents);
+        $this->assertDatabaseEmpty('cash_balance_entries');
+
+        $this->fakeTotals(16000, 54500);
+        $quote = $this->postJson($base)->assertCreated()->assertJsonPath('data.estimated_points', 0)
+            ->assertJsonPath('data.matched_rebate_wager_multiplier', '3.000000')
+            ->assertJsonPath('data.rebate_cents', 300)->json('data.id');
         $second = $this->postJson($base)->assertCreated()->json('data.id');
 
-        $this->postJson("/api/v1/point-quotes/$quote/confirm")->assertOk()->assertJsonPath('data.status', 'confirmed');
+        $this->fakeTotals(16000, 62000);
+        $this->postJson("/api/v1/point-quotes/$quote/confirm")->assertOk()->assertJsonPath('data.status', 'confirmed')
+            ->assertJsonPath('data.matched_rebate_wager_multiplier', '4.000000')
+            ->assertJsonPath('data.rebate_cents', 450);
         $this->postJson("/api/v1/point-quotes/$quote/confirm")->assertOk()->assertJsonPath('data.status', 'confirmed');
         $this->postJson("/api/v1/point-quotes/$second/confirm")->assertConflict();
-        $this->assertSame(1, $member->refresh()->points_balance);
-        $this->assertDatabaseCount('point_entries', 1);
-        $this->assertDatabaseHas('platform_bindings', ['id' => $binding->id, 'baseline_deposit_cents' => 16000]);
+        Http::assertSentCount(1);
+        $this->assertSame(0, $member->refresh()->points_balance);
+        $this->assertDatabaseEmpty('point_entries');
+        $this->assertDatabaseCount('cash_balance_entries', 1);
+        $this->assertDatabaseHas('platform_bindings', ['id' => $binding->id, 'baseline_deposit_cents' => 16000, 'baseline_valid_bet_cents' => 62000]);
+        $this->fakeTotals(17000, 64000);
+        $this->postJson($base)->assertCreated()->assertJsonPath('data.deposit_cents', 1000)
+            ->assertJsonPath('data.valid_bet_cents', 2000)->assertJsonPath('data.rebate_cents', 10);
     }
 
-    public function test_rule_changes_leave_an_old_quote_unchanged_and_expired_quotes_cannot_be_confirmed(): void
+    public function test_an_existing_quote_uses_the_current_rebate_rule_at_confirmation_and_still_expires(): void
     {
         [$member, $binding] = $this->scenario();
+        PointRule::query()->firstOrFail()->forceFill(['rebate_percent_micros' => 1000000])->save();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $base = "/api/v1/platform-bindings/{$binding->id}/point-quotes";
-        $old = $this->postJson($base)->assertCreated()->assertJsonPath('data.estimated_points', 1)->json('data.id');
+        $old = $this->postJson($base)->assertCreated()->assertJsonPath('data.rebate_cents', 150)->json('data.id');
+        $expiring = $this->postJson($base)->assertCreated()->json('data.id');
 
-        $operator = User::factory()->create();
-        $operator->forceFill(['panel_enabled' => true])->save();
-        $operator->roles()->attach(AdminRole::create(['name' => '积分运营', 'permissions' => ['points.manage-rules', 'points.view']]));
-        $this->actingAs($operator, 'web')->get('/admin/point-rules')->assertOk();
-        Livewire::test(ListPointRules::class)->callAction('update_rule', [
-            'points_per_brl' => '0.020000', 'wager_multiplier' => '1.000000',
-        ])->assertHasNoActionErrors();
-        $this->get('/admin/point-quotes')->assertOk();
-
-        $this->actingAs($member, 'member');
-        $new = $this->postJson($base)->assertCreated()->assertJsonPath('data.estimated_points', 3)->json('data.id');
-        $this->postJson("/api/v1/point-quotes/$old/confirm")->assertOk()->assertJsonPath('data.estimated_points', 1);
+        PointRule::query()->firstOrFail()->forceFill(['rebate_percent_micros' => 2000000])->save();
+        $this->getJson("/api/v1/point-quotes/$old")->assertOk()->assertJsonPath('data.rebate_cents', 150);
+        $this->postJson("/api/v1/point-quotes/$old/confirm")->assertOk()->assertJsonPath('data.rebate_cents', 300);
         $this->travel(10)->minutes();
-        $this->postJson("/api/v1/point-quotes/$new/confirm")->assertConflict()->assertJsonPath('message', '报价已过期，请重新查询。');
-        $this->assertSame(1, $member->refresh()->points_balance);
+        $this->postJson("/api/v1/point-quotes/$expiring/confirm")->assertConflict()
+            ->assertJsonPath('message', '报价已过期，请重新查询。');
+        $this->assertSame(300, $member->refresh()->available_balance_cents);
     }
 
     public function test_a_regression_pauses_settlement_without_replacing_the_existing_baseline(): void
@@ -103,36 +118,30 @@ class PointSettlementTest extends TestCase
         $this->assertSame(2500000, $updated->rebate_wager_multiplier_micros);
     }
 
-    public function test_one_confirmation_credits_points_and_cash_after_both_wager_requirements_are_met(): void
+    public function test_an_additional_deposit_can_make_a_previously_eligible_cashback_quote_ineligible(): void
     {
         [$member, $binding] = $this->scenario();
-        PointRule::query()->firstOrFail()->forceFill(['rebate_percent_micros' => 3125000, 'rebate_wager_multiplier_micros' => 2000000])->save();
+        PointRule::query()->firstOrFail()->forceFill([
+            'rebate_percent_micros' => 3125000, 'rebate_wager_multiplier_micros' => 2000000,
+        ])->save();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $base = "/api/v1/platform-bindings/{$binding->id}/point-quotes";
-        $blocked = $this->postJson($base)->assertCreated()->assertJsonPath('data.eligibility', 'insufficient_wager')
-            ->assertJsonPath('data.point_required_bet_cents', 15000)->assertJsonPath('data.rebate_required_bet_cents', 30000)
-            ->assertJsonPath('data.estimated_points', 1)->assertJsonPath('data.rebate_cents', 468)->json('data.id');
-        $this->postJson("/api/v1/point-quotes/$blocked/confirm")->assertConflict();
-        $this->assertSame(0, $member->refresh()->available_balance_cents);
-
         $this->fakeTotals(16000, 32000);
-        $id = $this->postJson($base)->assertCreated()->assertJsonPath('data.eligibility', 'eligible')->json('data.id');
-        $competing = $this->postJson($base)->assertCreated()->json('data.id');
-        $this->postJson("/api/v1/point-quotes/$id/confirm")->assertOk()->assertJsonPath('data.rebate_cents', 468);
-        $this->postJson("/api/v1/point-quotes/$id/confirm")->assertOk();
-        $this->postJson("/api/v1/point-quotes/$competing/confirm")->assertConflict();
-        $this->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('available_balance_cents', 468);
-        $this->assertSame(1, $member->refresh()->points_balance);
-        $this->assertSame(75000000, $binding->refresh()->rebate_remainder);
-        $this->assertDatabaseCount('cash_balance_entries', 1);
-        $this->assertDatabaseHas('cash_balance_entries', ['source' => 'rebate', 'source_id' => $id, 'amount_cents' => 468]);
+        $id = $this->postJson($base)->assertCreated()->assertJsonPath('data.rebate_cents', 468)->json('data.id');
 
-        $this->fakeTotals(16008, 32016);
-        $next = $this->postJson($base)->assertCreated()->assertJsonPath('data.eligibility', 'eligible')
-            ->assertJsonPath('data.estimated_points', 0)->assertJsonPath('data.rebate_cents', 1)->json('data.id');
-        $this->postJson("/api/v1/point-quotes/$next/confirm")->assertOk()->assertJsonPath('data.point_entry_id', null);
-        $this->assertSame(469, $member->refresh()->available_balance_cents);
-        $this->assertSame(1, DB::table('point_entries')->count());
+        $this->fakeTotals(17000, 32000);
+        $this->postJson("/api/v1/point-quotes/$id/confirm")->assertConflict()
+            ->assertJsonPath('message', '当前打码未达到返利标准');
+        $this->getJson("/api/v1/point-quotes/$id")->assertOk()
+            ->assertJsonPath('data.eligibility', 'insufficient_wager')->assertJsonPath('data.confirmed_at', null);
+        $this->assertSame(1000, $binding->refresh()->baseline_deposit_cents);
+        $this->assertDatabaseEmpty('cash_balance_entries');
+
+        $this->fakeTotals(17000, 34000);
+        $this->postJson("/api/v1/point-quotes/$id/confirm")->assertOk()
+            ->assertJsonPath('data.rebate_cents', 500)->assertJsonPath('data.point_entry_id', null);
+        $this->assertSame(500, $member->refresh()->available_balance_cents);
+        $this->assertDatabaseHas('cash_balance_entries', ['source' => 'rebate', 'source_id' => $id, 'amount_cents' => 500]);
     }
 
     public function test_a_failed_cash_credit_does_not_post_points_or_consume_the_deposit(): void
@@ -168,7 +177,7 @@ class PointSettlementTest extends TestCase
             ->assertJsonPath('data.total_valid_bet_cents', '17000');
         $this->assertDatabaseEmpty('point_quotes');
 
-        $quote = $this->postJson("$path/point-quotes", ['cash_only' => true])->assertCreated()
+        $quote = $this->postJson("$path/point-quotes", ['cash_only' => false])->assertCreated()
             ->assertJsonPath('data.cash_only', true)
             ->assertJsonPath('data.eligibility', 'eligible')
             ->assertJsonPath('data.estimated_points', 0)

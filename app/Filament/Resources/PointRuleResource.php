@@ -73,7 +73,8 @@ class PointRuleResource extends Resource
 
     public static function updateRebateAction(): Action
     {
-        return Action::make('update_rebate_rule')->label('设置返利规则')
+        return Action::make('update_rebate_rule')->label('设置默认返利')
+            ->modalDescription('用于尚未配置独立返利档位的平台。')
             ->authorize(fn (): bool => self::canViewAny())
             ->schema([
                 TextInput::make('rebate_percent')->label('返利比例（%）')->inputMode('decimal')->required()

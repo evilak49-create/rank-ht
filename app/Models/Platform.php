@@ -30,6 +30,7 @@ class Platform extends Model
             'minimum_deposit_brl' => 'decimal:2',
             'minimum_withdrawal_brl' => 'decimal:2',
             'max_rebate_percent' => 'decimal:6',
+            'rebate_tiers' => 'array',
             'network' => PlatformNetwork::class,
             'manually_disabled' => 'boolean',
             'active_query' => 'encrypted:array',

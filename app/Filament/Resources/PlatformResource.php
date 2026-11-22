@@ -4,13 +4,16 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\Platform;
+use App\Models\PointRule;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
 use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
+use App\Points\PlatformRebateTiers;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -93,12 +96,13 @@ class PlatformResource extends Resource
                     ->schema(self::profileFields())
                     ->fillForm(fn (Platform $record): array => $record->only([
                         'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position',
-                        'guarantee_amount_brl', 'max_rebate_percent',
+                        'guarantee_amount_brl',
                         'minimum_deposit_brl', 'minimum_withdrawal_brl', 'withdrawal_time', 'support_url',
                     ]))
                     ->action(fn (Action $action, Platform $record, array $data) => ActionForm::submit($action, fn () => app(PlatformAdministration::class)->update(
                         $record, PublicImageField::retain($data, 'logo_url', $record->logo_url), self::operator(),
                     ))),
+                self::rebateTiersAction(),
                 self::configureQueryAction(),
                 self::testQueryAction(),
                 self::statusAction(true),
@@ -141,7 +145,7 @@ class PlatformResource extends Resource
             ->action(function (Action $action, #[SensitiveParameter] array $data): void {
                 $profile = Arr::only($data, [
                     'network', 'name', 'promotion_url', 'image_upload', 'description', 'rating', 'featured_position',
-                    'guarantee_amount_brl', 'max_rebate_percent',
+                    'guarantee_amount_brl',
                     'minimum_deposit_brl', 'minimum_withdrawal_brl', 'withdrawal_time', 'support_url',
                 ]);
                 ActionForm::submit($action, fn () => app(PlatformAdministration::class)->create(
@@ -194,6 +198,27 @@ class PlatformResource extends Resource
                 TextInput::make('test_phone')->label('已知推广测试账号的账号')->required(),
             ],
         };
+    }
+
+    private static function rebateTiersAction(): Action
+    {
+        return Action::make('rebate_tiers')->label('设置返利档位')
+            ->authorize(fn (): bool => self::hasPermission('points.manage-rules'))
+            ->schema([
+                Repeater::make('tiers')->label('返利档位')->defaultItems(0)->columns(2)
+                    ->addActionLabel('添加档位')->reorderable(false)
+                    ->helperText('按已达到的最高倍数档位结算。清空并保存可关闭此平台返利。')
+                    ->schema([
+                        TextInput::make('wager_multiplier')->label('最低打码倍数')->inputMode('decimal')->required()
+                            ->rules(PlatformRebateTiers::MULTIPLIER_RULES)->suffix('倍'),
+                        TextInput::make('rebate_percent')->label('返利比例')->inputMode('decimal')->required()
+                            ->rules(PlatformRebateTiers::PERCENT_RULES)->suffix('%'),
+                    ]),
+            ])->fillForm(fn (Platform $record): array => [
+                'tiers' => PlatformRebateTiers::decimals(PlatformRebateTiers::effective($record, PointRule::query()->latest('id')->first())),
+            ])->successNotificationTitle('返利档位已更新')
+            ->action(fn (Action $action, Platform $record, array $data) => ActionForm::submit($action, fn () => app(PlatformRebateTiers::class)
+                ->save($record, $data, self::operator())));
     }
 
     private static function testQueryAction(): Action
@@ -253,8 +278,6 @@ class PlatformResource extends Resource
             TextInput::make('support_url')->label('在线客服链接')->url()->rule('url:https')->maxLength(2048),
             TextInput::make('guarantee_amount_brl')->label('担保金额')->numeric()->prefix('R$')
                 ->minValue(0)->maxValue(9999999999.99)->step(0.01)->rule('decimal:0,2'),
-            TextInput::make('max_rebate_percent')->label('最高返利')->numeric()->suffix('%')
-                ->minValue(0)->maxValue(100)->step(0.000001)->rule('decimal:0,6'),
             TextInput::make('featured_position')->label('首页精选位置')->integer()->minValue(1)->maxValue(10)
                 ->unique(table: Platform::class, ignoreRecord: true)
                 ->validationMessages(['unique' => '该精选位置已被占用。'])

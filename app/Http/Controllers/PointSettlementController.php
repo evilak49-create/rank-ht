@@ -21,7 +21,7 @@ class PointSettlementController extends Controller
         $request->validate(['cash_only' => 'sometimes|boolean']);
 
         return response()->json([
-            'data' => $this->data($settlement->quote($request->user(), $binding, $request->boolean('cash_only'))),
+            'data' => $this->data($settlement->quote($request->user(), $binding)),
         ], 201);
     }
 
@@ -50,6 +50,7 @@ class PointSettlementController extends Controller
                 'deposit_cents', 'valid_bet_cents', 'required_bet_cents', 'points_per_brl',
                 'wager_multiplier', 'remainder_before', 'remainder_after',
                 'cash_only', 'rebate_enabled', 'rebate_percent', 'rebate_wager_multiplier', 'point_required_bet_cents', 'rebate_required_bet_cents',
+                'matched_rebate_wager_multiplier', 'min_rebate_wager_multiplier', 'max_rebate_percent',
             ]),
         ];
     }

@@ -61,7 +61,7 @@ class PlatformNetworkTest extends TestCase
             ->assertHasActionErrors(['network']);
         $draft = $profile + [
             'network' => 'panda',
-            'guarantee_amount_brl' => '1000000.50', 'max_rebate_percent' => '4.125',
+            'guarantee_amount_brl' => '1000000.50',
             'minimum_deposit_brl' => '10.50', 'minimum_withdrawal_brl' => '20.00',
             'withdrawal_time' => '5–30 min', 'support_url' => 'https://support.example.test/chat',
             'endpoint' => 'https://partner.example.test/api/backend/trpc/user.list',
@@ -86,7 +86,6 @@ class PlatformNetworkTest extends TestCase
         $platform->forceFill(['active_query_revision' => 1])->save();
         $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
             ->assertJsonPath('data.guarantee_amount_brl', '1000000.50')
-            ->assertJsonPath('data.max_rebate_percent', '4.125000')
             ->assertJsonPath('data.minimum_deposit_brl', '10.50')
             ->assertJsonPath('data.minimum_withdrawal_brl', '20.00')
             ->assertJsonPath('data.withdrawal_time', '5–30 min')
@@ -94,9 +93,7 @@ class PlatformNetworkTest extends TestCase
 
         $edit = TestAction::make('edit_profile')->table($platform);
         Livewire::test(ListPlatforms::class)->mountAction($edit)
-            ->assertActionDataSet(['guarantee_amount_brl' => '1000000.50', 'max_rebate_percent' => '4.125000']);
-        Livewire::test(ListPlatforms::class)->callAction($edit, ['max_rebate_percent' => '100.001'])
-            ->assertHasActionErrors(['max_rebate_percent']);
+            ->assertActionDataSet(['guarantee_amount_brl' => '1000000.50']);
         Livewire::test(ListPlatforms::class)->callAction($edit, ['support_url' => 'http://support.example.test/chat'])
             ->assertHasActionErrors(['support_url']);
         Livewire::test(ListPlatforms::class)->callAction($edit, ['minimum_withdrawal_brl' => '25.75', 'withdrawal_time' => null])
@@ -104,11 +101,10 @@ class PlatformNetworkTest extends TestCase
         $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
             ->assertJsonPath('data.minimum_withdrawal_brl', '25.75')
             ->assertJsonPath('data.withdrawal_time', null);
-        Livewire::test(ListPlatforms::class)->callAction($edit, ['guarantee_amount_brl' => null, 'max_rebate_percent' => '8'])
+        Livewire::test(ListPlatforms::class)->callAction($edit, ['guarantee_amount_brl' => null])
             ->assertHasNoActionErrors();
         $this->getJson('/api/v1/platforms')->assertOk()
-            ->assertJsonPath('data.0.guarantee_amount_brl', null)
-            ->assertJsonPath('data.0.max_rebate_percent', '8.000000');
+            ->assertJsonPath('data.0.guarantee_amount_brl', null);
 
         $platform->forceFill(['featured_position' => 2])->save();
         Livewire::test(ListPlatforms::class)->callAction('create_platform', [
@@ -116,6 +112,47 @@ class PlatformNetworkTest extends TestCase
         ])->assertHasActionErrors(['featured_position' => 'unique'])
             ->assertNotified('首页精选位置不可用');
         $this->assertDatabaseCount('platforms', 1);
+    }
+
+    public function test_admin_sets_platform_tiers_and_the_public_api_returns_the_minimum_and_maximum(): void
+    {
+        $operator = $this->operator(['platforms.view', 'platforms.edit', 'points.manage-rules']);
+        $platform = app(PlatformAdministration::class)->create([
+            'name' => 'Tiered Platform', 'promotion_url' => 'https://example.test/register',
+        ], $operator);
+        $platform->forceFill(['active_query_revision' => 1, 'max_rebate_percent' => '99'])->save();
+        PointRule::query()->latest('id')->firstOrFail()->forceFill([
+            'rebate_percent_micros' => 500000, 'rebate_wager_multiplier_micros' => 1500000,
+        ])->save();
+        $this->actingAs($operator, 'web');
+        $action = TestAction::make('rebate_tiers')->table($platform);
+        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+            ->assertJsonPath('data.min_rebate_wager_multiplier', '1.500000')
+            ->assertJsonPath('data.max_rebate_percent', '0.500000');
+        Livewire::test(ListPlatforms::class)->callAction($action, ['tiers' => [
+            ['wager_multiplier' => '4', 'rebate_percent' => '3'],
+            ['wager_multiplier' => '2', 'rebate_percent' => '1'],
+            ['wager_multiplier' => '3', 'rebate_percent' => '2'],
+        ]])->assertHasNoActionErrors();
+        Livewire::test(ListPlatforms::class)->callAction($action, ['tiers' => [
+            ['wager_multiplier' => '2.0', 'rebate_percent' => '1'],
+            ['wager_multiplier' => '2.00', 'rebate_percent' => '3'],
+        ]])->assertHasActionErrors(['tiers']);
+
+        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+            ->assertJsonPath('data.min_rebate_wager_multiplier', '2.000000')
+            ->assertJsonPath('data.max_rebate_percent', '3.000000')
+            ->assertJsonPath('data.rebate_tiers.1.wager_multiplier', '3.000000')
+            ->assertJsonPath('data.rebate_tiers.1.rebate_percent', '2.000000');
+        $this->getJson('/api/v1/platforms')->assertOk()
+            ->assertJsonPath('data.0.min_rebate_wager_multiplier', '2.000000')
+            ->assertJsonPath('data.0.max_rebate_percent', '3.000000');
+
+        Livewire::test(ListPlatforms::class)->callAction($action, ['tiers' => []])->assertHasNoActionErrors();
+        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+            ->assertJsonPath('data.min_rebate_wager_multiplier', null)
+            ->assertJsonPath('data.max_rebate_percent', null)
+            ->assertJsonPath('data.rebate_tiers', []);
     }
 
     public function test_public_platform_rule_reflects_the_latest_points_and_rebate_configuration(): void

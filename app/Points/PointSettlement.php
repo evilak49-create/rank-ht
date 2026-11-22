@@ -12,7 +12,6 @@ use App\Platforms\PlatformAdministration;
 use App\Platforms\PlatformQueryFailure;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class PointSettlement
 {
@@ -20,7 +19,6 @@ class PointSettlement
 
     public function __construct(
         private readonly PlatformAdministration $platforms,
-        private readonly PointWallet $wallet,
         private readonly CashBalance $cash,
     ) {}
 
@@ -36,32 +34,22 @@ class PointSettlement
         ];
     }
 
-    public function quote(Member $member, string $bindingId, bool $cashOnly = false): PointQuote
+    public function quote(Member $member, string $bindingId): PointQuote
     {
         $binding = PlatformBinding::query()->where('member_id', $member->id)->findOrFail($bindingId);
         $platform = Platform::query()->available()->findOrFail($binding->platform_id);
-        $rule = PointRule::query()->latest('id')->firstOrFail();
-
         $account = $this->lookupBoundAccount($binding, $platform);
 
-        return DB::transaction(function () use ($member, $binding, $platform, $rule, $account, $cashOnly): PointQuote {
-            $currentPlatform = Platform::query()->lockForUpdate()->findOrFail($platform->id);
-            abort_unless($currentPlatform->status() === 'available', 404);
-            abort_unless($currentPlatform->network === $platform->network && $currentPlatform->active_query_revision === $platform->active_query_revision, 409, '平台配置已变更，请重新查询。');
-
+        return DB::transaction(function () use ($member, $binding, $platform, $account): PointQuote {
+            $currentPlatform = $this->lockPlatform($platform);
             $this->lockMember($member);
             $current = PlatformBinding::query()->lockForUpdate()->findOrFail($binding->id);
             abort_unless($current->baseline_version === $binding->baseline_version, 409, '结算基线已变更，请重新查询。');
 
-            [$eligibility, $estimated, $rebate, $snapshot] = $this->calculate($current, $rule, $account, $cashOnly);
-            if ($eligibility === 'regressed') {
-                $current->forceFill(['settlement_paused_at' => now()])->save();
-            }
-
             return PointQuote::create([
                 'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_binding_id' => $binding->id,
-                'point_rule_id' => $rule->id, 'baseline_version' => $current->baseline_version,
-                'estimated_points' => $estimated, 'rebate_cents' => $rebate, 'eligibility' => $eligibility, 'snapshot' => $snapshot,
+                'baseline_version' => $current->baseline_version,
+                ...$this->quoteValues($current, $currentPlatform, $account),
                 'expires_at' => now()->addMinutes(10),
             ]);
         }, 3);
@@ -70,9 +58,23 @@ class PointSettlement
     public function confirm(Member $member, string $quoteId): PointQuote
     {
         $quote = PointQuote::query()->where('member_id', $member->id)->findOrFail($quoteId);
+        if ($quote->confirmed_at !== null) {
+            return $quote;
+        }
+        abort_unless($quote->status() === 'pending', 409, '报价已过期，请重新查询。');
+        $binding = PlatformBinding::query()->findOrFail($quote->platform_binding_id);
+        if ($binding->baseline_version !== $quote->baseline_version) {
+            $quote->refresh();
+            abort_unless($quote->confirmed_at !== null, 409, '结算基线已更新，请重新查询。');
 
-        return DB::transaction(function () use ($member, $quote): PointQuote {
-            $platform = Platform::query()->lockForUpdate()->findOrFail($quote->platform_id);
+            return $quote;
+        }
+        abort_if($binding->settlement_paused_at !== null, 409, '该报价暂不可兑换。');
+        $platform = Platform::query()->available()->findOrFail($quote->platform_id);
+        $account = $this->lookupBoundAccount($binding, $platform);
+
+        $result = DB::transaction(function () use ($member, $quote, $platform, $account): PointQuote {
+            $currentPlatform = $this->lockPlatform($platform);
             $owner = $this->lockMember($member);
             $binding = PlatformBinding::query()->lockForUpdate()->findOrFail($quote->platform_binding_id);
             $current = PointQuote::query()->lockForUpdate()->findOrFail($quote->id);
@@ -80,33 +82,44 @@ class PointSettlement
                 return $current;
             }
 
-            abort_unless($platform->status() === 'available', 404);
             abort_unless($current->status() === 'pending', 409, '报价已过期，请重新查询。');
-            abort_unless($current->eligibility === 'eligible' && $binding->settlement_paused_at === null, 409, '该报价暂不可兑换。');
             abort_unless($binding->baseline_version === $current->baseline_version, 409, '结算基线已更新，请重新查询。');
 
-            $entry = $current->estimated_points > 0 ? $this->wallet->record($owner, $current->estimated_points, [
-                'operation_key' => (string) Str::uuid(), 'reason' => '存款换积分',
-                'source' => 'deposit', 'source_id' => $current->id,
-            ]) : null;
-            if ($current->rebate_cents > 0) {
-                $this->cash->creditRebate($owner, $current->rebate_cents, $current->id);
+            $current->fill($this->quoteValues($binding, $currentPlatform, $account));
+            if ($current->eligibility !== 'eligible') {
+                $current->save();
+
+                return $current;
             }
 
+            $this->cash->creditRebate($owner, $current->rebate_cents, $current->id);
             $snapshot = $current->snapshot;
             $binding->forceFill([
                 'baseline_deposit_cents' => $snapshot['observed_deposit_cents'],
                 'baseline_valid_bet_cents' => $snapshot['observed_valid_bet_cents'],
                 'baseline_observed_at' => $snapshot['observed_at'],
                 'baseline_version' => $binding->baseline_version + 1,
-                'point_remainder' => $snapshot['remainder_units'],
-                'rebate_remainder' => $snapshot['rebate_remainder_units'] ?? $binding->rebate_remainder,
             ])->save();
 
-            $current->forceFill(['point_entry_id' => $entry?->id, 'confirmed_at' => now()])->save();
+            $current->forceFill(['confirmed_at' => now()])->save();
 
             return $current;
         }, 3);
+
+        abort_if($result->confirmed_at === null, 409, $result->eligibility === 'insufficient_wager'
+            ? '当前打码未达到返利标准'
+            : '该报价暂不可兑换。');
+
+        return $result;
+    }
+
+    private function lockPlatform(Platform $platform): Platform
+    {
+        $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
+        abort_unless($current->status() === 'available', 404);
+        abort_unless($current->network === $platform->network && $current->active_query_revision === $platform->active_query_revision, 409, '平台配置已变更，请重新查询。');
+
+        return $current;
     }
 
     private function lookupBoundAccount(PlatformBinding $binding, Platform $platform): PlatformAccount
@@ -133,58 +146,68 @@ class PointSettlement
         return $owner;
     }
 
-    private function calculate(PlatformBinding $binding, PointRule $rule, PlatformAccount $account, bool $cashOnly): array
+    private function quoteValues(PlatformBinding $binding, Platform $platform, PlatformAccount $account): array
     {
+        $rule = PointRule::query()->latest('id')->firstOrFail();
+        $tiers = PlatformRebateTiers::effective($platform, $rule);
         $deposit = $account->depositCents - $binding->baseline_deposit_cents;
         $bet = $account->validBetCents - $binding->baseline_valid_bet_cents;
         $depositBase = BigInteger::of(max(0, $deposit));
-        $rebateEnabled = $rule->rebate_percent_micros > 0;
-        $rebateMultiplier = $rule->rebate_wager_multiplier_micros ?? $rule->wager_multiplier_micros;
-        $pointRequired = $this->wagerRequired($depositBase, $cashOnly ? 0 : $rule->wager_multiplier_micros);
-        $rebateRequired = $this->wagerRequired($depositBase, $rebateEnabled ? $rebateMultiplier : 0);
-        $required = BigInteger::max($pointRequired, $rebateRequired);
-        [$whole, $fraction] = $cashOnly
-            ? [BigInteger::zero(), BigInteger::of($binding->point_remainder)]
-            : $depositBase->multipliedBy($rule->points_per_brl_micros)
-                ->plus($binding->point_remainder)->quotientAndRemainder(self::SETTLEMENT_SCALE);
-        [$rebate, $rebateFraction] = $depositBase->multipliedBy($rule->rebate_percent_micros)
-            ->plus($binding->rebate_remainder)->quotientAndRemainder(self::SETTLEMENT_SCALE);
-        $outOfRange = $whole->isGreaterThan(PHP_INT_MAX) || $rebate->isGreaterThan(CashBalance::MAX_CENTS);
+        $minimumMultiplier = $tiers[0]['multiplier_micros'] ?? null;
+        $required = $this->wagerRequired($depositBase, $minimumMultiplier ?? 0);
+        $matched = null;
+        if ($deposit > 0) {
+            foreach (array_reverse($tiers) as $tier) {
+                if (! $this->wagerRequired($depositBase, $tier['multiplier_micros'])->isGreaterThan($bet)) {
+                    $matched = $tier;
+                    break;
+                }
+            }
+        }
+        $percent = $matched['percent_micros'] ?? 0;
+        $rebate = $depositBase->multipliedBy($percent)->quotient(self::SETTLEMENT_SCALE);
 
         $eligibility = match (true) {
             $binding->settlement_paused_at !== null => 'paused',
             $account->observedAt->lt($binding->baseline_observed_at) => 'stale_snapshot',
             $deposit < 0 || $bet < 0 => 'regressed',
-            $cashOnly && ! $rebateEnabled => 'rebate_disabled',
             $deposit === 0 => 'no_deposit',
-            $required->isGreaterThan($bet) => 'insufficient_wager',
-            $whole->isZero() && $rebate->isZero() => 'insufficient_points',
-            $outOfRange => 'out_of_range',
+            $tiers === [] => 'rebate_disabled',
+            $matched === null => 'insufficient_wager',
+            $rebate->isZero() => 'insufficient_rebate',
+            $rebate->isGreaterThan(CashBalance::MAX_CENTS) => 'out_of_range',
             default => 'eligible',
         };
+        if ($eligibility === 'regressed') {
+            $binding->forceFill(['settlement_paused_at' => now()])->save();
+        }
 
-        $showEstimate = ! $outOfRange && in_array($eligibility, ['eligible', 'insufficient_wager'], true);
-
-        return [$eligibility, $showEstimate ? $whole->toInt() : 0, $showEstimate ? $rebate->toInt() : 0, [
-            'baseline_observed_at' => $binding->baseline_observed_at->toISOString(),
-            'observed_at' => $account->observedAt->toISOString(),
-            'observed_deposit_cents' => $account->depositCents,
-            'observed_valid_bet_cents' => $account->validBetCents,
-            'deposit_cents' => $deposit, 'valid_bet_cents' => $bet,
-            'required_bet_cents' => $this->amount($required),
-            'point_required_bet_cents' => $this->amount($pointRequired),
-            'rebate_required_bet_cents' => $rebateEnabled ? $this->amount($rebateRequired) : null,
-            'points_per_brl' => PointRules::display($rule->points_per_brl_micros),
-            'wager_multiplier' => PointRules::display($rule->wager_multiplier_micros),
-            'cash_only' => $cashOnly,
-            'rebate_enabled' => $rebateEnabled,
-            'rebate_percent' => PointRules::display($rule->rebate_percent_micros),
-            'rebate_wager_multiplier' => $rebateEnabled ? PointRules::display($rebateMultiplier) : null,
-            'remainder_before' => PointRules::display($binding->point_remainder, 8),
-            'remainder_after' => PointRules::display($eligibility === 'eligible' ? $fraction->toInt() : $binding->point_remainder, 8),
-            'remainder_units' => $eligibility === 'eligible' ? $fraction->toInt() : $binding->point_remainder,
-            'rebate_remainder_units' => $eligibility === 'eligible' ? $rebateFraction->toInt() : $binding->rebate_remainder,
-        ]];
+        return [
+            'point_rule_id' => $rule->id,
+            'eligibility' => $eligibility,
+            'estimated_points' => 0,
+            'rebate_cents' => $eligibility === 'eligible' ? $rebate->toInt() : 0,
+            'snapshot' => [
+                'baseline_observed_at' => $binding->baseline_observed_at->toISOString(),
+                'observed_at' => $account->observedAt->toISOString(),
+                'observed_deposit_cents' => $account->depositCents,
+                'observed_valid_bet_cents' => $account->validBetCents,
+                'deposit_cents' => $deposit, 'valid_bet_cents' => $bet,
+                'required_bet_cents' => $this->amount($required),
+                'point_required_bet_cents' => 0,
+                'rebate_required_bet_cents' => $minimumMultiplier === null ? null : $this->amount($required),
+                'points_per_brl' => PointRules::display(0),
+                'wager_multiplier' => PointRules::display(0),
+                'cash_only' => true,
+                'rebate_enabled' => $tiers !== [],
+                'rebate_percent' => PointRules::display($percent),
+                'rebate_wager_multiplier' => $minimumMultiplier === null ? null : PointRules::display($minimumMultiplier),
+                'matched_rebate_wager_multiplier' => $matched === null ? null : PointRules::display($matched['multiplier_micros']),
+                ...PlatformRebateTiers::summary($tiers),
+                'remainder_before' => PointRules::display($binding->point_remainder, 8),
+                'remainder_after' => PointRules::display($binding->point_remainder, 8),
+            ],
+        ];
     }
 
     private function wagerRequired(BigInteger $deposit, int $multiplier): BigInteger
