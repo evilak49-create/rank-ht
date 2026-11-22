@@ -94,6 +94,7 @@ class PlatformResource extends Resource
                     ->fillForm(fn (Platform $record): array => $record->only([
                         'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position',
                         'guarantee_amount_brl', 'max_rebate_percent',
+                        'minimum_deposit_brl', 'minimum_withdrawal_brl', 'withdrawal_time', 'support_url',
                     ]))
                     ->action(fn (Action $action, Platform $record, array $data) => ActionForm::submit($action, fn () => app(PlatformAdministration::class)->update(
                         $record, PublicImageField::retain($data, 'logo_url', $record->logo_url), self::operator(),
@@ -141,6 +142,7 @@ class PlatformResource extends Resource
                 $profile = Arr::only($data, [
                     'network', 'name', 'promotion_url', 'image_upload', 'description', 'rating', 'featured_position',
                     'guarantee_amount_brl', 'max_rebate_percent',
+                    'minimum_deposit_brl', 'minimum_withdrawal_brl', 'withdrawal_time', 'support_url',
                 ]);
                 ActionForm::submit($action, fn () => app(PlatformAdministration::class)->create(
                     PublicImageField::retain($profile, 'logo_url', null), self::operator(), $data,
@@ -225,6 +227,12 @@ class PlatformResource extends Resource
             PublicImageField::remove('logo_url'),
             Textarea::make('description')->label('平台简介')->maxLength(2000),
             TextInput::make('rating')->label('评分')->numeric()->step(0.1)->minValue(1)->maxValue(5)->required(),
+            TextInput::make('minimum_deposit_brl')->label('最低存款')->numeric()->prefix('R$')
+                ->minValue(0)->maxValue(9999999999.99)->step(0.01)->rule('decimal:0,2'),
+            TextInput::make('minimum_withdrawal_brl')->label('最低提现')->numeric()->prefix('R$')
+                ->minValue(0)->maxValue(9999999999.99)->step(0.01)->rule('decimal:0,2'),
+            TextInput::make('withdrawal_time')->label('提现时间')->maxLength(120),
+            TextInput::make('support_url')->label('在线客服链接')->url()->rule('url:https')->maxLength(2048),
             TextInput::make('guarantee_amount_brl')->label('担保金额')->numeric()->prefix('R$')
                 ->minValue(0)->maxValue(9999999999.99)->step(0.01)->rule('decimal:0,2'),
             TextInput::make('max_rebate_percent')->label('最高返利')->numeric()->suffix('%')

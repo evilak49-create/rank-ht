@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'name', 'promotion_url', 'logo_url', 'description', 'rating', 'featured_position', 'network',
     'guarantee_amount_brl', 'max_rebate_percent',
+    'minimum_deposit_brl', 'minimum_withdrawal_brl', 'withdrawal_time', 'support_url',
 ])]
 #[Hidden(['draft_query', 'active_query'])]
 class Platform extends Model
@@ -26,6 +27,8 @@ class Platform extends Model
         return [
             'rating' => 'decimal:1',
             'guarantee_amount_brl' => 'decimal:2',
+            'minimum_deposit_brl' => 'decimal:2',
+            'minimum_withdrawal_brl' => 'decimal:2',
             'max_rebate_percent' => 'decimal:6',
             'network' => PlatformNetwork::class,
             'manually_disabled' => 'boolean',

@@ -62,6 +62,8 @@ class PlatformNetworkTest extends TestCase
         $draft = $profile + [
             'network' => 'panda',
             'guarantee_amount_brl' => '1000000.50', 'max_rebate_percent' => '4.125',
+            'minimum_deposit_brl' => '10.50', 'minimum_withdrawal_brl' => '20.00',
+            'withdrawal_time' => '5–30 min', 'support_url' => 'https://support.example.test/chat',
             'endpoint' => 'https://partner.example.test/api/backend/trpc/user.list',
             'admin_host' => 'admin.example.test', 'token' => 'test-only-token', 'account' => 'fixture',
             'fingerprint' => 'test-fingerprint', 'tenant_id' => 123, 'region_id' => 1,
@@ -84,13 +86,24 @@ class PlatformNetworkTest extends TestCase
         $platform->forceFill(['active_query_revision' => 1])->save();
         $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
             ->assertJsonPath('data.guarantee_amount_brl', '1000000.50')
-            ->assertJsonPath('data.max_rebate_percent', '4.125000');
+            ->assertJsonPath('data.max_rebate_percent', '4.125000')
+            ->assertJsonPath('data.minimum_deposit_brl', '10.50')
+            ->assertJsonPath('data.minimum_withdrawal_brl', '20.00')
+            ->assertJsonPath('data.withdrawal_time', '5–30 min')
+            ->assertJsonPath('data.support_url', 'https://support.example.test/chat');
 
         $edit = TestAction::make('edit_profile')->table($platform);
         Livewire::test(ListPlatforms::class)->mountAction($edit)
             ->assertActionDataSet(['guarantee_amount_brl' => '1000000.50', 'max_rebate_percent' => '4.125000']);
         Livewire::test(ListPlatforms::class)->callAction($edit, ['max_rebate_percent' => '100.001'])
             ->assertHasActionErrors(['max_rebate_percent']);
+        Livewire::test(ListPlatforms::class)->callAction($edit, ['support_url' => 'http://support.example.test/chat'])
+            ->assertHasActionErrors(['support_url']);
+        Livewire::test(ListPlatforms::class)->callAction($edit, ['minimum_withdrawal_brl' => '25.75', 'withdrawal_time' => null])
+            ->assertHasNoActionErrors();
+        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+            ->assertJsonPath('data.minimum_withdrawal_brl', '25.75')
+            ->assertJsonPath('data.withdrawal_time', null);
         Livewire::test(ListPlatforms::class)->callAction($edit, ['guarantee_amount_brl' => null, 'max_rebate_percent' => '8'])
             ->assertHasNoActionErrors();
         $this->getJson('/api/v1/platforms')->assertOk()

@@ -24,6 +24,10 @@ class PlatformController extends Controller
         'guarantee_amount_brl', 'max_rebate_percent',
     ];
 
+    private const INTRODUCTION_FIELDS = [
+        'minimum_deposit_brl', 'minimum_withdrawal_brl', 'withdrawal_time', 'support_url',
+    ];
+
     public function index(Request $request): JsonResponse
     {
         return $this->listPlatforms($request);
@@ -58,9 +62,14 @@ class PlatformController extends Controller
 
     public function show(string $platform): JsonResponse
     {
-        $record = Platform::query()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()->findOrFail($platform);
+        $record = Platform::query()->select([...self::PUBLIC_FIELDS, ...self::INTRODUCTION_FIELDS])
+            ->available()->withPublicReviewCount()->findOrFail($platform);
 
-        return response()->json(['data' => [...$this->platformData($record), 'point_rule' => $this->pointRuleData()]]);
+        return response()->json(['data' => [
+            ...$this->platformData($record),
+            ...$record->only(self::INTRODUCTION_FIELDS),
+            'point_rule' => $this->pointRuleData(),
+        ]]);
     }
 
     public function pointRule(string $platform): JsonResponse
