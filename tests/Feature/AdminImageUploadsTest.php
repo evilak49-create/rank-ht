@@ -69,7 +69,7 @@ class AdminImageUploadsTest extends TestCase
         app(AdminAccountCreator::class)->create('admin-uploads', 'Admin', 'password');
         $this->actingAs(User::query()->where('username', 'admin-uploads')->sole(), 'web');
         $this->get('/admin')->assertOk()->assertSeeInOrder([
-            '运营总览', '会员与活动', '平台与保障', '积分与兑换', '内容与客服', '系统设置',
+            '运营总览', '会员与活动', '平台与保障', '积分与配置', '内容与客服', '系统设置',
         ]);
 
         Livewire::test(ListSiteBanners::class)->mountAction('create_banner')

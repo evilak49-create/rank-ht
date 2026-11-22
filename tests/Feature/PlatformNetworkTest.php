@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\RebateConfiguration;
 use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\AdminRole;
 use App\Models\Platform;
@@ -114,42 +115,47 @@ class PlatformNetworkTest extends TestCase
         $this->assertDatabaseCount('platforms', 1);
     }
 
-    public function test_admin_sets_platform_tiers_and_the_public_api_returns_the_minimum_and_maximum(): void
+    public function test_shared_rebate_configuration_applies_to_every_platform(): void
     {
         $operator = $this->operator(['platforms.view', 'platforms.edit', 'points.manage-rules']);
-        $platform = app(PlatformAdministration::class)->create([
-            'name' => 'Tiered Platform', 'promotion_url' => 'https://example.test/register',
+        $first = app(PlatformAdministration::class)->create([
+            'name' => 'First', 'promotion_url' => 'https://example.test/first',
         ], $operator);
-        $platform->forceFill(['active_query_revision' => 1, 'max_rebate_percent' => '99'])->save();
+        $second = app(PlatformAdministration::class)->create([
+            'name' => 'Second', 'promotion_url' => 'https://example.test/second',
+        ], $operator);
+        $first->forceFill(['active_query_revision' => 1])->save();
+        $second->forceFill(['active_query_revision' => 1])->save();
+        DB::table('platforms')->where('id', $second->id)->update([
+            'rebate_tiers' => json_encode([['multiplier_micros' => 1000000, 'percent_micros' => 9000000]]),
+        ]);
         PointRule::query()->latest('id')->firstOrFail()->forceFill([
             'rebate_percent_micros' => 500000, 'rebate_wager_multiplier_micros' => 1500000,
         ])->save();
+
         $this->actingAs($operator, 'web');
-        $action = TestAction::make('rebate_tiers')->table($platform);
-        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
-            ->assertJsonPath('data.min_rebate_wager_multiplier', '1.500000')
+        $this->get('/admin/point-rules')->assertNotFound();
+        $this->get('/admin/rebate-configuration')->assertOk()->assertSee('返利配置');
+        $this->getJson('/api/v1/platforms/'.$second->id)->assertOk()
             ->assertJsonPath('data.max_rebate_percent', '0.500000');
-        Livewire::test(ListPlatforms::class)->callAction($action, ['tiers' => [
+
+        Livewire::test(RebateConfiguration::class)->set('data.tiers', [
             ['wager_multiplier' => '4', 'rebate_percent' => '3'],
             ['wager_multiplier' => '2', 'rebate_percent' => '1'],
-            ['wager_multiplier' => '3', 'rebate_percent' => '2'],
-        ]])->assertHasNoActionErrors();
-        Livewire::test(ListPlatforms::class)->callAction($action, ['tiers' => [
+        ])->call('save')->assertHasNoErrors();
+        Livewire::test(RebateConfiguration::class)->set('data.tiers', [
             ['wager_multiplier' => '2.0', 'rebate_percent' => '1'],
             ['wager_multiplier' => '2.00', 'rebate_percent' => '3'],
-        ]])->assertHasActionErrors(['tiers']);
+        ])->call('save')->assertHasErrors(['data.tiers']);
 
-        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
-            ->assertJsonPath('data.min_rebate_wager_multiplier', '2.000000')
-            ->assertJsonPath('data.max_rebate_percent', '3.000000')
-            ->assertJsonPath('data.rebate_tiers.1.wager_multiplier', '3.000000')
-            ->assertJsonPath('data.rebate_tiers.1.rebate_percent', '2.000000');
-        $this->getJson('/api/v1/platforms')->assertOk()
-            ->assertJsonPath('data.0.min_rebate_wager_multiplier', '2.000000')
-            ->assertJsonPath('data.0.max_rebate_percent', '3.000000');
-
-        Livewire::test(ListPlatforms::class)->callAction($action, ['tiers' => []])->assertHasNoActionErrors();
-        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+        foreach ([$first, $second] as $platform) {
+            $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+                ->assertJsonPath('data.min_rebate_wager_multiplier', '2.000000')
+                ->assertJsonPath('data.max_rebate_percent', '3.000000')
+                ->assertJsonPath('data.rebate_tiers.1.wager_multiplier', '4.000000');
+        }
+        Livewire::test(RebateConfiguration::class)->set('data.tiers', [])->call('save')->assertHasNoErrors();
+        $this->getJson('/api/v1/platforms/'.$second->id)->assertOk()
             ->assertJsonPath('data.min_rebate_wager_multiplier', null)
             ->assertJsonPath('data.max_rebate_percent', null)
             ->assertJsonPath('data.rebate_tiers', []);

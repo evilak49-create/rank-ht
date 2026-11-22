@@ -41,7 +41,7 @@ class PointSettlement
         $account = $this->lookupBoundAccount($binding, $platform);
 
         return DB::transaction(function () use ($member, $binding, $platform, $account): PointQuote {
-            $currentPlatform = $this->lockPlatform($platform);
+            $this->lockPlatform($platform);
             $this->lockMember($member);
             $current = PlatformBinding::query()->lockForUpdate()->findOrFail($binding->id);
             abort_unless($current->baseline_version === $binding->baseline_version, 409, '结算基线已变更，请重新查询。');
@@ -49,7 +49,7 @@ class PointSettlement
             return PointQuote::create([
                 'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_binding_id' => $binding->id,
                 'baseline_version' => $current->baseline_version,
-                ...$this->quoteValues($current, $currentPlatform, $account),
+                ...$this->quoteValues($current, $account),
                 'expires_at' => now()->addMinutes(10),
             ]);
         }, 3);
@@ -74,7 +74,7 @@ class PointSettlement
         $account = $this->lookupBoundAccount($binding, $platform);
 
         $result = DB::transaction(function () use ($member, $quote, $platform, $account): PointQuote {
-            $currentPlatform = $this->lockPlatform($platform);
+            $this->lockPlatform($platform);
             $owner = $this->lockMember($member);
             $binding = PlatformBinding::query()->lockForUpdate()->findOrFail($quote->platform_binding_id);
             $current = PointQuote::query()->lockForUpdate()->findOrFail($quote->id);
@@ -85,7 +85,7 @@ class PointSettlement
             abort_unless($current->status() === 'pending', 409, '报价已过期，请重新查询。');
             abort_unless($binding->baseline_version === $current->baseline_version, 409, '结算基线已更新，请重新查询。');
 
-            $current->fill($this->quoteValues($binding, $currentPlatform, $account));
+            $current->fill($this->quoteValues($binding, $account));
             if ($current->eligibility !== 'eligible') {
                 $current->save();
 
@@ -113,13 +113,11 @@ class PointSettlement
         return $result;
     }
 
-    private function lockPlatform(Platform $platform): Platform
+    private function lockPlatform(Platform $platform): void
     {
         $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
         abort_unless($current->status() === 'available', 404);
         abort_unless($current->network === $platform->network && $current->active_query_revision === $platform->active_query_revision, 409, '平台配置已变更，请重新查询。');
-
-        return $current;
     }
 
     private function lookupBoundAccount(PlatformBinding $binding, Platform $platform): PlatformAccount
@@ -146,10 +144,10 @@ class PointSettlement
         return $owner;
     }
 
-    private function quoteValues(PlatformBinding $binding, Platform $platform, PlatformAccount $account): array
+    private function quoteValues(PlatformBinding $binding, PlatformAccount $account): array
     {
         $rule = PointRule::query()->latest('id')->firstOrFail();
-        $tiers = PlatformRebateTiers::effective($platform, $rule);
+        $tiers = PlatformRebateTiers::effective($rule);
         $deposit = $account->depositCents - $binding->baseline_deposit_cents;
         $bet = $account->validBetCents - $binding->baseline_valid_bet_cents;
         $depositBase = BigInteger::of(max(0, $deposit));

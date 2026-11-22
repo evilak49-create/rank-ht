@@ -7,6 +7,7 @@ use App\Filament\Pages\AiSettings;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MemberVerificationSettings;
 use App\Filament\Pages\OssSettings;
+use App\Filament\Pages\RebateConfiguration;
 use App\Filament\Pages\SupportSettings;
 use App\Filament\Resources\AdminAccessAuditResource;
 use App\Filament\Resources\AdminAccountResource;
@@ -23,7 +24,6 @@ use App\Filament\Resources\PlatformReviewBatchResource;
 use App\Filament\Resources\PlatformReviewResource;
 use App\Filament\Resources\PointEntryResource;
 use App\Filament\Resources\PointQuoteResource;
-use App\Filament\Resources\PointRuleResource;
 use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProtectionClaimResource;
 use App\Filament\Resources\ProtectionEligibilityResource;
@@ -63,15 +63,15 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 NavigationGroup::make('会员与活动'),
                 NavigationGroup::make('平台与保障'),
-                NavigationGroup::make('积分与兑换'),
+                NavigationGroup::make('积分与配置'),
                 NavigationGroup::make('内容与客服'),
                 NavigationGroup::make('系统设置'),
             ])
-            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class])
+            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class, RebateConfiguration::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class, PointEntryResource::class,
-                PointRuleResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
+                PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,
                 RedPacketRoundResource::class, RedPacketInviteResource::class, PixWithdrawalResource::class,

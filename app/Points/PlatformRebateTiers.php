@@ -2,7 +2,6 @@
 
 namespace App\Points;
 
-use App\Models\Platform;
 use App\Models\PointRule;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -15,18 +14,18 @@ class PlatformRebateTiers
 
     public const PERCENT_RULES = ['required', 'numeric', 'between:0.000001,100', 'regex:/\A[0-9]{1,3}(?:\.[0-9]{1,6})?\z/'];
 
-    public static function effective(Platform $platform, ?PointRule $default): array
+    public static function effective(?PointRule $rule): array
     {
-        if ($platform->rebate_tiers !== null) {
-            return $platform->rebate_tiers;
+        if ($rule?->rebate_tiers !== null) {
+            return $rule->rebate_tiers;
         }
-        if ($default === null || $default->rebate_percent_micros <= 0) {
+        if ($rule === null || $rule->rebate_percent_micros <= 0) {
             return [];
         }
 
         return [[
-            'multiplier_micros' => $default->rebate_wager_multiplier_micros ?? $default->wager_multiplier_micros,
-            'percent_micros' => $default->rebate_percent_micros,
+            'multiplier_micros' => $rule->rebate_wager_multiplier_micros ?? $rule->wager_multiplier_micros,
+            'percent_micros' => $rule->rebate_percent_micros,
         ]];
     }
 
@@ -46,7 +45,7 @@ class PlatformRebateTiers
         ], $tiers);
     }
 
-    public function save(Platform $platform, array $data, User $operator): void
+    public function save(array $data, User $operator): PointRule
     {
         abort_unless($operator->hasPermission('points.manage-rules'), 403);
         $fields = Validator::make($data, [
@@ -66,12 +65,16 @@ class PlatformRebateTiers
         }
         ksort($tiers, SORT_NUMERIC);
 
-        DB::transaction(function () use ($platform, $tiers, $operator): void {
-            Platform::query()->lockForUpdate()->findOrFail($platform->id)
-                ->forceFill(['rebate_tiers' => array_values($tiers)])->save();
-            DB::table('platform_audits')->insert([
-                'platform_id' => $platform->id, 'user_id' => $operator->id,
-                'action' => 'rebate_tiers_updated', 'created_at' => now(),
+        $tiers = array_values($tiers);
+
+        return DB::transaction(function () use ($tiers, $operator): PointRule {
+            PointRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
+            $active = PointRule::query()->latest('id')->lockForUpdate()->firstOrFail();
+
+            return PointRule::create($active->only(['points_per_brl_micros', 'wager_multiplier_micros']) + [
+                'rebate_tiers' => $tiers, 'user_id' => $operator->id,
+                'rebate_percent_micros' => $tiers[0]['percent_micros'] ?? 0,
+                'rebate_wager_multiplier_micros' => $tiers[0]['multiplier_micros'] ?? null,
             ]);
         }, 3);
     }

@@ -42,7 +42,7 @@ class PlatformController extends Controller
     private function listPlatforms(Request $request, ?int $memberId = null): JsonResponse
     {
         $filters = $request->validate(['search' => 'nullable|string|max:120']);
-        $query = Platform::query()->select([...self::PUBLIC_FIELDS, 'rebate_tiers'])->available()->withPublicReviewCount()->orderBy('name')->orderBy('id');
+        $query = Platform::query()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()->orderBy('name')->orderBy('id');
         if ($memberId !== null) {
             $query->whereDoesntHave('bindings', fn (Builder $bindings) => $bindings->where('member_id', $memberId));
         }
@@ -50,46 +50,48 @@ class PlatformController extends Controller
             $query->whereLike('name', '%'.$filters['search'].'%');
         }
 
-        $default = $this->defaultRule();
+        $rebate = $this->rebateSummary();
 
         return response()->json($query->paginate(20)->appends($filters)
-            ->through(fn (Platform $record): array => $this->platformData($record, $default)));
+            ->through(fn (Platform $record): array => $this->platformData($record, $rebate)));
     }
 
     public function featured(): JsonResponse
     {
-        $platforms = Platform::query()->select([...self::PUBLIC_FIELDS, 'rebate_tiers'])->available()->withPublicReviewCount()->whereNotNull('featured_position')
+        $platforms = Platform::query()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()->whereNotNull('featured_position')
             ->orderBy('featured_position')->limit(10)->get();
 
-        $default = $this->defaultRule();
+        $rebate = $this->rebateSummary();
 
-        return response()->json(['data' => $platforms->map(fn (Platform $record): array => $this->platformData($record, $default))]);
+        return response()->json(['data' => $platforms->map(fn (Platform $record): array => $this->platformData($record, $rebate))]);
     }
 
     public function show(string $platform): JsonResponse
     {
-        $record = Platform::query()->select([...self::PUBLIC_FIELDS, ...self::INTRODUCTION_FIELDS, 'rebate_tiers'])
+        $record = Platform::query()->select([...self::PUBLIC_FIELDS, ...self::INTRODUCTION_FIELDS])
             ->available()->withPublicReviewCount()->findOrFail($platform);
-        $default = $this->defaultRule();
+        $rule = PointRule::query()->latest('id')->first();
+        $tiers = PlatformRebateTiers::effective($rule);
 
         return response()->json(['data' => [
-            ...$this->platformData($record, $default),
+            ...$this->platformData($record, PlatformRebateTiers::summary($tiers)),
             ...$record->only(self::INTRODUCTION_FIELDS),
-            'point_rule' => $this->pointRuleData($record, $default),
-            'rebate_tiers' => PlatformRebateTiers::decimals(PlatformRebateTiers::effective($record, $default)),
+            'point_rule' => $this->pointRuleData($rule, $tiers),
+            'rebate_tiers' => PlatformRebateTiers::decimals($tiers),
         ]]);
     }
 
     public function pointRule(string $platform): JsonResponse
     {
-        $record = Platform::query()->available()->findOrFail($platform, ['id', 'rebate_tiers']);
+        abort_unless(Platform::query()->available()->whereKey($platform)->exists(), 404);
+        $rule = PointRule::query()->latest('id')->first();
 
-        return response()->json(['data' => $this->pointRuleData($record, $this->defaultRule())]);
+        return response()->json(['data' => $this->pointRuleData($rule, PlatformRebateTiers::effective($rule))]);
     }
 
-    private function pointRuleData(Platform $platform, ?PointRule $rule): ?array
+    private function pointRuleData(?PointRule $rule, array $tiers): ?array
     {
-        $first = PlatformRebateTiers::effective($platform, $rule)[0] ?? null;
+        $first = $tiers[0] ?? null;
 
         return $rule === null ? null : [
             'points_per_brl' => PointRules::display($rule->points_per_brl_micros),
@@ -99,18 +101,18 @@ class PlatformController extends Controller
         ];
     }
 
-    private function defaultRule(): ?PointRule
+    private function rebateSummary(): array
     {
-        return PointRule::query()->latest('id')->first();
+        return PlatformRebateTiers::summary(PlatformRebateTiers::effective(PointRule::query()->latest('id')->first()));
     }
 
     public function favorites(Request $request): JsonResponse
     {
-        $favorites = $request->user()->favoritePlatforms()->select([...self::PUBLIC_FIELDS, 'rebate_tiers'])->available()->withPublicReviewCount()
+        $favorites = $request->user()->favoritePlatforms()->select(self::PUBLIC_FIELDS)->available()->withPublicReviewCount()
             ->orderByPivot('created_at', 'desc')->orderByDesc('platforms.id')->paginate(20);
-        $default = $this->defaultRule();
+        $rebate = $this->rebateSummary();
 
-        return response()->json($favorites->through(fn (Platform $record): array => $this->platformData($record, $default)))
+        return response()->json($favorites->through(fn (Platform $record): array => $this->platformData($record, $rebate)))
             ->header('Cache-Control', 'private, no-store');
     }
 
@@ -194,9 +196,9 @@ class PlatformController extends Controller
         ]);
     }
 
-    private function platformData(Platform $platform, ?PointRule $default): array
+    private function platformData(Platform $platform, array $rebate): array
     {
-        return [...$platform->only(self::PUBLIC_FIELDS), ...PlatformRebateTiers::summary(PlatformRebateTiers::effective($platform, $default)),
+        return [...$platform->only(self::PUBLIC_FIELDS), ...$rebate,
             'review_count' => (int) $platform->review_count,
             'member_review_count' => (int) $platform->member_review_count];
     }

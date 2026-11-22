@@ -11,7 +11,7 @@ class AdminPermissions
         'members.reset-password' => '重置会员密码',
         'members.adjust-points' => '调整会员积分',
         'points.view' => '查看积分流水',
-        'points.manage-rules' => '管理积分规则',
+        'points.manage-rules' => '管理返利与平台资金比例',
         'platforms.view' => '查看平台',
         'platforms.edit' => '管理平台资料',
         'platforms.configure-query' => '管理平台接口',

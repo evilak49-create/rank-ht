@@ -23,7 +23,7 @@ class PlatformFundOrderResource extends Resource
 
     protected static ?string $pluralModelLabel = '平台资金兑换';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分与兑换';
+    protected static string|\UnitEnum|null $navigationGroup = '积分与配置';
 
     protected static ?int $navigationSort = 60;
 

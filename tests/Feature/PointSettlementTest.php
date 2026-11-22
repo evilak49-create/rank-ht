@@ -2,8 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Resources\PointRuleResource\Pages\ListPointRules;
+use App\Filament\Pages\RebateConfiguration;
 use App\Models\AdminRole;
+use App\Models\FundRateVersion;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
@@ -23,7 +24,7 @@ class PointSettlementTest extends TestCase
     public function test_confirmation_requeries_for_highest_tier_and_advances_the_period_only_once(): void
     {
         [$member, $binding] = $this->scenario();
-        $binding->platform->forceFill(['rebate_tiers' => [
+        PointRule::query()->firstOrFail()->forceFill(['rebate_tiers' => [
             ['multiplier_micros' => 2000000, 'percent_micros' => 1000000],
             ['multiplier_micros' => 3000000, 'percent_micros' => 2000000],
             ['multiplier_micros' => 4000000, 'percent_micros' => 3000000],
@@ -89,33 +90,20 @@ class PointSettlementTest extends TestCase
         $this->assertDatabaseCount('point_entries', 0);
     }
 
-    public function test_admin_can_configure_rebate_percentage_and_wager_without_changing_point_rules(): void
+    public function test_platform_funding_rate_remains_editable_without_changing_rebate_tiers(): void
     {
         $operator = User::factory()->create();
         $operator->forceFill(['panel_enabled' => true])->save();
         $operator->roles()->attach(AdminRole::create(['name' => '返利运营', 'permissions' => ['points.manage-rules']]));
         $this->actingAs($operator, 'web');
-        $previous = PointRule::query()->latest('id')->firstOrFail();
-
-        Livewire::test(ListPointRules::class)->callAction('update_rebate_rule', [
-            'rebate_percent' => '101', 'rebate_wager_multiplier' => '2.5',
-        ])->assertHasActionErrors(['rebate_percent']);
-        $this->assertSame($previous->id, PointRule::query()->latest('id')->value('id'));
-        Livewire::test(ListPointRules::class)->callAction('update_rebate_rule', [
-            'rebate_percent' => '3.125', 'rebate_wager_multiplier' => '2.5',
+        $rule = PointRule::query()->latest('id')->firstOrFail();
+        $this->get('/admin/rebate-configuration')->assertOk()->assertSee('设置平台资金比例');
+        Livewire::test(RebateConfiguration::class)->callAction('update_fund_rate', [
+            'rate' => '1.75',
         ])->assertHasNoActionErrors();
-        $current = PointRule::query()->latest('id')->firstOrFail();
-        $this->assertSame($previous->points_per_brl_micros, $current->points_per_brl_micros);
-        $this->assertSame($previous->wager_multiplier_micros, $current->wager_multiplier_micros);
-        $this->assertSame(3125000, $current->rebate_percent_micros);
-        $this->assertSame(2500000, $current->rebate_wager_multiplier_micros);
 
-        Livewire::test(ListPointRules::class)->callAction('update_rule', [
-            'points_per_brl' => '0.02', 'wager_multiplier' => '4',
-        ])->assertHasNoActionErrors();
-        $updated = PointRule::query()->latest('id')->firstOrFail();
-        $this->assertSame(3125000, $updated->rebate_percent_micros);
-        $this->assertSame(2500000, $updated->rebate_wager_multiplier_micros);
+        $this->assertSame(175, FundRateVersion::query()->latest('id')->firstOrFail()->cents_per_point);
+        $this->assertSame($rule->id, PointRule::query()->latest('id')->value('id'));
     }
 
     public function test_an_additional_deposit_can_make_a_previously_eligible_cashback_quote_ineligible(): void
