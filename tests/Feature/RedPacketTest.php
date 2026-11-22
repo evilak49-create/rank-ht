@@ -141,20 +141,41 @@ class RedPacketTest extends TestCase
         $this->get('/admin/pix-withdrawals')->assertOk()->assertDontSee('52998224725');
 
         $reject = TestAction::make('reject')->table($order);
-        $cpf = TestAction::make('show_cpf')->table($order);
-        Livewire::test(ListPixWithdrawals::class)->assertActionHidden($reject)->assertActionHidden($cpf);
+        Livewire::test(ListPixWithdrawals::class)->assertActionHidden($reject);
         Livewire::test(ListRedPacketRounds::class)->assertActionHidden('configure_threshold');
         $operator->roles()->attach(AdminRole::create(['name' => '审批管理', 'permissions' => ['pix.review', 'red-packets.manage']]));
-        $modal = Livewire::test(ListPixWithdrawals::class)->mountAction($cpf)->instance()->getMountedAction();
-        $this->assertSame('52998224725', $modal?->getModalDescription());
-        $this->assertDatabaseHas('pix_events', ['pix_withdrawal_id' => $order->id, 'user_id' => $operator->id, 'event' => 'cpf_viewed']);
+        $this->get('/admin/pix-withdrawals')->assertOk()->assertSee('52998224725')
+            ->assertSee('审核订单')->assertSee('处理记录')->assertDontSee('查看完整 CPF');
         Livewire::test(ListRedPacketRounds::class)->callAction('configure_threshold', ['threshold' => '125.50'])->assertHasNoActionErrors();
         $this->assertDatabaseHas('red_packet_rounds', ['id' => $order->red_packet_round_id, 'threshold_cents' => 10000]);
         $new = Member::create(['phone' => '11900000555', 'password' => 'member-password']);
         $this->assertSame(12550, app(RedPackets::class)->open($new->refresh(), (string) Str::uuid())->threshold_cents);
         Livewire::test(ListPixWithdrawals::class)->callAction($reject, ['reason' => '核对未通过'])->assertHasNoActionErrors();
         $this->assertSame('rejected', $order->refresh()->status);
-        $this->assertDatabaseHas('red_packet_rounds', ['id' => $order->red_packet_round_id, 'frozen_cents' => 0, 'closed_at' => null]);
+        $this->assertTrue($order->rejection_deducted);
+        $this->assertDatabaseHas('red_packet_rounds', ['id' => $order->red_packet_round_id, 'balance_cents' => 0, 'frozen_cents' => 0]);
+        $this->assertDatabaseHas('red_packet_entries', ['pix_withdrawal_id' => $order->id, 'kind' => 'rejected']);
+        $this->assertDatabaseHas('pix_events', ['pix_withdrawal_id' => $order->id, 'event' => 'rejected_deducted']);
+        $history = Livewire::test(ListPixWithdrawals::class)->mountAction(TestAction::make('history')->table($order))
+            ->instance()->getMountedAction();
+        $this->assertStringContainsString('审核拒绝并扣款 核对未通过', $history->getModalDescription());
+    }
+
+    public function test_cancelling_a_red_packet_withdrawal_releases_its_hold_once(): void
+    {
+        config(['services.pix.driver' => 'simulator']);
+        [, $order] = $this->readyOrder();
+        $operator = $this->operator(['pix.view', 'pix.review']);
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListPixWithdrawals::class)->callAction(TestAction::make('cancel')->table($order))
+            ->assertHasNoActionErrors();
+        app(PixWithdrawals::class)->cancel($order, $operator);
+        $this->assertSame('cancelled', $order->refresh()->status);
+        $this->assertDatabaseHas('red_packet_rounds', [
+            'id' => $order->red_packet_round_id, 'balance_cents' => 10000, 'frozen_cents' => 0, 'closed_at' => null,
+        ]);
+        $this->assertSame(1, DB::table('red_packet_entries')->where('pix_withdrawal_id', $order->id)->where('kind', 'released')->count());
+        $this->assertDatabaseHas('pix_events', ['pix_withdrawal_id' => $order->id, 'event' => 'cancelled']);
     }
 
     public function test_verified_invitation_registration_and_the_ten_cent_boundary(): void

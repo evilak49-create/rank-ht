@@ -38,6 +38,7 @@ class PixWithdrawals
             if ($existing !== null) {
                 abort_if(($existing->red_packet_round_id === null) !== ($amount !== null)
                     || ($amount !== null && $existing->amount_cents !== $amount), 409, '提现申请内容已变更。');
+
                 return $existing;
             }
 
@@ -122,15 +123,28 @@ class PixWithdrawals
     public function reject(PixWithdrawal $order, User $operator, string $reason): void
     {
         abort_unless($operator->hasPermission('pix.review'), 403);
-        $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($operator, $reason): void {
-            if ($current->status !== 'pending' && ! ($current->status === 'processing' && $current->usesManualPayout($task))) {
+        $reason = Validator::make(['reason' => trim($reason)], ['reason' => ['required', 'string', 'max:300']])->validate()['reason'];
+        $this->closeWithoutPayout($order, $operator, 'rejected', $reason);
+    }
+
+    public function cancel(PixWithdrawal $order, User $operator): void
+    {
+        abort_unless($operator->hasPermission('pix.review'), 403);
+        $this->closeWithoutPayout($order, $operator, 'cancelled');
+    }
+
+    private function closeWithoutPayout(PixWithdrawal $order, User $operator, string $status, ?string $reason = null): void
+    {
+        $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($operator, $status, $reason): void {
+            if ($current->status === $status) {
                 return;
             }
+            abort_unless($current->canCloseWithoutPayout($task), 409, '该订单已结单或正在渠道出款。');
 
-            abort_if($member->disabled_at !== null, 409, '会员账号已禁用。');
+            abort_if($status === 'rejected' && $member->disabled_at !== null, 409, '会员账号已禁用。');
             $current->forceFill(['reviewer_id' => $operator->id, 'reviewed_at' => now(), 'review_reason' => $reason]);
-            $this->finish($current, $round, $member, $task, 'rejected');
-            $this->event($current, 'rejected', $operator);
+            $this->finish($current, $round, $member, $task, $status);
+            $this->event($current, $status === 'rejected' ? 'rejected_deducted' : 'cancelled', $operator);
         });
     }
 
@@ -194,16 +208,21 @@ class PixWithdrawals
     public function finish(PixWithdrawal $order, ?RedPacketRound $round, Member $member, ?PixTask $task, string $status, ?string $reference = null): void
     {
         $paid = $status === 'paid';
+        $rejectionDeducted = $status === 'rejected';
+        $deduct = $paid || $rejectionDeducted;
         if ($round === null) {
-            $this->cash->finishWithdrawal($member, $order->amount_cents, $order->id, $paid);
+            $this->cash->finishWithdrawal($member, $order->amount_cents, $order->id, $deduct);
         } else {
             $round->forceFill([
-                'balance_cents' => $round->balance_cents - ($paid ? $order->amount_cents : 0),
-                'frozen_cents' => 0, 'closed_at' => $paid ? now() : null,
+                'balance_cents' => $round->balance_cents - ($deduct ? $order->amount_cents : 0),
+                'frozen_cents' => 0, 'closed_at' => $deduct ? now() : null,
             ])->save();
-            $this->ledger->record($round, $paid ? 'paid' : 'released', $order->amount_cents, withdrawalId: $order->id);
+            $this->ledger->record($round, $deduct ? $status : 'released', $order->amount_cents, withdrawalId: $order->id);
         }
-        $order->forceFill(['status' => $status, 'paid_at' => $paid ? now() : null, 'channel_reference' => $reference])->save();
+        $order->forceFill([
+            'status' => $status, 'paid_at' => $paid ? now() : null, 'channel_reference' => $reference,
+            'rejection_deducted' => $rejectionDeducted,
+        ])->save();
         $task?->forceFill(['next_run_at' => null, 'lease_key' => null, 'lease_until' => null])->save();
     }
 

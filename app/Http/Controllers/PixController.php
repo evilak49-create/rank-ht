@@ -49,7 +49,7 @@ class PixController extends Controller
     public function history(Request $request): JsonResponse
     {
         $orders = PixWithdrawal::query()->whereBelongsTo($request->user())
-            ->select(['id', 'order_number', 'red_packet_round_id', 'amount_cents', 'status', 'review_reason', 'created_at', 'paid_at'])
+            ->select(['id', 'order_number', 'red_packet_round_id', 'amount_cents', 'status', 'review_reason', 'rejection_deducted', 'created_at', 'paid_at'])
             ->latest('created_at')->latest('id')->paginate(20);
 
         return response()->json($orders->through(fn (PixWithdrawal $order): array => [
@@ -58,9 +58,11 @@ class PixController extends Controller
             'status' => match ($order->status) {
                 'paid' => 'succeeded',
                 'failed', 'rejected' => 'failed',
+                'cancelled' => 'cancelled',
                 default => 'reviewing',
             },
-            'review_reason' => $order->review_reason, 'created_at' => $order->created_at, 'paid_at' => $order->paid_at,
+            'review_reason' => $order->review_reason, 'rejection_deducted' => (bool) $order->rejection_deducted,
+            'created_at' => $order->created_at, 'paid_at' => $order->paid_at,
         ]))->header('Cache-Control', 'private, no-store');
     }
 
@@ -99,7 +101,8 @@ class PixController extends Controller
         return [
             'id' => $order->id, 'order_number' => $order->order_number, 'amount_cents' => $order->amount_cents,
             'status' => $order->status, 'currency' => 'BRL', 'masked_cpf' => Cpf::mask($order->cpf_snapshot),
-            'review_reason' => $order->review_reason, 'created_at' => $order->created_at, 'paid_at' => $order->paid_at,
+            'review_reason' => $order->review_reason, 'rejection_deducted' => (bool) $order->rejection_deducted,
+            'created_at' => $order->created_at, 'paid_at' => $order->paid_at,
         ];
     }
 

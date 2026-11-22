@@ -16,6 +16,7 @@ use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class CashWithdrawalTest extends TestCase
@@ -44,9 +45,22 @@ class CashWithdrawalTest extends TestCase
         $order = PixWithdrawal::findOrFail($id);
         $orders->reject($order, $operator, '审核未通过');
         $orders->reject($order, $operator, '审核未通过');
-        $this->assertSame(1000, $member->refresh()->available_balance_cents);
+        $this->assertSame(600, $member->refresh()->available_balance_cents);
         $this->assertSame(0, $member->held_balance_cents);
+        $this->assertTrue($order->refresh()->rejection_deducted);
+        $this->assertDatabaseMissing('cash_balance_entries', ['source' => 'withdrawal_refund', 'source_id' => $id]);
 
+        $cancelled = $this->postJson($url, ['request_id' => (string) Str::uuid(), 'amount_cents' => 150])
+            ->assertCreated()->json('data.id');
+        $cancelledOrder = PixWithdrawal::findOrFail($cancelled);
+        $orders->cancel($cancelledOrder, $operator);
+        $orders->cancel($cancelledOrder, $operator);
+        $this->assertSame('cancelled', $cancelledOrder->refresh()->status);
+        $this->assertSame(600, $member->refresh()->available_balance_cents);
+        $this->assertSame(0, $member->held_balance_cents);
+        $this->assertDatabaseHas('cash_balance_entries', ['source' => 'withdrawal_refund', 'source_id' => $cancelled, 'amount_cents' => 150]);
+
+        $this->travel(1)->minutes();
         $id = $this->postJson($url, ['request_id' => (string) Str::uuid(), 'amount_cents' => 250])->assertCreated()->json('data.id');
         $order = PixWithdrawal::findOrFail($id);
         $orders->approve($order, $operator);
@@ -57,9 +71,9 @@ class CashWithdrawalTest extends TestCase
             'reference' => 'TEST-PIX-001',
         ])->assertHasNoActionErrors();
         $this->assertSame('paid', $order->refresh()->status);
-        $this->assertSame(750, $member->refresh()->available_balance_cents);
+        $this->assertSame(350, $member->refresh()->available_balance_cents);
         $this->assertSame(0, $member->held_balance_cents);
-        $this->assertDatabaseCount('cash_balance_entries', 3);
+        $this->assertDatabaseCount('cash_balance_entries', 4);
     }
 
     public function test_failed_automated_balance_transfer_releases_the_hold_once(): void
@@ -70,8 +84,12 @@ class CashWithdrawalTest extends TestCase
             'request_id' => (string) Str::uuid(), 'amount_cents' => 250,
         ])->assertCreated()->json('data.id');
         $order = PixWithdrawal::findOrFail($id);
-        app(PixWithdrawals::class)->approve($order, $operator);
+        $orders = app(PixWithdrawals::class);
+        $orders->approve($order, $operator);
         $order->task()->update(['send_started_at' => now()]);
+        $this->assertThrows(fn () => $orders->cancel($order, $operator), HttpException::class, '该订单已结单或正在渠道出款。');
+        $this->assertThrows(fn () => $orders->reject($order, $operator, '审核未通过'), HttpException::class, '该订单已结单或正在渠道出款。');
+        $this->assertSame(250, $member->refresh()->held_balance_cents);
         $delivery = app(PixDelivery::class);
         $delivery->reconcile($order, new PixResult('failed'));
         $delivery->reconcile($order, new PixResult('failed'));
@@ -132,6 +150,7 @@ class CashWithdrawalTest extends TestCase
             ['paid', 'succeeded', $round->id],
             ['failed', 'failed', null],
             ['rejected', 'failed', $round->id],
+            ['cancelled', 'cancelled', null],
         ];
         $expected = [];
         foreach ($entries as [$status, $summary, $roundId]) {
@@ -148,7 +167,7 @@ class CashWithdrawalTest extends TestCase
             'amount_cents' => 1000, 'cpf_snapshot' => '52998224725', 'status' => 'paid',
         ]);
 
-        $history = $this->getJson($url)->assertOk()->assertJsonPath('total', 6)
+        $history = $this->getJson($url)->assertOk()->assertJsonPath('total', 7)
             ->assertJsonPath('data.0.amount_cents', 250)->assertJsonMissingPath('data.0.masked_cpf')
             ->assertDontSee('52998224725')->assertDontSee($unrelated->order_number);
         $actual = array_map(fn (array $order): array => [$order['id'], $order['source'], $order['status']], $history->json('data'));

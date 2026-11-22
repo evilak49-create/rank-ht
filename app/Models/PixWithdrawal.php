@@ -17,6 +17,7 @@ class PixWithdrawal extends Model
         return [
             'cpf_snapshot' => 'encrypted', 'amount_cents' => 'integer',
             'reviewed_at' => 'datetime', 'paid_at' => 'datetime', 'payout_channel_id' => 'integer',
+            'rejection_deducted' => 'boolean',
         ];
     }
 
@@ -38,5 +39,10 @@ class PixWithdrawal extends Model
     public function usesManualPayout(?PixTask $task): bool
     {
         return $task === null && ($this->payout_channel_id !== null || $this->red_packet_round_id === null);
+    }
+
+    public function canCloseWithoutPayout(?PixTask $task): bool
+    {
+        return $this->status === 'pending' || ($this->status === 'processing' && $this->usesManualPayout($task));
     }
 }

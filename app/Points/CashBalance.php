@@ -34,10 +34,10 @@ class CashBalance
         $this->record($member, -$amount, $amount, 'withdrawal', $orderId);
     }
 
-    public function finishWithdrawal(Member $member, int $amount, int $orderId, bool $paid): void
+    public function finishWithdrawal(Member $member, int $amount, int $orderId, bool $deduct): void
     {
         abort_if($amount > $member->held_balance_cents, 409, '提现冻结金额不一致。');
-        if ($paid) {
+        if ($deduct) {
             $member->forceFill(['held_balance_cents' => $member->held_balance_cents - $amount])->save();
         } else {
             $this->record($member, $amount, -$amount, 'withdrawal_refund', $orderId);
