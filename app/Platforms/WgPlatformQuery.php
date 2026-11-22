@@ -99,7 +99,7 @@ class WgPlatformQuery implements PlatformQueryDriver
 
         if ($onResponse !== null) {
             $body = mb_scrub(str_replace([$key, $apiKey, $encrypted, $signature], '[已隐藏]', $response->body()));
-            $onResponse(mb_strlen($body) > 8000 ? mb_substr($body, 0, 8000)."\n[响应过长，已截断]" : $body, $response->status());
+            $onResponse($body, $response->status());
         }
 
         if (in_array($response->status(), [401, 403], true)) {

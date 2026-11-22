@@ -10,6 +10,7 @@ use App\RedPackets\SimulatedPixChannel;
 use App\Shop\Funds\DisabledFundChannel;
 use App\Shop\Funds\FundChannel;
 use App\Shop\Funds\SimulatedFundChannel;
+use Filament\Notifications\Notification;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -42,6 +43,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Sanctum::getAccessTokenFromRequestUsing(fn (): null => null);
+        Notification::configureUsing(fn (Notification $notification) => $notification->safeViews('filament.platforms.query-response'));
 
         RateLimiter::for('member-sms', fn (Request $request): array => [
             Limit::perMinute(10)->by('ip:'.$request->ip()),

@@ -212,12 +212,14 @@ class PlatformResource extends Resource
                     ->title(PlatformQueryFailure::label($result))
                     ->status($result === 'passed' ? 'success' : 'danger');
                 if ($record->network === PlatformNetwork::Wg && self::hasPermission('platforms.configure-query') && $result !== 'stale') {
-                    $details = match (true) {
-                        $httpStatus === null => '本次测试没有收到服务商的 HTTP 响应。',
-                        trim($responseBody) === '' => "服务商返回了空响应（HTTP {$httpStatus}）。",
-                        default => '服务商响应原文<pre>'.e($responseBody).'</pre>',
-                    };
-                    $notice->body($details)->persistent();
+                    $notice->persistent();
+                    if ($httpStatus === null) {
+                        $notice->body('本次测试没有收到服务商的 HTTP 响应。');
+                    } elseif (trim($responseBody) === '') {
+                        $notice->body("服务商返回了空响应（HTTP {$httpStatus}）。");
+                    } else {
+                        $notice->view('filament.platforms.query-response', ['responseBody' => $responseBody]);
+                    }
                 }
 
                 $notice->send();

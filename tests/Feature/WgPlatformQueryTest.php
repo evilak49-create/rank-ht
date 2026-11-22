@@ -188,13 +188,19 @@ class WgPlatformQueryTest extends TestCase
         $platform->save();
         $this->actingAs($operator, 'web');
 
-        $body = '{"code":1116001004,"data":"<script>trace</script>"}';
+        $body = '{"code":1116001004,"data":"'.str_repeat('pJL2', 5500).'</textarea><script>trace</script>"}';
         Http::fake([self::ENDPOINT => Http::sequence()->push($body)->push('', 502)]);
         $action = TestAction::make('test_query')->table($platform);
 
         Livewire::test(ListPlatforms::class)->callAction($action)
             ->assertNotified(Notification::make()->danger()->persistent()
-                ->title(PlatformQueryFailure::label('ip_not_allowed'))->body('服务商响应原文<pre>'.e($body).'</pre>'));
+                ->title(PlatformQueryFailure::label('ip_not_allowed'))
+                ->view('filament.platforms.query-response', ['responseBody' => $body]));
+        $notification = Notification::make()->danger()->persistent()->title('测试结果')
+            ->view('filament.platforms.query-response', ['responseBody' => $body]);
+        $html = Notification::fromArray($notification->toArray())->toHtml();
+        $this->assertStringContainsString(e($body), $html);
+        $this->assertStringNotContainsString('<script>trace</script>', $html);
         Livewire::test(ListPlatforms::class)->callAction($action)
             ->assertNotified(Notification::make()->danger()->persistent()
                 ->title(PlatformQueryFailure::label('transient'))->body('服务商返回了空响应（HTTP 502）。'));
