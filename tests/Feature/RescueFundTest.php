@@ -87,7 +87,7 @@ class RescueFundTest extends TestCase
         $this->assertDatabaseEmpty('cash_balance_entries');
     }
 
-    public function test_legacy_binding_and_inactive_protection_never_receive_money(): void
+    public function test_legacy_binding_starts_with_the_first_verified_profit_snapshot(): void
     {
         [, $binding] = $this->scenario();
         $this->deposit += 50_000;
@@ -98,7 +98,29 @@ class RescueFundTest extends TestCase
 
         $binding->forceFill(['protection_status' => 'active', 'rescue_baseline' => null])->save();
         $this->postJson("/api/v1/rescue-fund/{$binding->id}/claim", ['request_id' => (string) Str::uuid()])->assertConflict();
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
         $this->assertDatabaseEmpty('rescue_fund_claims');
+        $this->assertSame(-50_000, $binding->refresh()->rescue_baseline['net_profit_cents']);
+
+        $this->travel(1)->minutes();
+        $this->deposit += 1_000;
+        $this->bet += 1_000;
+        $this->netProfit = -51_000;
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonPath('data.0.amount_cents', 100);
+    }
+
+    public function test_panda_uses_history_wins_loses_without_an_explicit_mapping(): void
+    {
+        $this->netProfit = 345;
+        [, $binding] = $this->scenario(usePandaDefaults: true);
+        $this->deposit += 1_000;
+        $this->bet += 1_000;
+        $this->netProfit = -655;
+
+        $this->getJson('/api/v1/rescue-fund')->assertOk()
+            ->assertJsonPath('data.0.binding_id', $binding->id)
+            ->assertJsonPath('data.0.net_loss_cents', 1_000)
+            ->assertJsonPath('data.0.amount_cents', 100);
     }
 
     public function test_claim_is_unauthorized_for_another_member(): void
@@ -177,7 +199,7 @@ class RescueFundTest extends TestCase
         $this->assertSame('available', $platform->status());
     }
 
-    private function scenario(): array
+    private function scenario(bool $usePandaDefaults = false): array
     {
         config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);
         $this->fakeTotals();
@@ -192,7 +214,11 @@ class RescueFundTest extends TestCase
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
         $member->forceFill(['phone_verified_at' => now()])->save();
         $platform = Platform::create(['name' => 'Example', 'promotion_url' => 'https://example.test', 'rating' => 5, 'guarantee_amount_brl' => '100.00']);
-        $platform->forceFill(['active_query_revision' => 1, 'active_query' => $this->queryConfiguration()])->save();
+        $configuration = $this->queryConfiguration();
+        if ($usePandaDefaults) {
+            $configuration = array_diff_key($configuration, array_flip(['net_profit_field', 'net_profit_unit', 'net_profit_direction']));
+        }
+        $platform->forceFill(['active_query_revision' => 1, 'active_query' => $configuration])->save();
         $binding = app(BindPlatformAccount::class)->bind($member->refresh(), $platform, $member->phone, null, true);
         $binding->forceFill(['protection_status' => 'active'])->save();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
@@ -216,7 +242,7 @@ class RescueFundTest extends TestCase
         Http::fake(fn () => Http::response(['result' => ['data' => ['json' => ['userList' => [
             'total' => 1, 'pageData' => [[
                 'id' => 4000000001, 'historicalPay' => $this->deposit, 'historicalValidBetting' => $this->bet,
-                'currency' => 'BRL', 'verifiedProfit' => $this->netProfit,
+                'currency' => 'BRL', 'verifiedProfit' => $this->netProfit, 'historyWinsLoses' => $this->netProfit,
             ]],
         ]]]]]));
     }

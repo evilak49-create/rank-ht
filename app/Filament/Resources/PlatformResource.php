@@ -197,7 +197,9 @@ class PlatformResource extends Resource
 
         if ($network !== null) {
             $fields[] = TextInput::make('net_profit_field')->label('救援金累计净盈亏字段')->maxLength(80)
-                ->helperText('仅填写合作方确认的会员累计有符号净盈亏字段。用于救援金，从对应会员数据中读取。');
+                ->helperText($network === PlatformNetwork::Panda
+                    ? '留空时使用 historyWinsLoses，单位为巴西分，负值表示净亏损。'
+                    : '填写合作方确认的会员累计有符号净盈亏字段。');
             $fields[] = Select::make('net_profit_unit')->label('净盈亏金额单位')
                 ->options(['brl' => '巴西雷亚尔（BRL）', 'cents' => '巴西分（centavos）']);
             $fields[] = Select::make('net_profit_direction')->label('净盈亏正值表示')

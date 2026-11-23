@@ -8,6 +8,7 @@ use App\Models\PlatformBinding;
 use App\Models\PointRule;
 use App\Models\RescueFundClaim;
 use App\Platforms\PlatformAccount;
+use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
@@ -33,8 +34,8 @@ class RescueFund
         }
 
         $bindings = PlatformBinding::query()->whereBelongsTo($member)->where('protection_status', 'active')
-            ->whereNotNull('rescue_baseline')->withWhereHas('platform', fn ($query) => $query->available()
-            ->where('guarantee_amount_brl', '>', 0))->orderBy('id')->get();
+            ->withWhereHas('platform', fn ($query) => $query->available()
+                ->where('guarantee_amount_brl', '>', 0))->orderBy('id')->get();
         $providerUnavailable = false;
         foreach ($bindings as $binding) {
             $platform = $binding->platform;
@@ -48,7 +49,13 @@ class RescueFund
 
                 continue;
             }
-            $quote = $this->quote($binding, $account?->rescueSnapshot(), $settings, $tiers);
+            $snapshot = $account?->rescueSnapshot();
+            if ($binding->rescue_baseline === null && $snapshot !== null) {
+                $this->initializeBaseline($binding, $platform, $snapshot);
+
+                continue;
+            }
+            $quote = $this->quote($binding, $snapshot, $settings, $tiers);
             if ($quote !== null) {
                 $data[] = ['binding_id' => $binding->id, 'platform_name' => $platform->name, ...$quote];
             }
@@ -68,7 +75,8 @@ class RescueFund
         }
 
         $platform = $binding->platform;
-        abort_unless($this->settings->current()['enabled'] && $this->canQuery($binding, $platform), 409, self::INELIGIBLE);
+        abort_unless($this->settings->current()['enabled'] && $this->canQuery($binding, $platform)
+            && $binding->rescue_baseline !== null, 409, self::INELIGIBLE);
         try {
             $snapshot = $this->lookup($binding, $platform)?->rescueSnapshot();
         } catch (PlatformQueryFailure) {
@@ -119,9 +127,27 @@ class RescueFund
 
     private function canQuery(PlatformBinding $binding, Platform $platform): bool
     {
-        return $binding->protection_status === 'active' && $binding->rescue_baseline !== null
+        return $binding->protection_status === 'active'
             && $platform->status() === 'available' && $platform->guarantee_amount_brl > 0
-            && isset($platform->active_query['net_profit_field']);
+            && ($platform->network === PlatformNetwork::Panda || isset($platform->active_query['net_profit_field']));
+    }
+
+    private function initializeBaseline(PlatformBinding $binding, Platform $platform, array $snapshot): void
+    {
+        DB::transaction(function () use ($binding, $platform, $snapshot): void {
+            $currentPlatform = Platform::query()->lockForUpdate()->find($platform->id);
+            if ($currentPlatform === null || $currentPlatform->network !== $platform->network
+                || $currentPlatform->active_query_revision !== $platform->active_query_revision) {
+                return;
+            }
+
+            $current = PlatformBinding::query()->lockForUpdate()->find($binding->id);
+            if ($current !== null && $current->rescue_baseline === null
+                && $current->platform_id === $platform->id && $current->platform_account_id === $binding->platform_account_id
+                && $this->canQuery($current, $currentPlatform)) {
+                $current->forceFill(['rescue_baseline' => $snapshot])->save();
+            }
+        }, 3);
     }
 
     private function lookup(PlatformBinding $binding, Platform $platform): ?PlatformAccount

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Auth\AdminPermissions;
+use App\Filament\Resources\CashBalanceEntryResource\Pages\ListCashBalanceEntries;
 use App\Filament\Resources\MemberResource\Pages\ListMembers;
 use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\AdminRole;
@@ -14,6 +15,7 @@ use Filament\Facades\Filament;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -30,7 +32,7 @@ class AdminNavigationTest extends TestCase
         $this->assertSame([
             '会员与活动' => ['会员列表', '签到记录', '红包轮次', '红包邀请记录'],
             '平台与保障' => ['平台列表', '平台评价', 'AI 评价批次', '保障条款', '保障资格', '申诉案件'],
-            '积分与配置' => ['返利配置', '救援金配置', '积分流水', '兑换查询记录', '商品管理', '商品订单', '平台资金兑换', 'Pix 提现审核'],
+            '积分与配置' => ['返利配置', '救援金配置', '积分流水', '资金明细', '兑换查询记录', '商品管理', '商品订单', '平台资金兑换', 'Pix 提现审核'],
             '内容与客服' => ['Banner', '公告管理', '帮助中心', '客服设置', '常见问题'],
             '系统设置' => ['后台账号', '角色权限', '后台授权审计', '业务时区', 'OSS 配置', 'AI 配置', '会员验证码'],
         ], $this->groupedItems());
@@ -45,6 +47,23 @@ class AdminNavigationTest extends TestCase
         $this->assertSame(['内容与客服' => ['Banner', '公告管理', '帮助中心']], $this->groupedItems());
         $this->get('/admin/support-settings')->assertForbidden();
         $this->get('/admin/rescue-fund-configuration')->assertForbidden();
+        $this->get('/admin/cash-balance-entries')->assertForbidden();
+    }
+
+    public function test_operator_can_find_and_filter_cash_entries(): void
+    {
+        $this->signInWith(['points.view', 'funds.view', 'pix.view']);
+        $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        foreach (['rescue_fund' => 1_500, 'rebate' => 2_500] as $source => $amount) {
+            DB::table('cash_balance_entries')->insert([
+                'member_id' => $member->id, 'source' => $source, 'source_id' => 73,
+                'amount_cents' => $amount, 'balance_after_cents' => $amount, 'created_at' => now(),
+            ]);
+        }
+
+        $this->get('/admin/cash-balance-entries')->assertOk();
+        Livewire::test(ListCashBalanceEntries::class)->searchTable($member->phone)
+            ->filterTable('source', 'rescue_fund')->assertSee('R$ 15.00')->assertDontSee('R$ 25.00');
     }
 
     public function test_platform_and_member_rows_each_render_one_named_action_menu(): void

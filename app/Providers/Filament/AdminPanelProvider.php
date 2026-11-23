@@ -15,6 +15,7 @@ use App\Filament\Resources\AdminAccountResource;
 use App\Filament\Resources\AdminRoleResource;
 use App\Filament\Resources\AnnouncementResource;
 use App\Filament\Resources\BusinessTimezoneResource;
+use App\Filament\Resources\CashBalanceEntryResource;
 use App\Filament\Resources\HelpArticleResource;
 use App\Filament\Resources\MemberCheckinResource;
 use App\Filament\Resources\MemberResource;
@@ -72,7 +73,7 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class, PointEntryResource::class,
-                PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
+                CashBalanceEntryResource::class, PointQuoteResource::class, ProductResource::class, ShopOrderResource::class,
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,
                 RedPacketRoundResource::class, RedPacketInviteResource::class, PixWithdrawalResource::class,

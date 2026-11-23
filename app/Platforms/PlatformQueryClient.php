@@ -16,6 +16,12 @@ class PlatformQueryClient implements PlatformQueryDriver
 {
     private const QUERY_PATH = '/api/backend/trpc/user.list';
 
+    private const NET_PROFIT_DEFAULTS = [
+        'net_profit_field' => 'historyWinsLoses',
+        'net_profit_unit' => 'cents',
+        'net_profit_direction' => 'profit_positive',
+    ];
+
     public function validateConfiguration(#[SensitiveParameter] array $data): array
     {
         if (is_string($data['endpoint'] ?? null)) {
@@ -119,7 +125,8 @@ class PlatformQueryClient implements PlatformQueryDriver
             throw new PlatformQueryFailure('schema');
         }
 
-        $netProfit = PlatformNetProfit::fromAccountRow($account, $config, [
+        $netProfitMapping = isset($config['net_profit_field']) ? $config : self::NET_PROFIT_DEFAULTS;
+        $netProfit = PlatformNetProfit::fromAccountRow($account, $netProfitMapping, [
             'panda', $config['endpoint'], $config['admin_host'], (int) $config['tenant_id'], (int) $config['region_id'],
         ]);
 
