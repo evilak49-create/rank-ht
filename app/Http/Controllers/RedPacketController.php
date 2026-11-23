@@ -32,13 +32,15 @@ class RedPacketController extends Controller
 
     public function invites(Request $request): JsonResponse
     {
-        $list = RedPacketInvite::query()->where('inviter_id', $request->user()->id)->latest('id')->paginate(20);
+        $list = RedPacketInvite::query()->where('inviter_id', $request->user()->id)
+            ->with('invitee:id,phone,created_at')->latest('id')->paginate(20);
 
         return response()->json($list->through(fn (RedPacketInvite $invite): array => [
             'id' => $invite->id, 'round_id' => $invite->red_packet_round_id,
             'reward_cents' => $invite->reward_cents, 'settled_at' => $invite->settled_at,
-            'registered_at' => $invite->created_at,
-        ]));
+            'invitee_phone' => $invite->invitee?->phone,
+            'registered_at' => $invite->invitee?->created_at ?? $invite->created_at,
+        ]))->header('Cache-Control', 'private, no-store');
     }
 
     private function round(RedPacketRound $round): array

@@ -9,6 +9,7 @@ use App\Models\AdminRole;
 use App\Models\Member;
 use App\Models\PixPayoutChannel;
 use App\Models\PixWithdrawal;
+use App\Models\RedPacketInvite;
 use App\Models\User;
 use App\RedPackets\InvitationRewards;
 use App\RedPackets\PixChannel;
@@ -18,6 +19,7 @@ use App\RedPackets\PixWithdrawals;
 use App\RedPackets\RedPackets;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -82,6 +84,34 @@ class RedPacketTest extends TestCase
         $this->assertDatabaseCount('red_packet_rounds', 2);
         $this->assertDatabaseHas('red_packet_invites', ['id' => $pending->id, 'red_packet_round_id' => $nextRound]);
         $this->getJson('/api/v1/red-packets')->assertOk()->assertJsonPath('data.invite_code', $inviteCode);
+    }
+
+    public function test_invite_details_show_the_invitees_registration_and_the_recorded_reward_only_to_the_inviter(): void
+    {
+        $inviter = Member::create(['phone' => '11912345001', 'password' => 'member-password']);
+        $invitee = Member::create(['phone' => '11912345002', 'password' => 'member-password']);
+        $other = Member::create(['phone' => '11912345003', 'password' => 'member-password']);
+        $registration = now()->subDays(2)->startOfSecond();
+        $invitee->forceFill(['created_at' => $registration])->save();
+
+        $invite = RedPacketInvite::create(['inviter_id' => $inviter->id, 'invitee_id' => $invitee->id]);
+        $invite->forceFill(['reward_cents' => 139, 'settled_at' => now()])->save();
+        RedPacketInvite::create(['inviter_id' => $other->id, 'invitee_id' => $inviter->id]);
+
+        $this->actingAs($inviter, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson('/api/v1/red-packets/invites')->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.invitee_phone', $invitee->phone)
+            ->assertJsonPath('data.0.registered_at', $registration->toJSON())
+            ->assertJsonPath('data.0.reward_cents', 139);
+
+        Auth::forgetGuards();
+        $this->actingAs($other, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson('/api/v1/red-packets/invites')->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.invitee_phone', $inviter->phone)
+            ->assertJsonPath('data.0.settled_at', null);
     }
 
     public function test_timeout_only_queries_and_a_signed_failure_releases_once(): void
