@@ -18,6 +18,7 @@ class PlatformQueryFailure extends RuntimeException
             'authentication' => '合作方接口鉴权失败',
             'ip_not_allowed' => 'WG 出口 IP 不在白名单范围，请联系 WG 核对站点配置',
             'schema' => '合作方接口响应不符合约定',
+            'net_profit_schema' => '测试账号缺少有效的累计净盈亏字段，请核对字段和金额单位',
             'transient' => '合作方暂不可用，请稍后重试',
             'configuration' => '查询端点不在服务器允许列表中，或配置无效',
             'public_endpoint' => 'WG 域名无法解析到可连接的公网地址，请检查域名和 DNS',

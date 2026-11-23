@@ -14,6 +14,7 @@ use App\RedPackets\PixWithdrawals;
 use App\RedPackets\RedPackets;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -22,6 +23,40 @@ use Tests\TestCase;
 class CashWithdrawalTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_cash_movement_history_records_withdrawal_and_its_return_separately(): void
+    {
+        $url = '/api/v1/cash-wallet/entries';
+        $this->getJson($url)->assertUnauthorized();
+        [$member, $operator] = $this->scenario();
+        $other = Member::create(['phone' => '11900000555', 'password' => 'member-password']);
+        $createdAt = now()->subMinute();
+        DB::table('cash_balance_entries')->insert([
+            ['member_id' => $member->id, 'source' => 'rebate', 'source_id' => 5, 'amount_cents' => 100,
+                'balance_after_cents' => 1000, 'created_at' => $createdAt],
+            ['member_id' => $other->id, 'source' => 'rebate', 'source_id' => 6, 'amount_cents' => 900,
+                'balance_after_cents' => 900, 'created_at' => $createdAt],
+        ]);
+
+        $orderId = $this->postJson('/api/v1/cash-wallet/withdrawals', [
+            'request_id' => (string) Str::uuid(), 'amount_cents' => 400,
+        ])->assertCreated()->json('data.id');
+        $this->getJson($url)->assertOk()->assertJsonPath('total', 2)
+            ->assertJsonPath('data.0.source', 'withdrawal')->assertJsonPath('data.0.amount_cents', -400)
+            ->assertJsonPath('data.0.balance_after_cents', 600)->assertJsonMissingPath('data.0.status');
+
+        $order = PixWithdrawal::findOrFail($orderId);
+        app(PixWithdrawals::class)->cancel($order, $operator);
+        $history = $this->getJson($url)->assertOk()->assertJsonPath('total', 3)
+            ->assertJsonPath('data.0.source', 'withdrawal_refund')->assertJsonPath('data.0.amount_cents', 400)
+            ->assertJsonPath('data.0.balance_after_cents', 1000)->assertJsonPath('data.1.source', 'withdrawal')
+            ->assertJsonPath('data.2.source', 'rebate')->assertJsonPath('data.2.amount_cents', 100)
+            ->assertJsonMissingPath('data.0.status');
+        $this->assertTrue($history->headers->hasCacheControlDirective('no-store'));
+        $this->getJson($url.'?source=withdrawal_refund')->assertOk()->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.amount_cents', 400);
+        $this->getJson($url.'?source[]=rebate')->assertUnprocessable();
+    }
 
     public function test_available_balance_can_be_partly_withdrawn_manually_or_refunded(): void
     {

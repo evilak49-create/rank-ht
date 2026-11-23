@@ -153,15 +153,7 @@ class PointSettlement
         $depositBase = BigInteger::of(max(0, $deposit));
         $minimumMultiplier = $tiers[0]['multiplier_micros'] ?? null;
         $required = $this->wagerRequired($depositBase, $minimumMultiplier ?? 0);
-        $matched = null;
-        if ($deposit > 0) {
-            foreach (array_reverse($tiers) as $tier) {
-                if (! $this->wagerRequired($depositBase, $tier['multiplier_micros'])->isGreaterThan($bet)) {
-                    $matched = $tier;
-                    break;
-                }
-            }
-        }
+        $matched = PlatformRebateTiers::matchWager($tiers, $deposit, $bet);
         $percent = $matched['percent_micros'] ?? 0;
         $rebate = $depositBase->multipliedBy($percent)->quotient(self::SETTLEMENT_SCALE);
 

@@ -4,6 +4,7 @@ namespace App\Points;
 
 use App\Models\PointRule;
 use App\Models\User;
+use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,23 @@ class PlatformRebateTiers
             'min_rebate_wager_multiplier' => $tiers === [] ? null : PointRules::display($tiers[0]['multiplier_micros']),
             'max_rebate_percent' => $tiers === [] ? null : PointRules::display(max(array_column($tiers, 'percent_micros'))),
         ];
+    }
+
+    public static function matchWager(array $tiers, int $deposit, int $bet): ?array
+    {
+        if ($deposit <= 0 || $bet < 0) {
+            return null;
+        }
+
+        $scaledBet = BigInteger::of($bet)->multipliedBy(PointRules::SCALE);
+        $depositBase = BigInteger::of($deposit);
+        foreach (array_reverse($tiers) as $tier) {
+            if (! $depositBase->multipliedBy($tier['multiplier_micros'])->isGreaterThan($scaledBet)) {
+                return $tier;
+            }
+        }
+
+        return null;
     }
 
     public static function decimals(array $tiers): array

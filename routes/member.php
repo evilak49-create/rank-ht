@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CashWalletEntryController;
 use App\Http\Controllers\CheckinController;
 use App\Http\Controllers\MemberAuthController;
 use App\Http\Controllers\PixController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\ProtectionController;
 use App\Http\Controllers\PublicContentController;
 use App\Http\Controllers\RedemptionHistoryController;
 use App\Http\Controllers\RedPacketController;
+use App\Http\Controllers\RescueFundController;
 use App\Http\Controllers\ShippingAddressController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\SupportController;
@@ -76,8 +78,12 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
         Route::get('pix-withdrawals/{order}', [PixController::class, 'show'])->whereNumber('order');
         Route::post('pix-withdrawals', [PixController::class, 'submit'])->middleware('throttle:10,1');
         Route::get('cash-wallet', [PixController::class, 'cashBalance']);
+        Route::get('cash-wallet/entries', CashWalletEntryController::class);
         Route::get('cash-wallet/withdrawals', [PixController::class, 'cashWithdrawals']);
         Route::post('cash-wallet/withdrawals', [PixController::class, 'withdrawCash'])->middleware('throttle:6,1');
+        Route::get('rescue-fund', [RescueFundController::class, 'index'])->middleware('throttle:12,1,rescue-fund-index');
+        Route::post('rescue-fund/{binding}/claim', [RescueFundController::class, 'claim'])
+            ->whereNumber('binding')->middleware('throttle:8,1,rescue-fund-claim');
         Route::get('check-in', [CheckinController::class, 'status']);
         Route::post('check-in', [CheckinController::class, 'record']);
         Route::get('platform-bindings', [PlatformController::class, 'bindings']);

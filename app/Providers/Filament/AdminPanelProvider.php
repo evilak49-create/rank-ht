@@ -8,6 +8,7 @@ use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MemberVerificationSettings;
 use App\Filament\Pages\OssSettings;
 use App\Filament\Pages\RebateConfiguration;
+use App\Filament\Pages\RescueFundConfiguration;
 use App\Filament\Pages\SupportSettings;
 use App\Filament\Resources\AdminAccessAuditResource;
 use App\Filament\Resources\AdminAccountResource;
@@ -67,7 +68,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('内容与客服'),
                 NavigationGroup::make('系统设置'),
             ])
-            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class, RebateConfiguration::class])
+            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class, RebateConfiguration::class, RescueFundConfiguration::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class, PointEntryResource::class,

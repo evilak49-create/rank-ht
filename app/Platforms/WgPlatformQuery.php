@@ -34,6 +34,7 @@ class WgPlatformQuery implements PlatformQueryDriver
             'api_key' => ['required', 'string', 'max:255', 'regex:/\A[A-Za-z0-9._-]+\z/'],
             'secret_key' => ['required', 'string', 'regex:/\A[^\x00-\x1F\x7F]{16}\z/'],
             'test_phone' => ['required', 'string'],
+            ...PlatformNetProfit::RULES,
         ], ['secret_key.regex' => 'WG Secret Key 必须为 16 字节。'])->validate();
 
         $parts = parse_url($settings['endpoint']);
@@ -49,7 +50,7 @@ class WgPlatformQuery implements PlatformQueryDriver
 
     public function formState(#[SensitiveParameter] ?array $saved): array
     {
-        $fields = array_fill_keys(['endpoint', 'site_code', 'api_key', 'secret_key', 'test_phone'], null);
+        $fields = array_fill_keys(['endpoint', 'site_code', 'api_key', 'secret_key', 'test_phone', ...array_keys(PlatformNetProfit::RULES)], null);
 
         return Arr::only($saved ?? [], array_keys($fields)) + $fields;
     }
@@ -113,7 +114,7 @@ class WgPlatformQuery implements PlatformQueryDriver
 
     private function query(#[SensitiveParameter] array $config, array $filter, ?Closure $onResponse = null): ?PlatformAccount
     {
-        return $this->account($this->signedRequest($config, self::PATH, $filter, $onResponse), $config['site_code']);
+        return $this->account($this->signedRequest($config, self::PATH, $filter, $onResponse), $config);
     }
 
     private function signedRequest(#[SensitiveParameter] array $config, string $path, array $filter, ?Closure $onResponse = null): array
@@ -201,13 +202,16 @@ class WgPlatformQuery implements PlatformQueryDriver
         return $this->json($plain);
     }
 
-    private function account(#[SensitiveParameter] array $data, string $siteCode): ?PlatformAccount
+    private function account(#[SensitiveParameter] array $data, #[SensitiveParameter] array $config): ?PlatformAccount
     {
+        $siteCode = $config['site_code'];
         if (array_key_exists('accountDetailInfo', $data)) {
             $detail = $data['accountDetailInfo'];
             if (! in_array($data['result'] ?? null, [0, '0'], true) || ! is_array($detail) || array_is_list($detail)) {
                 throw new PlatformQueryFailure('schema');
             }
+
+            $profit = PlatformNetProfit::fromAccountRow($detail, $config, ['wg-detail', $config['endpoint'], $siteCode]);
 
             return $this->accountFromRow([
                 'useridx' => $detail['userIdx'] ?? null,
@@ -216,7 +220,7 @@ class WgPlatformQuery implements PlatformQueryDriver
                 'currency' => array_key_exists('currency', $detail) ? $detail['currency'] : 'BRL',
                 'totalDeposit' => $detail['totalPayAmount'] ?? null,
                 'validBet' => $detail['validBet'] ?? null,
-            ], $siteCode);
+            ], $siteCode, $profit);
         }
 
         if (! in_array($data['result'] ?? 0, [0, '0'], true)) {
@@ -239,10 +243,12 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('schema');
         }
 
-        return $this->accountFromRow(['siteCode' => $rows[0]['siteCode'] ?? $siteCode] + $rows[0], $siteCode);
+        $profit = PlatformNetProfit::fromAccountRow($rows[0], $config, ['wg-list', $config['endpoint'], $siteCode]);
+
+        return $this->accountFromRow(['siteCode' => $rows[0]['siteCode'] ?? $siteCode] + $rows[0], $siteCode, $profit);
     }
 
-    private function accountFromRow(#[SensitiveParameter] array $row, string $siteCode): PlatformAccount
+    private function accountFromRow(#[SensitiveParameter] array $row, string $siteCode, ?PlatformNetProfit $profit): PlatformAccount
     {
         $id = $row['useridx'] ?? null;
         $reportedSite = $row['siteCode'] ?? null;
@@ -252,7 +258,7 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('schema');
         }
 
-        return new PlatformAccount((string) $id, $this->cents($row['totalDeposit'] ?? null), $this->cents($row['validBet'] ?? null), now()->utc());
+        return new PlatformAccount((string) $id, $this->cents($row['totalDeposit'] ?? null), $this->cents($row['validBet'] ?? null), now()->utc(), $profit);
     }
 
     private function json(#[SensitiveParameter] string $value): array

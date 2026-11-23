@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'member_id', 'platform_id', 'platform_account_id', 'query_phone',
-    'baseline_deposit_cents', 'baseline_valid_bet_cents', 'baseline_observed_at',
+    'baseline_deposit_cents', 'baseline_valid_bet_cents', 'baseline_observed_at', 'rescue_baseline',
 ])]
 class PlatformBinding extends Model
 {
@@ -19,6 +19,7 @@ class PlatformBinding extends Model
             'baseline_observed_at' => 'datetime', 'baseline_deposit_cents' => 'integer',
             'baseline_valid_bet_cents' => 'integer', 'baseline_version' => 'integer',
             'point_remainder' => 'integer', 'rebate_remainder' => 'integer', 'settlement_paused_at' => 'datetime',
+            'rescue_baseline' => 'array',
         ];
     }
 

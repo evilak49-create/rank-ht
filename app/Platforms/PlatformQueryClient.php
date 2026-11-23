@@ -36,6 +36,7 @@ class PlatformQueryClient implements PlatformQueryDriver
             'region_id' => 'required|integer|min:0',
             'client_language' => ['required', 'string', 'max:24', 'regex:/\A[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{2,8})*\z/'],
             'test_phone' => ['required', 'string'],
+            ...PlatformNetProfit::RULES,
         ])->validate();
 
         if (! $this->acceptsEndpoint($configuration['endpoint'])) {
@@ -53,6 +54,7 @@ class PlatformQueryClient implements PlatformQueryDriver
 
         return Arr::only($saved === null ? $defaults : $saved + ['client_language' => $defaults['client_language'] ?? 'zh-CN'], [
             'endpoint', 'admin_host', 'token', 'account', 'fingerprint', 'tenant_id', 'region_id', 'test_phone', 'client_language',
+            ...array_keys(PlatformNetProfit::RULES),
         ]);
     }
 
@@ -117,7 +119,11 @@ class PlatformQueryClient implements PlatformQueryDriver
             throw new PlatformQueryFailure('schema');
         }
 
-        return new PlatformAccount((string) $id, $deposit, $validBet, now()->utc());
+        $netProfit = PlatformNetProfit::fromAccountRow($account, $config, [
+            'panda', $config['endpoint'], $config['admin_host'], (int) $config['tenant_id'], (int) $config['region_id'],
+        ]);
+
+        return new PlatformAccount((string) $id, $deposit, $validBet, now()->utc(), $netProfit);
     }
 
     public function rechargePage(

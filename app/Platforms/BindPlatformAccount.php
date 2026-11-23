@@ -74,6 +74,7 @@ class BindPlatformAccount
                     'member_id' => $owner->id, 'platform_account_id' => $account->id, 'query_phone' => $phone,
                     'baseline_deposit_cents' => $account->depositCents, 'baseline_valid_bet_cents' => $account->validBetCents,
                     'baseline_observed_at' => $account->observedAt,
+                    'rescue_baseline' => $account->rescueSnapshot(),
                 ]);
             }, 3);
         } catch (UniqueConstraintViolationException) {

@@ -171,7 +171,7 @@ class PlatformResource extends Resource
 
     private static function queryFields(?PlatformNetwork $network): array
     {
-        return match ($network) {
+        $fields = match ($network) {
             null => [],
             PlatformNetwork::Wg => [
                 TextInput::make('endpoint')->label('WG API 域名或接口地址')->url()->maxLength(2048)->required()
@@ -194,6 +194,17 @@ class PlatformResource extends Resource
                 TextInput::make('test_phone')->label('已知推广测试账号的账号')->required(),
             ],
         };
+
+        if ($network !== null) {
+            $fields[] = TextInput::make('net_profit_field')->label('救援金累计净盈亏字段')->maxLength(80)
+                ->helperText('仅填写合作方确认的会员累计有符号净盈亏字段。用于救援金，从对应会员数据中读取。');
+            $fields[] = Select::make('net_profit_unit')->label('净盈亏金额单位')
+                ->options(['brl' => '巴西雷亚尔（BRL）', 'cents' => '巴西分（centavos）']);
+            $fields[] = Select::make('net_profit_direction')->label('净盈亏正值表示')
+                ->options(['profit_positive' => '会员盈利', 'loss_positive' => '会员亏损']);
+        }
+
+        return $fields;
     }
 
     private static function testQueryAction(): Action

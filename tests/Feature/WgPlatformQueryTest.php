@@ -138,6 +138,21 @@ class WgPlatformQueryTest extends TestCase
         }
     }
 
+    public function test_wg_reads_only_the_configured_signed_profit_with_the_declared_units(): void
+    {
+        $this->fakeResponse(['result' => 0, 'accountDetailInfo' => [
+            'userIdx' => 4000000001, 'siteCode' => '0025', 'totalPayAmount' => '500',
+            'validBet' => '500', 'verifiedNetLoss' => '501.25',
+        ]]);
+        $driver = PlatformNetwork::Wg->queryDriver();
+        $configuration = $driver->validateConfiguration($this->configuration() + [
+            'net_profit_field' => 'verifiedNetLoss', 'net_profit_unit' => 'brl', 'net_profit_direction' => 'loss_positive',
+        ]);
+
+        $this->assertSame(-50_125, $driver->lookup($configuration, '11912345678')?->netProfit?->cents);
+        $this->assertNull($driver->lookup($driver->validateConfiguration($this->configuration()), '11912345678')?->netProfit);
+    }
+
     public function test_wg_reports_ip_allowlist_rejection_for_the_live_gateway_code(): void
     {
         Http::fake([self::ENDPOINT => Http::response([

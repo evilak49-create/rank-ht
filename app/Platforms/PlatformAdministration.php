@@ -85,6 +85,10 @@ class PlatformAdministration
                 ? $driver->lookupTestAccount($configuration, $onResponse)
                 : $driver->lookupTestAccount($configuration);
             $result = $account === null ? 'not_found' : 'passed';
+
+            if ($isDraft && $account !== null && isset($configuration['net_profit_field']) && $account->netProfit === null) {
+                $result = 'net_profit_schema';
+            }
         } catch (PlatformQueryFailure $failure) {
             $result = $failure->kind;
         }
