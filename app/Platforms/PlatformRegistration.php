@@ -23,17 +23,18 @@ class PlatformRegistration
             abort_if($owner->session_version !== $member->session_version, 401);
 
             $url = Uri::of($platform->promotion_url);
-            if ($platform->guarantee_amount_brl <= 0
-                || $url->scheme() !== 'https' || $platform->bindings()->whereBelongsTo($owner)->exists()) {
+            if ($platform->guarantee_amount_brl <= 0 || $url->scheme() !== 'https') {
                 return $platform->promotion_url;
             }
 
-            DB::table('platform_registration_intents')->upsert([
-                'member_id' => $owner->id,
-                'platform_id' => $platform->id,
-                'session_version' => $owner->session_version,
-                'expires_at' => now()->addMinutes(30),
-            ], ['member_id', 'platform_id'], ['session_version', 'expires_at']);
+            if (! $platform->bindings()->whereBelongsTo($owner)->exists()) {
+                DB::table('platform_registration_intents')->upsert([
+                    'member_id' => $owner->id,
+                    'platform_id' => $platform->id,
+                    'session_version' => $owner->session_version,
+                    'expires_at' => now()->addMinutes(30),
+                ], ['member_id', 'platform_id'], ['session_version', 'expires_at']);
+            }
 
             return (string) $url->withQuery(['bd_id' => $owner->phone, 'platform' => $platform->name]);
         }, 3);

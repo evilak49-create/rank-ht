@@ -69,6 +69,25 @@ class PlatformAutobindTest extends TestCase
         ]);
     }
 
+    public function test_a_bound_member_still_gets_the_agreed_parameters_without_a_new_intent(): void
+    {
+        [$member, $platform] = $this->fixture();
+        $platform->update(['promotion_url' => 'https://777UB.PRO/?pid=example&fromPage=affiliate']);
+        $this->fakeLookup();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0])
+            ->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated();
+
+        $url = $this->launch($member, $platform)->assertOk()->json('data.url');
+        parse_str(parse_url($url, PHP_URL_QUERY), $query);
+        $this->assertSame([
+            'pid' => 'example', 'fromPage' => 'affiliate', 'bd_id' => $member->phone, 'platform' => '777PUB',
+        ], $query);
+        $this->assertDatabaseEmpty('platform_registration_intents');
+        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        Http::assertSentCount(1);
+        $this->assertDatabaseCount('platform_bindings', 1);
+    }
+
     private function fixture(): array
     {
         config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);
