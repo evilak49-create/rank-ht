@@ -88,7 +88,8 @@ class ExternalPixPayoutTest extends TestCase
         $order->task()->update(['send_started_at' => now()]);
         $channel->update(['configuration' => array_replace($config, ['secret' => 'new-secret'])]);
         $data = ['merchantId' => 'fixture-merchant', 'merchantOrderNo' => $order->order_number,
-            'orderNo' => 'provider-ref', 'status' => 'FAILED', 'currency' => 'BRL', 'amount' => 400];
+            'orderNo' => 'provider-ref', 'status' => 'FAILED', 'currency' => 'BRL', 'amount' => 400,
+            'errorMsg' => ' Provider declined the payment '];
         $data['sign'] = ExternalPixChannel::signature($data, 'fixture-secret');
         $url = '/api/v1/pix/provider-callback/'.$channel->id;
         $this->postJson($url, $data)->assertForbidden();

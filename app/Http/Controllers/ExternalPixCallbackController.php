@@ -23,8 +23,11 @@ class ExternalPixCallbackController extends Controller
 
     public function __invoke(Request $request, int $channel, ExternalPixChannel $provider, PixDelivery $delivery): Response
     {
-        abort_unless($request->isJson() && strlen($request->getContent()) <= 16_384, 400);
-        $data = $request->json()->all();
+        $body = $request->getContent();
+        abort_unless($request->isJson() && strlen($body) <= 16_384, 400);
+        // Middleware normalizes request fields, while the signature covers the original values.
+        $data = json_decode($body, true, 32, JSON_BIGINT_AS_STRING);
+        abort_unless(is_array($data) && ! array_is_list($data), 400);
         $number = $data['merchantOrderNo'] ?? null;
         abort_unless(is_string($number) && Str::isUuid($number), 400);
         $order = PixWithdrawal::query()->where('payout_channel_id', $channel)->whereNotNull('payout_configuration')
