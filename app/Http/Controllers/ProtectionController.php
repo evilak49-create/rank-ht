@@ -24,21 +24,22 @@ class ProtectionController extends Controller
     {
         $record = Platform::query()->available()->findOrFail($platform);
         $member = Auth::guard('member')->user();
-        $account = null;
+        $binding = null;
         if ($member instanceof Member && $member->disabled_at === null
             && $request->session()->get('member_session_version') === $member->session_version) {
-            $account = PlatformBinding::query()->whereBelongsTo($member)
-                ->where('platform_id', $record->id)->value('platform_account_id');
+            $binding = PlatformBinding::query()->whereBelongsTo($member)
+                ->where('platform_id', $record->id)->first(['platform_id', 'platform_account_id']);
+            $binding?->setRelation('platform', $record);
         }
 
-        return $this->currentTerms($record, $account);
+        return $this->currentTerms($record, $binding);
     }
 
     public function bindingTerms(Request $request, int $binding): JsonResponse
     {
         $record = $this->ownedBindings($request)->with('platform')->findOrFail($binding);
 
-        return $this->currentTerms($record->platform, $record->platform_account_id);
+        return $this->currentTerms($record->platform, $record);
     }
 
     public function bindings(Request $request): JsonResponse
@@ -102,11 +103,11 @@ class ProtectionController extends Controller
         return $storage->show($file);
     }
 
-    private function currentTerms(Platform $platform, ?string $account): JsonResponse
+    private function currentTerms(Platform $platform, ?PlatformBinding $binding): JsonResponse
     {
         $terms = ProtectionTerm::currentForPlatform($platform->id);
 
-        return $this->privateJson(['data' => $terms?->forViewer($platform, $account)]);
+        return $this->privateJson(['data' => $terms?->forViewer($platform, $binding)]);
     }
 
     private function ownedBindings(Request $request): Builder

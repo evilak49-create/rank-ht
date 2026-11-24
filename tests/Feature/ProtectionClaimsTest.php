@@ -161,7 +161,7 @@ class ProtectionClaimsTest extends TestCase
         $this->actingAs($operator, 'web');
         Livewire::test(ListProtectionTerms::class)->callAction('publish', [
             'title' => '【平台名称】保障条款',
-            'body' => '【平台名称】｜【保障金额】｜【会员账号】',
+            'body' => '【平台名称】｜【保障金额】｜【会员账号】｜【保障状态】',
         ])->assertHasNoActionErrors();
 
         $version = ProtectionTerm::query()->whereNull('platform_id')->sole();
@@ -172,19 +172,26 @@ class ProtectionClaimsTest extends TestCase
         $url = '/api/v1/platforms/'.$platform->id.'/protection-terms';
         $this->getJson($url)->assertOk()->assertJsonPath('data.id', $version->id)
             ->assertJsonPath('data.title', '保障平台保障条款')
-            ->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜—');
+            ->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜—｜—');
         $this->getJson('/api/v1/platforms/'.$otherBinding->platform_id.'/protection-terms')
-            ->assertOk()->assertJsonPath('data.id', $version->id)->assertJsonPath('data.body', '另一平台｜—｜—');
+            ->assertOk()->assertJsonPath('data.id', $version->id)->assertJsonPath('data.body', '另一平台｜—｜—｜—');
 
         Auth::forgetGuards();
         $this->actingAs($member->refresh(), 'member')->withSession(['member_session_version' => 0]);
-        $this->getJson($url)->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567');
+        $this->getJson($url)->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567｜保障中');
         $this->getJson('/api/v1/protection/bindings/'.$binding->id.'/terms')
-            ->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567');
+            ->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567｜保障中');
         $this->getJson('/api/v1/platforms/'.$otherBinding->platform_id.'/protection-terms')
-            ->assertOk()->assertJsonPath('data.body', '另一平台｜—｜—');
+            ->assertOk()->assertJsonPath('data.body', '另一平台｜—｜—｜—');
         $this->getJson('/api/v1/protection/bindings/'.$otherBinding->id.'/terms')->assertNotFound();
 
+        Auth::forgetGuards();
+        $this->actingAs($other->refresh(), 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson('/api/v1/protection/bindings/'.$otherBinding->id.'/terms')
+            ->assertOk()->assertJsonPath('data.body', '另一平台｜—｜1234567｜未生效');
+
+        Auth::forgetGuards();
+        $this->actingAs($member->refresh(), 'member')->withSession(['member_session_version' => 0]);
         $version->update(['body' => '{{平台名称}}｜{{保障金额}}｜{{会员账号}}']);
         $this->getJson($url)->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567');
 
