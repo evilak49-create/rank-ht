@@ -13,6 +13,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class PlatformBinding extends Model
 {
+    public const PROTECTION_STATUSES = ['pending' => '待确认', 'active' => '保障中', 'inactive' => '未生效'];
+
+    public static function protectionStatusLabel(string $status): string
+    {
+        return self::PROTECTION_STATUSES[$status] ?? self::PROTECTION_STATUSES['pending'];
+    }
+
     protected function casts(): array
     {
         return [

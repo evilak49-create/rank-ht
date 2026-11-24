@@ -19,8 +19,6 @@ class ProtectionClaims
 {
     public const PERMISSIONS = ['protection.claims.view', 'protection.terms.manage', 'protection.eligibility.manage'];
 
-    public const STATUSES = ['pending' => '待确认', 'active' => '已生效', 'inactive' => '未生效'];
-
     public function __construct(private readonly ClaimEvidenceStorage $storage) {}
 
     public function submit(Member $member, array $data): ProtectionClaim
@@ -117,7 +115,7 @@ class ProtectionClaims
     public function setEligibility(PlatformBinding $binding, User $operator, string $status): void
     {
         abort_unless($operator->hasPermission('protection.eligibility.manage'), 403);
-        if (! array_key_exists($status, self::STATUSES)) {
+        if (! array_key_exists($status, PlatformBinding::PROTECTION_STATUSES)) {
             throw ValidationException::withMessages(['status' => '请选择有效的保障状态。']);
         }
 

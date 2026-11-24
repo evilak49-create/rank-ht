@@ -68,6 +68,7 @@ class ProtectionClaimsTest extends TestCase
         Storage::fake('claim-evidence-local');
         $member = $this->member('11912345678');
         $binding = $this->binding($member);
+        $binding->platform->forceFill(['guarantee_amount_brl' => 100])->save();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $claim = $this->post('/api/v1/protection/claims', $this->payload($binding), ['Accept' => 'application/json'])
             ->assertCreated()->json('data');
@@ -79,7 +80,7 @@ class ProtectionClaimsTest extends TestCase
         $operator->roles()->attach($role);
         $this->get('/admin/protection-claims')->assertOk();
         $this->get('/admin/protection-claims/'.$claim['id'])->assertOk()
-            ->assertSee('提现未收到')->assertSeeInOrder(['查看图片 1', '查看图片 2']);
+            ->assertSee('提现未收到')->assertSee('保障中')->assertSeeInOrder(['查看图片 1', '查看图片 2']);
         $this->get('/admin/protection-claims/'.$claim['id'].'/edit')->assertNotFound();
         $evidence = ClaimEvidence::findOrFail($claim['evidence'][0]['id']);
         $url = $evidence->accessUrl('admin');

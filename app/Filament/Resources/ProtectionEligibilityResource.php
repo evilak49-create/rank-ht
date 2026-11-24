@@ -40,14 +40,14 @@ class ProtectionEligibilityResource extends Resource
             TextColumn::make('platform.name')->label('平台')->searchable(),
             TextColumn::make('platform_account_id')->label('平台账号')->searchable(),
             TextColumn::make('protection_status')->label('保障状态')->badge()
-                ->formatStateUsing(fn (string $state): string => ProtectionClaims::STATUSES[$state]),
+                ->formatStateUsing(fn (string $state): string => PlatformBinding::protectionStatusLabel($state)),
         ])->filters([
-            SelectFilter::make('protection_status')->label('保障状态')->options(ProtectionClaims::STATUSES),
+            SelectFilter::make('protection_status')->label('保障状态')->options(PlatformBinding::PROTECTION_STATUSES),
         ])->recordActions([
             Action::make('set_status')->label('更新资格')
                 ->authorize(fn (): bool => self::canViewAny())
                 ->fillForm(fn (PlatformBinding $record): array => ['status' => $record->protection_status])
-                ->schema([Select::make('status')->label('保障状态')->options(ProtectionClaims::STATUSES)->required()])
+                ->schema([Select::make('status')->label('保障状态')->options(PlatformBinding::PROTECTION_STATUSES)->required()])
                 ->action(fn (PlatformBinding $record, array $data) => app(ProtectionClaims::class)->setEligibility(
                     $record, Filament::auth()->user(), $data['status'],
                 ))->successNotificationTitle('已更新保障资格'),

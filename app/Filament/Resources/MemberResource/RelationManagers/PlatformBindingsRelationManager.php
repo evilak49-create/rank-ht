@@ -30,9 +30,7 @@ class PlatformBindingsRelationManager extends RelationManager
             TextColumn::make('platform_account_id')->label('平台账号')->searchable(),
             TextColumn::make('created_at')->label('绑定时间')->dateTime('Y-m-d H:i')->sortable(),
             TextColumn::make('protection_status')->label('保障资格')->badge()->state(fn (PlatformBinding $record): string => $record->currentProtectionStatus())
-                ->formatStateUsing(fn (string $state): string => match ($state) {
-                    'active' => '保障中', 'inactive' => '未生效', default => '待确认',
-                }),
+                ->formatStateUsing(fn (string $state): string => PlatformBinding::protectionStatusLabel($state)),
         ])->recordActions([
             Action::make('recharges')->label('充值记录')
                 ->url(fn (PlatformBinding $record): string => MemberResource::getUrl('recharges', [

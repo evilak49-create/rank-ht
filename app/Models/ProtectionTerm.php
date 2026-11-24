@@ -31,12 +31,7 @@ class ProtectionTerm extends Model
     public function forViewer(Platform $platform, ?PlatformBinding $binding): array
     {
         $amount = $platform->guarantee_amount_brl;
-        $status = match ($binding?->currentProtectionStatus()) {
-            'active' => '保障中',
-            'inactive' => '未生效',
-            null => '—',
-            default => '待确认',
-        };
+        $status = $binding === null ? '—' : PlatformBinding::protectionStatusLabel($binding->currentProtectionStatus());
         $values = [
             $platform->name,
             $amount === null ? '—' : 'R$ '.number_format((float) $amount, 2, ',', '.'),

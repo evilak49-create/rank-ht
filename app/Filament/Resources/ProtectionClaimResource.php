@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ProtectionClaimResource\Pages\ListProtectionClaims;
 use App\Filament\Resources\ProtectionClaimResource\Pages\ViewProtectionClaim;
 use App\Models\ClaimEvidence;
+use App\Models\PlatformBinding;
 use App\Models\ProtectionClaim;
 use App\Models\User;
 use App\Points\PointRules;
@@ -84,7 +85,7 @@ class ProtectionClaimResource extends Resource
             TextEntry::make('case_status')->label('案件状态')->badge()
                 ->formatStateUsing(fn (string $state): string => ProtectionClaim::CASE_STATUSES[$state]),
             TextEntry::make('protection_status')->label('提交时保障状态')
-                ->formatStateUsing(fn (string $state): string => ProtectionClaims::STATUSES[$state]),
+                ->formatStateUsing(fn (string $state): string => PlatformBinding::protectionStatusLabel($state)),
             TextEntry::make('protection_term_id')->label('提交时条款版本')->placeholder('未发布'),
             TextEntry::make('amount_cents')->label('出款金额')->formatStateUsing(self::money(...)),
             TextEntry::make('withdrawn_at')->label('出款时间')->dateTime(),
