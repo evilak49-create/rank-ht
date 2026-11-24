@@ -3,18 +3,15 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProtectionTermResource\Pages\ListProtectionTerms;
-use App\Models\Platform;
 use App\Models\ProtectionTerm;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\DB;
 
 class ProtectionTermResource extends Resource
 {
@@ -35,9 +32,10 @@ class ProtectionTermResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table->defaultSort('id', 'desc')->columns([
+        return $table->modifyQueryUsing(fn ($query) => $query->with('platform'))->defaultSort('id', 'desc')->columns([
             TextColumn::make('id')->label('版本')->sortable(),
-            TextColumn::make('platform.name')->label('平台')->searchable(),
+            TextColumn::make('scope')->label('适用范围')
+                ->state(fn (ProtectionTerm $record): string => $record->platform?->name ?? '全站'),
             TextColumn::make('title')->label('标题')->searchable(),
             TextColumn::make('created_at')->label('发布时间')->dateTime()->sortable(),
         ])->recordActions([
@@ -50,19 +48,17 @@ class ProtectionTermResource extends Resource
     public static function publishAction(): Action
     {
         return Action::make('publish')->label('发布条款版本')->authorize(fn () => self::canViewAny())
+            ->modalDescription('此版本适用于所有平台，标题及正文中的变量会按访问者及当前平台替换。')
             ->schema([
-                Select::make('platform_id')->label('平台')->required()->searchable()
-                    ->options(fn (): array => Platform::query()->orderBy('name')->pluck('name', 'id')->all())
-                    ->exists('platforms', 'id'),
                 TextInput::make('title')->label('标题')->required()->maxLength(160),
-                Textarea::make('body')->label('条款正文')->required()->maxLength(12000)->rows(12),
+                Textarea::make('body')->label('条款正文')->required()->maxLength(12000)->rows(12)
+                    ->helperText('可用变量：'.implode('、', ProtectionTerm::PLACEHOLDERS)),
             ])->action(function (array $data): void {
                 abort_unless(self::canViewAny(), 403);
-                DB::transaction(function () use ($data): void {
-                    Platform::query()->lockForUpdate()->findOrFail($data['platform_id']);
-                    ProtectionTerm::create($data + ['user_id' => Filament::auth()->id()]);
-                }, 3);
-            })->successNotificationTitle('已发布保障条款');
+                ProtectionTerm::create([
+                    'title' => $data['title'], 'body' => $data['body'], 'user_id' => Filament::auth()->id(),
+                ]);
+            })->successNotificationTitle('已发布全站保障条款');
     }
 
     public static function getPages(): array

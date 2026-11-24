@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClaimEvidence;
+use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
 use App\Models\ProtectionClaim;
@@ -13,19 +14,31 @@ use App\Protection\ProtectionClaims;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\File;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProtectionController extends Controller
 {
-    public function publicTerms(int $platform): JsonResponse
+    public function publicTerms(Request $request, int $platform): JsonResponse
     {
-        return $this->currentTerms(Platform::query()->available()->findOrFail($platform)->id);
+        $record = Platform::query()->available()->findOrFail($platform);
+        $member = Auth::guard('member')->user();
+        $account = null;
+        if ($member instanceof Member && $member->disabled_at === null
+            && $request->session()->get('member_session_version') === $member->session_version) {
+            $account = PlatformBinding::query()->whereBelongsTo($member)
+                ->where('platform_id', $record->id)->value('platform_account_id');
+        }
+
+        return $this->currentTerms($record, $account);
     }
 
     public function bindingTerms(Request $request, int $binding): JsonResponse
     {
-        return $this->currentTerms($this->ownedBindings($request)->findOrFail($binding)->platform_id);
+        $record = $this->ownedBindings($request)->with('platform')->findOrFail($binding);
+
+        return $this->currentTerms($record->platform, $record->platform_account_id);
     }
 
     public function bindings(Request $request): JsonResponse
@@ -89,11 +102,11 @@ class ProtectionController extends Controller
         return $storage->show($file);
     }
 
-    private function currentTerms(int $platform): JsonResponse
+    private function currentTerms(Platform $platform, ?string $account): JsonResponse
     {
-        $terms = ProtectionTerm::query()->where('platform_id', $platform)->latest('id')->first();
+        $terms = ProtectionTerm::currentForPlatform($platform->id);
 
-        return $this->privateJson(['data' => $terms?->only(['id', 'platform_id', 'title', 'body', 'created_at'])]);
+        return $this->privateJson(['data' => $terms?->forViewer($platform, $account)]);
     }
 
     private function ownedBindings(Request $request): Builder

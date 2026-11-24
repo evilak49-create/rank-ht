@@ -62,7 +62,7 @@ class ProtectionClaims
                 }
 
                 $binding = $this->ownedBinding($owner, $data['binding_id'])->lockForUpdate()->with('platform')->firstOrFail();
-                $termId = ProtectionTerm::query()->where('platform_id', $binding->platform_id)->latest('id')->value('id');
+                $termId = ProtectionTerm::currentForPlatform($binding->platform_id)?->id;
                 [$units, $fraction] = array_pad(explode('.', (string) $data['amount'], 2), 2, '');
                 $cents = (int) $units * 100 + (int) str_pad($fraction, 2, '0');
                 $claim = ProtectionClaim::create([

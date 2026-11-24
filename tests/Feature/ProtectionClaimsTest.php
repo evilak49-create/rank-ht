@@ -8,6 +8,7 @@ use App\Models\ClaimEvidence;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
+use App\Models\ProtectionTerm;
 use App\Models\User;
 use App\Protection\ClaimEvidenceStorage;
 use App\Storage\OssConfiguration;
@@ -146,6 +147,48 @@ class ProtectionClaimsTest extends TestCase
         $this->getJson($memberUrl)->assertOk()->assertExactJson(['data' => null]);
     }
 
+    public function test_global_terms_render_for_every_platform_with_only_the_viewers_own_bound_account(): void
+    {
+        $member = $this->member('11912345678');
+        $binding = $this->binding($member);
+        $platform = $binding->platform;
+        $platform->forceFill(['manually_disabled' => false, 'active_query_revision' => 1, 'guarantee_amount_brl' => '1234.50'])->save();
+        $other = $this->member('11912345679');
+        $otherBinding = $this->binding($other);
+        $otherBinding->platform->forceFill(['name' => '另一平台', 'manually_disabled' => false, 'active_query_revision' => 1])->save();
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => '保障运营', 'permissions' => ['protection.terms.manage']]));
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListProtectionTerms::class)->callAction('publish', [
+            'title' => '{{平台名称}}保障条款',
+            'body' => '{{平台名称}}｜{{保障金额}}｜{{会员账号}}',
+        ])->assertHasNoActionErrors();
+
+        $version = ProtectionTerm::query()->whereNull('platform_id')->sole();
+        ProtectionTerm::create([
+            'platform_id' => $platform->id, 'user_id' => $operator->id,
+            'title' => '旧版单平台条款', 'body' => '旧版条款正文',
+        ]);
+        $url = '/api/v1/platforms/'.$platform->id.'/protection-terms';
+        $this->getJson($url)->assertOk()->assertJsonPath('data.id', $version->id)
+            ->assertJsonPath('data.title', '保障平台保障条款')
+            ->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜—');
+        $this->getJson('/api/v1/platforms/'.$otherBinding->platform_id.'/protection-terms')
+            ->assertOk()->assertJsonPath('data.id', $version->id)->assertJsonPath('data.body', '另一平台｜—｜—');
+
+        Auth::forgetGuards();
+        $this->actingAs($member->refresh(), 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567');
+        $this->getJson('/api/v1/protection/bindings/'.$binding->id.'/terms')
+            ->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜1234567');
+        $this->getJson('/api/v1/platforms/'.$otherBinding->platform_id.'/protection-terms')
+            ->assertOk()->assertJsonPath('data.body', '另一平台｜—｜—');
+        $this->getJson('/api/v1/protection/bindings/'.$otherBinding->id.'/terms')->assertNotFound();
+
+        $this->withSession(['member_session_version' => 1])->getJson($url)
+            ->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜—');
+    }
+
     public function test_terms_have_versions_and_case_keeps_the_original_binding_snapshot(): void
     {
         Storage::fake('claim-evidence-local');
@@ -160,7 +203,7 @@ class ProtectionClaimsTest extends TestCase
         $this->get('/admin/protection-terms')->assertOk();
         $this->get('/admin/protection-eligibility')->assertNotFound();
         $platform = $binding->platform;
-        $publish = ['platform_id' => $platform->id, 'title' => '保障说明', 'body' => '第一版条款'];
+        $publish = ['title' => '保障说明', 'body' => '第一版条款'];
         Livewire::test(ListProtectionTerms::class)->callAction('publish', $publish)->assertHasNoActionErrors();
         $platform->forceFill(['guarantee_amount_brl' => 100])->save();
 
