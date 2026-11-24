@@ -50,11 +50,11 @@ class RescueFund
             if ($binding->rescue_baseline === null && $snapshot !== null) {
                 $this->initializeBaseline($binding, $platform, $snapshot);
             }
-            $quote = $this->quote($binding, $snapshot, $settings, $tiers);
-            if ($quote === null) {
-                $unavailable[] = $entry;
+            $assessment = $this->assess($binding, $snapshot, $settings, $tiers);
+            if (($assessment['amount_cents'] ?? 0) === 0) {
+                $unavailable[] = $entry + $assessment;
             } else {
-                $data[] = $entry + $quote;
+                $data[] = $entry + $assessment;
             }
         }
 
@@ -100,8 +100,8 @@ class RescueFund
             // Rebate rule updates also lock the first rule before publishing a new version.
             PointRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
             $rule = PointRule::query()->latest('id')->lockForUpdate()->firstOrFail();
-            $quote = $this->quote($current, $snapshot, $settings, PlatformRebateTiers::effective($rule));
-            abort_if($quote === null, 409, self::INELIGIBLE);
+            $quote = $this->assess($current, $snapshot, $settings, PlatformRebateTiers::effective($rule));
+            abort_if(($quote['amount_cents'] ?? 0) === 0, 409, self::INELIGIBLE);
 
             $claim = RescueFundClaim::create([
                 'member_id' => $owner->id, 'platform_id' => $currentPlatform->id,
@@ -160,35 +160,36 @@ class RescueFund
         return $claim;
     }
 
-    private function quote(PlatformBinding $binding, ?array $snapshot, array $settings, array $tiers): ?array
+    private function assess(PlatformBinding $binding, ?array $snapshot, array $settings, array $tiers): array
     {
         $baseline = $binding->rescue_baseline;
         // Snapshots store UTC ISO timestamps with the same precision and amount source.
         if ($snapshot === null || $baseline === null || $snapshot['source'] !== $baseline['source']
             || $snapshot['observed_at'] <= $baseline['observed_at']) {
-            return null;
+            return [];
         }
 
         $deposit = $snapshot['deposit_cents'] - $baseline['deposit_cents'];
         $bet = $snapshot['valid_bet_cents'] - $baseline['valid_bet_cents'];
         $netLoss = BigInteger::of($baseline['net_profit_cents'])->minus($snapshot['net_profit_cents']);
-        if ($deposit <= 0 || $deposit > CashBalance::MAX_CENTS || $netLoss->isLessThan($deposit) || $netLoss->isGreaterThan(CashBalance::MAX_CENTS)) {
-            return null;
+        if ($deposit < 0 || $deposit > CashBalance::MAX_CENTS || $netLoss->isGreaterThan(CashBalance::MAX_CENTS)) {
+            return [];
         }
 
         $tier = PlatformRebateTiers::matchWager($tiers, $deposit, $bet)['multiplier_micros'] ?? null;
-        if ($tier === null || $tier > $settings['max_wager_tier_micros']) {
-            return null;
+        $details = [
+            'deposit_cents' => $deposit, 'net_loss_cents' => $netLoss->isNegative() ? 0 : $netLoss->toInt(),
+            'wager_tier_micros' => $tier, 'amount_cents' => 0,
+        ];
+        if ($deposit === 0 || $netLoss->isLessThan($deposit) || $tier === null || $tier > $settings['max_wager_tier_micros']) {
+            return $details;
         }
 
         $amount = BigInteger::of($deposit)->multipliedBy($settings['percent_micros'])->quotient(self::SETTLEMENT_SCALE);
-        if ($amount->isZero() || $amount->isGreaterThan(CashBalance::MAX_CENTS)) {
-            return null;
+        if (! $amount->isGreaterThan(CashBalance::MAX_CENTS)) {
+            $details['amount_cents'] = $amount->toInt();
         }
 
-        return [
-            'deposit_cents' => $deposit, 'net_loss_cents' => $netLoss->toInt(),
-            'wager_tier_micros' => $tier, 'amount_cents' => $amount->toInt(),
-        ];
+        return $details;
     }
 }

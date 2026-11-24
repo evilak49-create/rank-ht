@@ -97,14 +97,22 @@ class RescueFundTest extends TestCase
         $this->deposit += 50_000;
         $this->bet += 200_000;
         $this->netProfit = -50_000;
-        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
+            ->assertJsonPath('unavailable.0.deposit_cents', 50_000)
+            ->assertJsonPath('unavailable.0.net_loss_cents', 62_345)
+            ->assertJsonPath('unavailable.0.wager_tier_micros', 4_000_000)
+            ->assertJsonPath('unavailable.0.amount_cents', 0);
 
         $this->bet -= 50_000;
         $this->netProfit = -20_000;
-        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
+            ->assertJsonPath('unavailable.0.net_loss_cents', 32_345)
+            ->assertJsonPath('unavailable.0.wager_tier_micros', 3_000_000)
+            ->assertJsonPath('unavailable.0.amount_cents', 0);
 
         $this->netProfit = null;
-        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
+            ->assertJsonMissingPath('unavailable.0.net_loss_cents');
         $this->postJson("/api/v1/rescue-fund/{$binding->id}/claim", ['request_id' => (string) Str::uuid()])->assertConflict();
         $this->assertDatabaseEmpty('cash_balance_entries');
     }
