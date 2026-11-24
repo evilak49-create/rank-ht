@@ -33,7 +33,7 @@ class RescueFund
         $bindings = PlatformBinding::query()->whereBelongsTo($member)->with('platform')->orderBy('id')->get();
         foreach ($bindings as $binding) {
             $platform = $binding->platform;
-            $entry = ['binding_id' => $binding->id, 'platform_name' => $platform->name];
+            $entry = ['binding_id' => $binding->id, 'platform_name' => $platform->name, 'logo_url' => $platform->logo_url];
             if ($tiers === [] || ! $this->canQuery($binding, $platform)) {
                 $unavailable[] = $entry;
 

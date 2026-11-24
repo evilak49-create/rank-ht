@@ -41,6 +41,7 @@ class RescueFundTest extends TestCase
         $this->getJson('/api/v1/rescue-fund')->assertOk()
             ->assertJsonPath('settings.max_wager_tier_micros', 3_000_000)
             ->assertJsonPath('data.0.binding_id', $binding->id)
+            ->assertJsonPath('data.0.logo_url', 'https://example.test/logo.png')
             ->assertJsonPath('data.0.deposit_cents', 50_000)
             ->assertJsonPath('data.0.net_loss_cents', 50_000)
             ->assertJsonPath('data.0.wager_tier_micros', 3_000_000)
@@ -55,7 +56,8 @@ class RescueFundTest extends TestCase
         $this->postJson($claimPath, $attempt)->assertSuccessful()->assertJsonPath('data.id', $claim);
         $this->postJson($claimPath, ['request_id' => (string) Str::uuid()])->assertConflict();
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
-            ->assertJsonPath('unavailable.0.binding_id', $binding->id);
+            ->assertJsonPath('unavailable.0.binding_id', $binding->id)
+            ->assertJsonPath('unavailable.0.logo_url', 'https://example.test/logo.png');
         $this->assertSame(5_000, $member->refresh()->available_balance_cents);
         $this->assertDatabaseHas('cash_balance_entries', ['source' => 'rescue_fund', 'source_id' => $claim, 'amount_cents' => 5_000]);
         $this->getJson('/api/v1/cash-wallet/entries?source=rescue_fund')->assertOk()
@@ -243,7 +245,7 @@ class RescueFundTest extends TestCase
         ]);
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
         $member->forceFill(['phone_verified_at' => now()])->save();
-        $platform = Platform::create(['name' => 'Example', 'promotion_url' => 'https://example.test', 'rating' => 5, 'guarantee_amount_brl' => '100.00']);
+        $platform = Platform::create(['name' => 'Example', 'promotion_url' => 'https://example.test', 'rating' => 5, 'guarantee_amount_brl' => '100.00', 'logo_url' => 'https://example.test/logo.png']);
         $configuration = $this->queryConfiguration();
         if ($usePandaDefaults) {
             $configuration = array_diff_key($configuration, array_flip(['net_profit_field', 'net_profit_unit', 'net_profit_direction']));
