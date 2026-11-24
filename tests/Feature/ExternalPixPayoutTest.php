@@ -43,9 +43,8 @@ class ExternalPixPayoutTest extends TestCase
         $subject = app(PixWithdrawals::class);
         $choice = 'provider:'.$channel->id;
         $this->assertArrayHasKey($choice, $subject->payoutOptions($order));
-        $this->assertThrows(fn () => $subject->approve($order, $operator, $choice), ValidationException::class);
         Http::fake([$config['balance'] => Http::response(['success' => true, 'data' => [['currency' => 'BRL', 'balance' => 400]]])]);
-        $subject->approve($order, $operator, $choice, 'Nome De Teste');
+        $subject->approve($order, $operator, $choice, 'Nome Alterado');
         $order->refresh();
         $this->assertStringNotContainsString('fixture-secret', (string) DB::table('pix_withdrawals')->value('payout_configuration'));
         $this->assertArrayNotHasKey('payout_configuration', $order->toArray());
@@ -209,7 +208,7 @@ class ExternalPixPayoutTest extends TestCase
         Http::assertSentCount(1);
         $page->assertSet('mountedActions.0.data.preview_balance_cents', 750);
         $this->assertStringContainsString('R$ 7.50', $page->getMountedActionModalHtml());
-        $page->set('mountedActions.0.data.recipient_name', 'Nome De Teste')->callMountedAction()->assertHasNoActionErrors();
+        $page->callMountedAction()->assertHasNoActionErrors();
         $this->assertSame('processing', $order->refresh()->status);
         Http::assertSentCount(2);
         $this->get(PixPayoutResource::getUrl('index', ['search' => $order->order_number]))
@@ -220,7 +219,7 @@ class ExternalPixPayoutTest extends TestCase
     {
         config(['services.pix.driver' => 'disabled']);
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
-        $member->forceFill(['pix_cpf' => '52998224725', 'available_balance_cents' => 1000])->save();
+        $member->forceFill(['pix_cpf' => '52998224725', 'pix_recipient_name' => 'Nome De Teste', 'available_balance_cents' => 1000])->save();
         $operator = User::factory()->create(['panel_enabled' => true]);
         $operator->roles()->attach(AdminRole::create(['name' => 'Pix reviewer', 'permissions' => ['pix.review']]));
         $id = $this->actingAs($member, 'member')->withSession(['member_session_version' => 0])

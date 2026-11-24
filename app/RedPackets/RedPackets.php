@@ -78,12 +78,16 @@ class RedPackets
         }, 3);
     }
 
-    public function saveCpf(Member $member, string $value): string
+    public function savePixAccount(Member $member, string $value, string $recipientName): Member
     {
         $cpf = Cpf::normalize($value);
-        DB::transaction(fn () => $this->lockActive($member)->forceFill(['pix_cpf' => $cpf])->save(), 3);
 
-        return $cpf;
+        return DB::transaction(function () use ($member, $cpf, $recipientName): Member {
+            $owner = $this->lockActive($member);
+            $owner->forceFill(['pix_cpf' => $cpf, 'pix_recipient_name' => $recipientName])->save();
+
+            return $owner;
+        }, 3);
     }
 
     public function saveThreshold(string $value, User $operator): RedPacketRule

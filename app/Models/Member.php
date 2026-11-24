@@ -10,7 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\DB;
 
 #[Fillable(['phone', 'password', 'phone_verified_at', 'registration_ip', 'registration_country', 'registration_device_hash'])]
-#[Hidden(['password', 'session_version', 'pix_cpf', 'invite_code', 'registration_ip', 'registration_country', 'registration_device_hash'])]
+#[Hidden(['password', 'session_version', 'pix_cpf', 'pix_recipient_name', 'invite_code', 'registration_ip', 'registration_country', 'registration_device_hash'])]
 class Member extends Authenticatable
 {
     protected function casts(): array
@@ -25,6 +25,7 @@ class Member extends Authenticatable
             'available_balance_cents' => 'integer',
             'held_balance_cents' => 'integer',
             'pix_cpf' => 'encrypted',
+            'pix_recipient_name' => 'encrypted',
         ];
     }
 

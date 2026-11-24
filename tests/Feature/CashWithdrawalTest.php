@@ -24,6 +24,34 @@ class CashWithdrawalTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_cash_withdrawal_requires_a_recipient_name_and_snapshots_both_pix_fields(): void
+    {
+        $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        $member->forceFill(['available_balance_cents' => 1000, 'pix_cpf' => '52998224725'])->save();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $request = ['request_id' => (string) Str::uuid(), 'amount_cents' => 250];
+        $this->getJson('/api/v1/pix-account')->assertOk()
+            ->assertJsonPath('data.cpf', '52998224725')->assertJsonPath('data.recipient_name', null);
+        $this->postJson('/api/v1/cash-wallet/withdrawals', $request)->assertUnprocessable();
+        $this->assertSame(1000, $member->refresh()->available_balance_cents);
+        $this->putJson('/api/v1/pix-account', ['cpf' => '529.982.247-25'])->assertUnprocessable()
+            ->assertJsonValidationErrors('recipient_name');
+
+        $name = 'João da Silva';
+        $this->putJson('/api/v1/pix-account', ['cpf' => '529.982.247-25', 'recipient_name' => ' '.$name.' '])
+            ->assertOk()->assertJsonPath('data.recipient_name', $name)->assertJsonPath('data.cpf', '52998224725');
+        $this->assertNotSame($name, $member->refresh()->getRawOriginal('pix_recipient_name'));
+        $this->getJson('/api/v1/cash-wallet')->assertOk()->assertJsonPath('data.recipient_name', $name);
+        $id = $this->postJson('/api/v1/cash-wallet/withdrawals', $request)->assertCreated()->json('data.id');
+
+        $this->putJson('/api/v1/pix-account', ['cpf' => '11144477735', 'recipient_name' => 'Maria de Souza'])->assertOk();
+        $this->postJson('/api/v1/cash-wallet/withdrawals', $request)->assertCreated()->assertJsonPath('data.id', $id);
+        $order = PixWithdrawal::findOrFail($id);
+        $this->assertSame($name, $order->recipient_name_snapshot);
+        $this->assertSame('52998224725', $order->cpf_snapshot);
+        $this->assertNotSame($name, $order->getRawOriginal('recipient_name_snapshot'));
+    }
+
     public function test_cash_movement_history_records_withdrawal_and_its_return_separately(): void
     {
         $url = '/api/v1/cash-wallet/entries';
@@ -204,7 +232,7 @@ class CashWithdrawalTest extends TestCase
     private function scenario(): array
     {
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
-        $member->forceFill(['available_balance_cents' => 1000, 'pix_cpf' => '52998224725'])->save();
+        $member->forceFill(['available_balance_cents' => 1000, 'pix_cpf' => '52998224725', 'pix_recipient_name' => 'Nome De Teste'])->save();
         $operator = User::factory()->create();
         $operator->forceFill(['panel_enabled' => true])->save();
         $operator->roles()->attach(AdminRole::create(['name' => '提现审核', 'permissions' => ['pix.view', 'pix.review']]));

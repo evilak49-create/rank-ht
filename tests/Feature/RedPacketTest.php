@@ -44,7 +44,7 @@ class RedPacketTest extends TestCase
         $this->postJson('/api/v1/red-packets/open', $open)->assertOk()->assertJsonPath('data.id', $round['id']);
 
         $request = ['request_id' => (string) Str::uuid()];
-        $this->putJson('/api/v1/pix-account', ['cpf' => '529.982.247-25'])->assertOk()->assertJsonPath('data.masked_cpf', '***.***.***-25')
+        $this->putJson('/api/v1/pix-account', ['cpf' => '529.982.247-25', 'recipient_name' => 'Nome De Teste'])->assertOk()->assertJsonPath('data.masked_cpf', '***.***.***-25')
             ->assertJsonPath('data.cpf', '52998224725');
         $this->getJson('/api/v1/pix-account')->assertOk()->assertJsonPath('data.cpf', '52998224725');
         $this->postJson('/api/v1/pix-withdrawals', $request)->assertConflict();
@@ -60,7 +60,7 @@ class RedPacketTest extends TestCase
         $this->assertNotNull($pending);
         $withdrawal = $this->postJson('/api/v1/pix-withdrawals', $request)->assertCreated()->assertJsonPath('data.amount_cents', 10000)->json('data.id');
         $this->postJson('/api/v1/pix-withdrawals', $request)->assertCreated()->assertJsonPath('data.id', $withdrawal);
-        $this->putJson('/api/v1/pix-account', ['cpf' => '11144477735'])->assertOk();
+        $this->putJson('/api/v1/pix-account', ['cpf' => '11144477735', 'recipient_name' => 'Outro Nome'])->assertOk();
         $order = PixWithdrawal::findOrFail($withdrawal);
         $this->assertSame('52998224725', $order->cpf_snapshot);
 
@@ -74,7 +74,8 @@ class RedPacketTest extends TestCase
         (new DeliverPixWithdrawal($task->id))->handle(app(PixDelivery::class));
         app(PixDelivery::class)->process($task->id);
         $this->getJson("/api/v1/pix-withdrawals/$withdrawal")->assertOk()
-            ->assertJsonPath('data.status', 'paid')->assertJsonPath('data.cpf', '52998224725');
+            ->assertJsonPath('data.status', 'paid')->assertJsonPath('data.cpf', '52998224725')
+            ->assertJsonPath('data.recipient_name', 'Nome De Teste');
         $this->assertDatabaseHas('red_packet_rounds', ['id' => $round['id'], 'balance_cents' => 0, 'frozen_cents' => 0]);
         $this->assertDatabaseCount('pix_tasks', 1);
         $this->assertDatabaseCount('point_entries', 0);
@@ -311,7 +312,7 @@ class RedPacketTest extends TestCase
         $packets = app(RedPackets::class);
         $round = $packets->open($member, (string) Str::uuid());
         $round->forceFill(['balance_cents' => 10000])->save();
-        $packets->saveCpf($member, '52998224725');
+        $packets->savePixAccount($member, '52998224725', 'Nome De Teste');
 
         return [$member, app(PixWithdrawals::class)->submit($member, (string) Str::uuid())];
     }

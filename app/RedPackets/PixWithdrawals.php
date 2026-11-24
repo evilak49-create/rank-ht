@@ -46,7 +46,7 @@ class PixWithdrawals
             abort_if($amount === null && ! $this->channel->isAvailable()
                 && ! PixPayoutChannel::query()->where('enabled', true)->whereNotNull('configuration')
                     ->whereIn('driver', array_keys(ExternalPixChannel::PROVIDERS))->exists(), 503, 'Pix 出款暂未开放。');
-            abort_if($owner->pix_cpf === null, 422, '请先设置 Pix CPF。');
+            abort_if($owner->pix_cpf === null || blank($owner->pix_recipient_name), 422, '请先填写 Pix 收款账户的真实姓名和 CPF ID。');
             $round = null;
             if ($amount === null) {
                 $round = RedPacketRound::query()->whereBelongsTo($owner)->whereNull('closed_at')->lockForUpdate()->first();
@@ -56,7 +56,7 @@ class PixWithdrawals
             $order = PixWithdrawal::create([
                 'order_number' => (string) Str::uuid(), 'request_id' => $request, 'member_id' => $owner->id,
                 'red_packet_round_id' => $round?->id, 'amount_cents' => $amount ?? $round->balance_cents,
-                'cpf_snapshot' => $owner->pix_cpf, 'status' => 'pending',
+                'cpf_snapshot' => $owner->pix_cpf, 'recipient_name_snapshot' => $owner->pix_recipient_name, 'status' => 'pending',
             ]);
             if ($round === null) {
                 $this->cash->holdWithdrawal($owner, $order->amount_cents, $order->id);
@@ -108,7 +108,7 @@ class PixWithdrawals
             if (! $this->supportsAmount($selected, $order)) {
                 throw ValidationException::withMessages(['channel' => '该渠道不可用或订单金额超出渠道范围。']);
             }
-            $name = Validator::make(['recipient_name' => trim($recipientName ?? '')], [
+            $name = Validator::make(['recipient_name' => trim($order->recipient_name_snapshot ?? $recipientName ?? '')], [
                 'recipient_name' => ['required', 'string', 'max:120', 'not_regex:/[[:cntrl:]]/'],
             ])->validate()['recipient_name'];
             $available = $this->balances->lookup($selected);

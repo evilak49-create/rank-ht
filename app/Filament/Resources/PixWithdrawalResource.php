@@ -69,6 +69,8 @@ class PixWithdrawalResource extends Resource
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('funding_source')->label('提现来源')
                 ->state(fn (PixWithdrawal $record): string => $record->red_packet_round_id === null ? '可用余额' : '红包'),
+            TextColumn::make('recipient_name_snapshot')->label('申请时真实姓名')->placeholder('—')
+                ->visible(fn (): bool => self::allowed('pix.review'))->copyable(),
             TextColumn::make('cpf_snapshot')->label('申请时 CPF')
                 ->state(fn (PixWithdrawal $record): ?string => self::allowed('pix.review') ? $record->cpf_snapshot : Cpf::mask($record->cpf_snapshot))
                 ->copyable(fn (): bool => self::allowed('pix.review')),
@@ -128,8 +130,8 @@ class PixWithdrawalResource extends Resource
                                     return (int) $balance < $record->amount_cents ? $money.' · 三方可用余额不足' : $money;
                                 }),
                             TextInput::make('recipient_name')->label('CPF 持有人真实姓名')->maxLength(120)
-                                ->visible(fn (Get $get): bool => filled($get('channel')))
-                                ->required(fn (Get $get): bool => filled($get('channel'))),
+                                ->visible(fn (Get $get, PixWithdrawal $record): bool => filled($get('channel')) && blank($record->recipient_name_snapshot))
+                                ->required(fn (Get $get, PixWithdrawal $record): bool => filled($get('channel')) && blank($record->recipient_name_snapshot)),
                         ])->action(fn (Action $action, PixWithdrawal $record, array $data) => ActionForm::submit($action, function () use ($record, $data): void {
                             if (isset($data['preview_balance_cents']) && (int) $data['preview_balance_cents'] < $record->amount_cents) {
                                 throw ValidationException::withMessages(['channel' => '三方可用余额不足']);
