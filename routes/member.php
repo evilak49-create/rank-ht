@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CashbackController;
 use App\Http\Controllers\CashWalletEntryController;
 use App\Http\Controllers\CheckinController;
 use App\Http\Controllers\MemberAuthController;
@@ -75,6 +76,10 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
         Route::put('pix-account', [PixController::class, 'saveAccount'])->middleware('throttle:10,1');
         Route::get('pix-withdrawals', [PixController::class, 'index']);
         Route::get('withdrawal-history', [PixController::class, 'history']);
+        Route::get('cashback', [CashbackController::class, 'index']);
+        Route::get('cashback/history', [CashbackController::class, 'history']);
+        Route::get('cashback/{binding}', [CashbackController::class, 'show'])->whereNumber('binding')
+            ->middleware('throttle:40,1,cashback-preview');
         Route::get('pix-withdrawals/{order}', [PixController::class, 'show'])->whereNumber('order');
         Route::post('pix-withdrawals', [PixController::class, 'submit'])->middleware('throttle:10,1');
         Route::get('cash-wallet', [PixController::class, 'cashBalance']);

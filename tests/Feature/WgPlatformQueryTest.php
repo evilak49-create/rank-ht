@@ -30,6 +30,7 @@ class WgPlatformQueryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['cashback.manual' => true]);
         Http::preventStrayRequests();
     }
 

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Pages\RebateConfiguration;
 use App\Models\AdminRole;
 use App\Models\FundRateVersion;
+use App\Jobs\DispatchDailyCashback;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
@@ -14,12 +15,19 @@ use App\Points\CashBalance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 class PointSettlementTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['cashback.manual' => true]);
+    }
 
     public function test_confirmation_requeries_for_highest_tier_and_advances_the_period_only_once(): void
     {
@@ -185,6 +193,58 @@ class PointSettlementTest extends TestCase
         $stranger = Member::create(['phone' => '21912345678', 'password' => 'member-password']);
         $this->actingAs($stranger, 'member')->withSession(['member_session_version' => 0]);
         $this->getJson("/api/v1/platform-bindings/{$binding->id}/totals")->assertNotFound();
+    }
+
+    public function test_daily_cashback_preserves_zero_periods_and_credits_at_most_once_per_brazilian_day(): void
+    {
+        config(['cashback.manual' => false]);
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-24 11:59:00', 'America/Sao_Paulo'));
+        [$member, $binding] = $this->scenario(11000);
+        PointRule::query()->firstOrFail()->forceFill(['rebate_tiers' => [
+            ['multiplier_micros' => 2000000, 'percent_micros' => 2000000],
+        ]])->save();
+
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson('/api/v1/cashback')->assertOk()
+            ->assertJsonPath('data.0.binding_id', $binding->id)
+            ->assertJsonPath('next_dispatch_at', '2026-11-24T15:00:00.000000Z');
+        $this->getJson("/api/v1/cashback/{$binding->id}")->assertOk()
+            ->assertJsonPath('data.current_cents', 0)->assertJsonPath('data.estimated_cents', 200);
+        $this->postJson("/api/v1/platform-bindings/{$binding->id}/point-quotes")->assertGone();
+
+        Queue::fake();
+        $this->artisan('cashback:dispatch')->assertSuccessful();
+        Queue::assertNothingPushed();
+        $settlement = app(\App\Points\PointSettlement::class);
+        $settlement->dispatchDaily($binding->id, '2026-11-24');
+        $this->getJson('/api/v1/cashback/history')->assertOk()->assertJsonCount(0, 'data');
+
+        $this->travel(1)->minutes();
+        $this->artisan('cashback:dispatch')->assertSuccessful();
+        Queue::assertPushed(DispatchDailyCashback::class, fn ($job) => $job->bindingId === $binding->id && $job->day === '2026-11-24');
+        $settlement->dispatchDaily($binding->id, '2026-11-24');
+        $this->assertSame(1, $binding->refresh()->baseline_version);
+        $this->assertSame(0, $member->refresh()->available_balance_cents);
+        $this->getJson('/api/v1/cashback/history')->assertOk()
+            ->assertJsonPath('data.0.result', 'insufficient_wager')
+            ->assertJsonPath('data.0.amount_cents', 0);
+
+        $this->travel(1)->days();
+        $this->fakeTotals(11000, 25000);
+        $settlement->dispatchDaily($binding->id, '2026-11-25');
+        $settlement->dispatchDaily($binding->id, '2026-11-25');
+        $this->assertSame(2, $binding->refresh()->baseline_version);
+        $this->assertSame(200, $member->refresh()->available_balance_cents);
+        $this->getJson('/api/v1/cashback/history')->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.result', 'credited')
+            ->assertJsonPath('data.0.amount_cents', 200);
+
+        \Illuminate\Support\Facades\Auth::forgetGuards();
+        $other = Member::create(['phone' => '21912345678', 'password' => 'member-password']);
+        $this->actingAs($other, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson("/api/v1/cashback/{$binding->id}")->assertNotFound();
+        $this->getJson('/api/v1/cashback/history')->assertOk()->assertJsonCount(0, 'data');
     }
 
     private function scenario(int $deposit = 16000): array

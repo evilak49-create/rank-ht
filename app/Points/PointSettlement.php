@@ -11,6 +11,7 @@ use App\Platforms\PlatformAccount;
 use App\Platforms\PlatformAdministration;
 use App\Platforms\PlatformQueryFailure;
 use Brick\Math\BigInteger;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class PointSettlement
@@ -32,6 +33,60 @@ class PointSettlement
             'total_deposit_cents' => (string) $account->depositCents,
             'total_valid_bet_cents' => (string) $account->validBetCents,
         ];
+    }
+
+    public function preview(PlatformBinding $binding): array
+    {
+        return Cache::remember("cashback-preview:{$binding->id}:{$binding->baseline_version}", 120, function () use ($binding): array {
+            $platform = Platform::query()->available()->findOrFail($binding->platform_id);
+            $account = $this->lookupBoundAccount($binding, $platform);
+            $values = $this->quoteValues($binding, $account, pauseOnRegression: false);
+
+            return [
+                'current_cents' => $values['rebate_cents'],
+                'estimated_cents' => $values['snapshot']['estimated_rebate_cents'],
+                'eligibility' => $values['eligibility'],
+                ...$values['snapshot'],
+            ];
+        });
+    }
+
+    public function dispatchDaily(int $bindingId, string $day): void
+    {
+        $noon = CashbackSchedule::noon();
+        if ($noon->toDateString() !== $day || $noon->isFuture() ||
+            PointQuote::query()->where('platform_binding_id', $bindingId)->where('dispatch_day', $day)->exists()) {
+            return;
+        }
+
+        $binding = PlatformBinding::query()->with('member')->find($bindingId);
+        $platform = $binding ? Platform::query()->available()->find($binding->platform_id) : null;
+        if (! $platform || ! $binding->member || $binding->member->disabled_at !== null) {
+            return;
+        }
+        $account = $this->lookupBoundAccount($binding, $platform);
+
+        DB::transaction(function () use ($binding, $platform, $account, $day): void {
+            $this->lockPlatform($platform);
+            $owner = Member::query()->lockForUpdate()->findOrFail($binding->member_id);
+            $current = PlatformBinding::query()->lockForUpdate()->findOrFail($binding->id);
+            if ($owner->disabled_at !== null ||
+                PointQuote::query()->where('platform_binding_id', $current->id)->where('dispatch_day', $day)->exists()) {
+                return;
+            }
+            abort_unless($current->baseline_version === $binding->baseline_version, 409, 'Cashback baseline changed during dispatch.');
+
+            $quote = PointQuote::create([
+                'member_id' => $owner->id, 'platform_id' => $platform->id, 'platform_binding_id' => $current->id,
+                'baseline_version' => $current->baseline_version, 'dispatch_day' => $day,
+                ...$this->quoteValues($current, $account),
+                'expires_at' => now(),
+            ]);
+
+            if ($quote->eligibility === 'eligible') {
+                $this->postCashback($owner, $current, $quote);
+            }
+        }, 3);
     }
 
     public function quote(Member $member, string $bindingId): PointQuote
@@ -92,16 +147,7 @@ class PointSettlement
                 return $current;
             }
 
-            $this->cash->creditRebate($owner, $current->rebate_cents, $current->id);
-            $snapshot = $current->snapshot;
-            $binding->forceFill([
-                'baseline_deposit_cents' => $snapshot['observed_deposit_cents'],
-                'baseline_valid_bet_cents' => $snapshot['observed_valid_bet_cents'],
-                'baseline_observed_at' => $snapshot['observed_at'],
-                'baseline_version' => $binding->baseline_version + 1,
-            ])->save();
-
-            $current->forceFill(['confirmed_at' => now()])->save();
+            $this->postCashback($owner, $binding, $current);
 
             return $current;
         }, 3);
@@ -111,6 +157,20 @@ class PointSettlement
             : '该报价暂不可兑换。');
 
         return $result;
+    }
+
+    private function postCashback(Member $owner, PlatformBinding $binding, PointQuote $quote): void
+    {
+        $this->cash->creditRebate($owner, $quote->rebate_cents, $quote->id);
+        $snapshot = $quote->snapshot;
+        $binding->forceFill([
+            'baseline_deposit_cents' => $snapshot['observed_deposit_cents'],
+            'baseline_valid_bet_cents' => $snapshot['observed_valid_bet_cents'],
+            'baseline_observed_at' => $snapshot['observed_at'],
+            'baseline_version' => $binding->baseline_version + 1,
+        ])->save();
+
+        $quote->forceFill(['confirmed_at' => now()])->save();
     }
 
     private function lockPlatform(Platform $platform): void
@@ -144,7 +204,7 @@ class PointSettlement
         return $owner;
     }
 
-    private function quoteValues(PlatformBinding $binding, PlatformAccount $account): array
+    private function quoteValues(PlatformBinding $binding, PlatformAccount $account, bool $pauseOnRegression = true): array
     {
         $rule = PointRule::query()->latest('id')->firstOrFail();
         $tiers = PlatformRebateTiers::effective($rule);
@@ -168,7 +228,7 @@ class PointSettlement
             $rebate->isGreaterThan(CashBalance::MAX_CENTS) => 'out_of_range',
             default => 'eligible',
         };
-        if ($eligibility === 'regressed') {
+        if ($pauseOnRegression && $eligibility === 'regressed') {
             $binding->forceFill(['settlement_paused_at' => now()])->save();
         }
 
@@ -190,6 +250,9 @@ class PointSettlement
                 'wager_multiplier' => PointRules::display(0),
                 'cash_only' => true,
                 'rebate_enabled' => $tiers !== [],
+                'estimated_rebate_cents' => $this->amount($depositBase
+                    ->multipliedBy($tiers === [] ? 0 : max(array_column($tiers, 'percent_micros')))
+                    ->quotient(self::SETTLEMENT_SCALE)),
                 'rebate_percent' => PointRules::display($percent),
                 'rebate_wager_multiplier' => $minimumMultiplier === null ? null : PointRules::display($minimumMultiplier),
                 'matched_rebate_wager_multiplier' => $matched === null ? null : PointRules::display($matched['multiplier_micros']),

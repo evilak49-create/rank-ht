@@ -18,6 +18,8 @@ class PointSettlementController extends Controller
 
     public function quote(Request $request, string $binding, PointSettlement $settlement): JsonResponse
     {
+        abort_unless(config('cashback.manual', false), 410, '现金返利已改为自动派发。');
+
         $request->validate(['cash_only' => 'sometimes|boolean']);
 
         return response()->json([
@@ -27,6 +29,8 @@ class PointSettlementController extends Controller
 
     public function confirm(Request $request, string $quote, PointSettlement $settlement): JsonResponse
     {
+        abort_unless(config('cashback.manual', false), 410, '现金返利已改为自动派发。');
+
         return response()->json(['data' => $this->data($settlement->confirm($request->user(), $quote))]);
     }
 

@@ -21,6 +21,12 @@ class ClientApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['cashback.manual' => true]);
+    }
+
     public function test_csrf_bootstrap_returns_an_uncacheable_cookie_response(): void
     {
         $response = $this->getJson('/api/v1/auth/csrf-cookie')->assertNoContent()
