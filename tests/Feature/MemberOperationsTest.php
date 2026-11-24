@@ -15,10 +15,12 @@ use App\Models\User;
 use App\Platforms\PlatformAccount;
 use App\Platforms\PlatformQueryClient;
 use App\Platforms\PlatformRecharges;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -26,6 +28,25 @@ use Tests\TestCase;
 class MemberOperationsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_member_operations_migration_resumes_when_the_intent_foreign_key_is_missing(): void
+    {
+        Schema::table('platform_registration_intents', function (Blueprint $table): void {
+            $table->dropForeign(['platform_binding_attempt_id']);
+        });
+        $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        $migration = require database_path('migrations/2026_11_24_010100_add_member_operations.php');
+
+        $migration->up();
+        $migration->up();
+
+        $foreign = collect(Schema::getForeignKeys('platform_registration_intents'))
+            ->where('columns', ['platform_binding_attempt_id'])->sole();
+        $this->assertSame('platform_binding_attempts', $foreign['foreign_table']);
+        $this->assertSame('set null', $foreign['on_delete']);
+        $this->assertDatabaseHas('members', ['id' => $member->id, 'phone' => '11912345678']);
+    }
+
 
     public function test_operator_can_adjust_available_cash_once_and_see_masked_account(): void
     {
