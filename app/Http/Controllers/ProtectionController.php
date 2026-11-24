@@ -91,10 +91,9 @@ class ProtectionController extends Controller
 
     private function currentTerms(int $platform): JsonResponse
     {
-        $terms = ProtectionTerm::query()->where('platform_id', $platform)->latest('id')->firstOrFail();
+        $terms = ProtectionTerm::query()->where('platform_id', $platform)->latest('id')->first();
 
-        return response()->json(['data' => $terms->only(['id', 'platform_id', 'title', 'body', 'created_at'])])
-            ->header('Cache-Control', 'private, no-store');
+        return $this->privateJson(['data' => $terms?->only(['id', 'platform_id', 'title', 'body', 'created_at'])]);
     }
 
     private function ownedBindings(Request $request): Builder

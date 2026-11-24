@@ -127,6 +127,25 @@ class ProtectionClaimsTest extends TestCase
         $this->assertSame([], $disk->allFiles());
     }
 
+    public function test_unpublished_terms_return_an_empty_response_for_a_valid_platform_and_owned_binding(): void
+    {
+        $member = $this->member('11912345678');
+        $binding = $this->binding($member);
+        $binding->platform->forceFill(['manually_disabled' => false, 'active_query_revision' => 1])->save();
+        $publicUrl = '/api/v1/platforms/'.$binding->platform_id.'/protection-terms';
+        $memberUrl = '/api/v1/protection/bindings/'.$binding->id.'/terms';
+
+        $this->getJson($publicUrl)->assertOk()->assertExactJson(['data' => null]);
+        $this->getJson('/api/v1/platforms/999999/protection-terms')->assertNotFound();
+
+        $this->actingAs($this->member('11912345679'), 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson($memberUrl)->assertNotFound();
+
+        Auth::forgetGuards();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson($memberUrl)->assertOk()->assertExactJson(['data' => null]);
+    }
+
     public function test_terms_have_versions_and_case_keeps_the_original_binding_snapshot(): void
     {
         Storage::fake('claim-evidence-local');
