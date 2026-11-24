@@ -7,6 +7,7 @@ use App\Auth\SmsChallenges;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
+use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -51,8 +52,21 @@ class BindPlatformAccount
             throw ValidationException::withMessages(['phone' => PlatformQueryFailure::label('not_found')]);
         }
 
+        return $this->complete($member, $platform, $phone, $account, function (Member $owner) use ($phone, $code, $purpose, $useSms): void {
+            abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
+            if ($useSms && $this->requiresVerification($owner, $phone)) {
+                $this->sms->consume($phone, $purpose, $this->requiredCode($code));
+                if ($owner->phone === $phone) {
+                    $owner->forceFill(['phone_verified_at' => now()])->save();
+                }
+            }
+        });
+    }
+
+    public function complete(Member $member, Platform $platform, string $phone, PlatformAccount $account, Closure $authorize): PlatformBinding
+    {
         try {
-            return DB::transaction(function () use ($member, $platform, $phone, $code, $purpose, $account, $useSms): PlatformBinding {
+            return DB::transaction(function () use ($member, $platform, $phone, $account, $authorize): PlatformBinding {
                 $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
                 abort_unless($current->status() === 'available', 404);
                 abort_if($current->network !== $platform->network || $current->active_query_revision !== $platform->active_query_revision, 409, '平台配置已更新，请重试。');
@@ -62,13 +76,7 @@ class BindPlatformAccount
                 abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
                 $this->ensureNotBound($owner, $current);
 
-                abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
-                if ($useSms && $this->requiresVerification($owner, $phone)) {
-                    $this->sms->consume($phone, $purpose, $this->requiredCode($code));
-                    if ($owner->phone === $phone) {
-                        $owner->forceFill(['phone_verified_at' => now()])->save();
-                    }
-                }
+                $authorize($owner, $current);
 
                 return $current->bindings()->create([
                     'member_id' => $owner->id, 'platform_account_id' => $account->id, 'query_phone' => $phone,

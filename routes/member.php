@@ -7,6 +7,7 @@ use App\Http\Controllers\MemberAuthController;
 use App\Http\Controllers\PixController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PlatformFundsController;
+use App\Http\Controllers\PlatformRegistrationController;
 use App\Http\Controllers\PlatformReviewController;
 use App\Http\Controllers\PointSettlementController;
 use App\Http\Controllers\ProtectionController;
@@ -41,12 +42,16 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
     Route::get('platform-funds/rate', [PlatformFundsController::class, 'rate']);
 
     Route::get('platforms', [PlatformController::class, 'index']);
+    Route::get('platform-autobind', [PlatformRegistrationController::class, 'callback'])
+        ->middleware('throttle:60,1,platform-autobind');
     Route::get('platforms/featured', [PlatformController::class, 'featured']);
     Route::get('platforms/{platform}', [PlatformController::class, 'show'])->whereNumber('platform');
     Route::get('platforms/{platform}/point-rule', [PlatformController::class, 'pointRule'])->whereNumber('platform');
     Route::get('platforms/{platform}/reviews', [PlatformReviewController::class, 'index'])->whereNumber('platform');
     Route::get('platforms/{platform}/protection-terms', [ProtectionController::class, 'publicTerms'])->whereNumber('platform');
     Route::middleware(['auth:sanctum', VerifyMemberSession::class])->group(function (): void {
+        Route::post('platforms/{platform}/registration', [PlatformRegistrationController::class, 'launch'])
+            ->whereNumber('platform')->middleware('throttle:12,1,platform-registration');
         Route::get('platforms/bindable', [PlatformController::class, 'bindable']);
         Route::get('shipping-address', [ShippingAddressController::class, 'show']);
         Route::put('shipping-address', [ShippingAddressController::class, 'save'])->middleware('throttle:20,1,shipping-address');
