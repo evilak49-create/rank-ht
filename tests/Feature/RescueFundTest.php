@@ -6,6 +6,7 @@ use App\Filament\Pages\RescueFundConfiguration;
 use App\Models\AdminRole;
 use App\Models\Member;
 use App\Models\Platform;
+use App\Models\PlatformBinding;
 use App\Models\PointRule;
 use App\Models\User;
 use App\Platforms\BindPlatformAccount;
@@ -53,7 +54,8 @@ class RescueFundTest extends TestCase
             ->assertJsonPath('data.amount_cents', 5_000)->json('data.id');
         $this->postJson($claimPath, $attempt)->assertSuccessful()->assertJsonPath('data.id', $claim);
         $this->postJson($claimPath, ['request_id' => (string) Str::uuid()])->assertConflict();
-        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
+            ->assertJsonPath('unavailable.0.binding_id', $binding->id);
         $this->assertSame(5_000, $member->refresh()->available_balance_cents);
         $this->assertDatabaseHas('cash_balance_entries', ['source' => 'rescue_fund', 'source_id' => $claim, 'amount_cents' => 5_000]);
         $this->getJson('/api/v1/cash-wallet/entries?source=rescue_fund')->assertOk()
@@ -67,6 +69,26 @@ class RescueFundTest extends TestCase
         $this->postJson($claimPath, ['request_id' => (string) Str::uuid()])->assertSuccessful()->assertJsonPath('data.amount_cents', 100);
         $this->assertSame(5_100, $member->refresh()->available_balance_cents);
         $this->assertDatabaseCount('rescue_fund_claims', 2);
+    }
+
+    public function test_list_shows_owned_bindings_even_when_the_feature_is_disabled(): void
+    {
+        [, $binding] = $this->scenario();
+        $binding->forceFill(['protection_status' => 'inactive'])->save();
+        $other = Member::create(['phone' => '21912345678', 'password' => 'member-password']);
+        $otherPlatform = Platform::create(['name' => 'Other platform', 'promotion_url' => 'https://other.example.test', 'rating' => 5]);
+        PlatformBinding::create([
+            'member_id' => $other->id, 'platform_id' => $otherPlatform->id,
+            'platform_account_id' => '4000000002', 'query_phone' => $other->phone,
+            'baseline_deposit_cents' => 0, 'baseline_valid_bet_cents' => 0, 'baseline_observed_at' => now(),
+        ]);
+        DB::table('rescue_fund_settings')->where('id', 1)->update(['enabled' => false]);
+
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonPath('settings.enabled', false)
+            ->assertJsonCount(0, 'data')->assertJsonCount(1, 'unavailable')
+            ->assertJsonPath('unavailable.0.binding_id', $binding->id)
+            ->assertJsonPath('unavailable.0.platform_name', 'Example')
+            ->assertJsonMissingPath('unavailable.0.amount_cents');
     }
 
     public function test_missing_profit_a_higher_tier_and_insufficient_net_loss_are_ineligible(): void

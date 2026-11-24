@@ -28,42 +28,37 @@ class RescueFund
     {
         $settings = $this->settings->current();
         $data = [];
-        $tiers = PlatformRebateTiers::effective(PointRule::query()->latest('id')->first());
-        if (! $settings['enabled'] || $tiers === []) {
-            return compact('data', 'settings');
-        }
-
-        $bindings = PlatformBinding::query()->whereBelongsTo($member)->where('protection_status', 'active')
-            ->withWhereHas('platform', fn ($query) => $query->available()
-                ->where('guarantee_amount_brl', '>', 0))->orderBy('id')->get();
-        $providerUnavailable = false;
+        $unavailable = [];
+        $tiers = $settings['enabled'] ? PlatformRebateTiers::effective(PointRule::query()->latest('id')->first()) : [];
+        $bindings = PlatformBinding::query()->whereBelongsTo($member)->with('platform')->orderBy('id')->get();
         foreach ($bindings as $binding) {
             $platform = $binding->platform;
-            if (! $this->canQuery($binding, $platform)) {
+            $entry = ['binding_id' => $binding->id, 'platform_name' => $platform->name];
+            if ($tiers === [] || ! $this->canQuery($binding, $platform)) {
+                $unavailable[] = $entry;
+
                 continue;
             }
             try {
                 $account = $this->lookup($binding, $platform);
             } catch (PlatformQueryFailure) {
-                $providerUnavailable = true;
+                $unavailable[] = $entry + ['query_unavailable' => true];
 
                 continue;
             }
             $snapshot = $account?->rescueSnapshot();
             if ($binding->rescue_baseline === null && $snapshot !== null) {
                 $this->initializeBaseline($binding, $platform, $snapshot);
-
-                continue;
             }
             $quote = $this->quote($binding, $snapshot, $settings, $tiers);
-            if ($quote !== null) {
-                $data[] = ['binding_id' => $binding->id, 'platform_name' => $platform->name, ...$quote];
+            if ($quote === null) {
+                $unavailable[] = $entry;
+            } else {
+                $data[] = $entry + $quote;
             }
         }
 
-        abort_if($data === [] && $providerUnavailable, 503, '合作平台查询暂不可用。');
-
-        return compact('data', 'settings');
+        return compact('data', 'unavailable', 'settings');
     }
 
     public function claim(Member $member, string $bindingId, string $requestId): RescueFundClaim
