@@ -16,6 +16,7 @@ use App\Storage\OssGateway;
 use Aws\MockHandler;
 use Aws\Result;
 use GuzzleHttp\Psr7\Utils;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
@@ -161,7 +162,7 @@ class ProtectionClaimsTest extends TestCase
         $this->actingAs($operator, 'web');
         Livewire::test(ListProtectionTerms::class)->callAction('publish', [
             'title' => '【平台名称】保障条款',
-            'body' => '【平台名称】｜【保障金额】｜【会员账号】｜【保障状态】',
+            'body_html' => '<p>【平台名称】｜【保障金额】｜【会员账号】｜【保障状态】</p>',
         ])->assertHasNoActionErrors();
 
         $version = ProtectionTerm::query()->whereNull('platform_id')->sole();
@@ -199,6 +200,50 @@ class ProtectionClaimsTest extends TestCase
             ->assertOk()->assertJsonPath('data.body', '保障平台｜R$ 1.234,50｜—');
     }
 
+    public function test_rich_terms_can_be_revised_and_deleted_without_rewriting_the_claim_history(): void
+    {
+        Storage::fake('claim-evidence-local');
+        $member = $this->member('11912345678');
+        $binding = $this->binding($member);
+        $platform = $binding->platform;
+        $platform->forceFill(['name' => '<img onerror=alert(1)>', 'manually_disabled' => false, 'active_query_revision' => 1])->save();
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => '保障条款编辑', 'permissions' => ['protection.terms.manage']]));
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListProtectionTerms::class)->callAction('publish', [
+            'title' => '保障说明',
+            'body_html' => '<h2>保障范围</h2><p><strong>【平台名称】</strong></p><script>alert(1)</script>',
+        ])->assertHasNoActionErrors();
+        $first = ProtectionTerm::query()->sole();
+        $publicUrl = '/api/v1/platforms/'.$platform->id.'/protection-terms';
+        $html = $this->getJson($publicUrl)->assertOk()->assertJsonPath('data.id', $first->id)->json('data.body_html');
+        $this->assertStringContainsString('<h2>保障范围</h2>', $html);
+        $this->assertStringContainsString('<strong>&lt;img', $html);
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('<img', $html);
+
+        Auth::forgetGuards();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->post('/api/v1/protection/claims', $this->payload($binding), ['Accept' => 'application/json'])
+            ->assertCreated()->assertJsonPath('data.term_version_id', $first->id);
+
+        Auth::forgetGuards();
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListProtectionTerms::class)->callAction(TestAction::make('edit')->table($first), [
+            'title' => '更新后的条款', 'body_html' => '<ol><li>新版内容</li></ol>',
+        ])->assertHasNoActionErrors();
+        $current = ProtectionTerm::query()->latest('id')->firstOrFail();
+        $this->assertNotSame($first->id, $current->id);
+        $this->getJson($publicUrl)->assertOk()
+            ->assertJsonPath('data.body_html', '<ol><li>新版内容</li></ol>');
+        $this->assertStringContainsString('保障范围', $first->refresh()->body_html);
+
+        Livewire::test(ListProtectionTerms::class)->callAction(TestAction::make('delete')->table($current))->assertHasNoActionErrors();
+        $this->assertSoftDeleted($current);
+        $this->getJson($publicUrl)->assertOk()->assertExactJson(['data' => null]);
+        $this->assertDatabaseHas('protection_claims', ['protection_term_id' => $first->id]);
+    }
+
     public function test_terms_have_versions_and_case_keeps_the_original_binding_snapshot(): void
     {
         Storage::fake('claim-evidence-local');
@@ -213,7 +258,7 @@ class ProtectionClaimsTest extends TestCase
         $this->get('/admin/protection-terms')->assertOk();
         $this->get('/admin/protection-eligibility')->assertNotFound();
         $platform = $binding->platform;
-        $publish = ['title' => '保障说明', 'body' => '第一版条款'];
+        $publish = ['title' => '保障说明', 'body_html' => '<p>第一版条款</p>'];
         Livewire::test(ListProtectionTerms::class)->callAction('publish', $publish)->assertHasNoActionErrors();
         $platform->forceFill(['guarantee_amount_brl' => 100])->save();
 
@@ -224,7 +269,7 @@ class ProtectionClaimsTest extends TestCase
             ->assertCreated()->assertJsonPath('data.protection_status', 'active')->assertJsonPath('data.term_version_id', $version);
 
         $this->actingAs($operator, 'web');
-        Livewire::test(ListProtectionTerms::class)->callAction('publish', [...$publish, 'body' => '第二版条款'])
+        Livewire::test(ListProtectionTerms::class)->callAction('publish', [...$publish, 'body_html' => '<p>第二版条款</p>'])
             ->assertHasNoActionErrors();
         $this->getJson($url)->assertOk()->assertJsonPath('data.body', '第二版条款');
         $this->assertDatabaseHas('protection_claims', ['protection_term_id' => $version]);
