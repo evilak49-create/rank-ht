@@ -3,13 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['name', 'enabled'])]
+#[Fillable(['name', 'enabled', 'driver', 'configuration'])]
+#[Hidden(['configuration'])]
 class PixPayoutChannel extends Model
 {
+    protected $attributes = ['driver' => 'manual'];
+
     protected function casts(): array
     {
-        return ['enabled' => 'boolean'];
+        return ['enabled' => 'boolean', 'configuration' => 'encrypted:array'];
     }
 }

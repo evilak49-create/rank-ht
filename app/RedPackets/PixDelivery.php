@@ -11,12 +11,16 @@ use Throwable;
 
 class PixDelivery
 {
-    public function __construct(private readonly PixWithdrawals $withdrawals, private readonly PixChannel $channel) {}
+    public function __construct(
+        private readonly PixWithdrawals $withdrawals,
+        private readonly PixChannel $channel,
+        private readonly ExternalPixChannel $external,
+    ) {}
 
     public function process(int $id): void
     {
         $order = PixTask::query()->find($id)?->withdrawal;
-        if ($order === null || ! $this->channel->isAvailable()) {
+        if ($order === null || ($order->payout_configuration === null && ! $this->channel->isAvailable())) {
             return;
         }
 
@@ -48,8 +52,9 @@ class PixDelivery
         }
 
         [$current, $key, $send] = $claim;
+        $channel = $current->payout_configuration === null ? $this->channel : $this->external;
         try {
-            $result = $send ? $this->channel->send($current) : $this->channel->lookup($current);
+            $result = $send ? $channel->send($current) : $channel->lookup($current);
         } catch (Throwable) {
             $result = new PixResult('unknown');
         }

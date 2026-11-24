@@ -15,12 +15,11 @@ class DispatchPixWithdrawals extends Command
 
     public function handle(PixChannel $channel): int
     {
-        if ($channel->isAvailable()) {
-            $now = now();
-            PixTask::query()->where('next_run_at', '<=', $now)
-                ->where(fn ($query) => $query->whereNull('lease_until')->orWhere('lease_until', '<=', $now))
-                ->select('id')->eachById(fn (PixTask $task) => DeliverPixWithdrawal::dispatch($task->id));
-        }
+        $now = now();
+        PixTask::query()->where('next_run_at', '<=', $now)
+            ->when(! $channel->isAvailable(), fn ($query) => $query->whereHas('withdrawal', fn ($order) => $order->whereNotNull('payout_configuration')))
+            ->where(fn ($query) => $query->whereNull('lease_until')->orWhere('lease_until', '<=', $now))
+            ->select('id')->eachById(fn (PixTask $task) => DeliverPixWithdrawal::dispatch($task->id));
 
         return self::SUCCESS;
     }

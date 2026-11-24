@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['order_number', 'request_id', 'member_id', 'red_packet_round_id', 'amount_cents', 'cpf_snapshot', 'status'])]
-#[Hidden(['cpf_snapshot'])]
+#[Hidden(['cpf_snapshot', 'payout_configuration'])]
 class PixWithdrawal extends Model
 {
     protected function casts(): array
@@ -17,7 +17,7 @@ class PixWithdrawal extends Model
         return [
             'cpf_snapshot' => 'encrypted', 'amount_cents' => 'integer',
             'reviewed_at' => 'datetime', 'paid_at' => 'datetime', 'payout_channel_id' => 'integer',
-            'rejection_deducted' => 'boolean',
+            'rejection_deducted' => 'boolean', 'payout_configuration' => 'encrypted:array',
         ];
     }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ExternalPixCallbackController;
 use App\Http\Controllers\SimulatedPixCallbackController;
 use App\Http\Controllers\SiteImageController;
 use App\Http\Controllers\SiteInstallController;
@@ -22,6 +23,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');
             Route::post('/install', [SiteInstallController::class, 'store'])->name('site-install.store');
             Route::post('/api/v1/pix/simulator-callback', SimulatedPixCallbackController::class);
+            Route::post('/api/v1/pix/provider-callback/{channel}', ExternalPixCallbackController::class)
+                ->whereNumber('channel')->middleware('throttle:240,1,pix-provider-callback')->name('pix.provider-callback');
             Route::get(PublicImages::LOCAL_PREFIX.'{filename}', SiteImageController::class)
                 ->where('filename', PublicImages::LOCAL_FILENAME);
         },

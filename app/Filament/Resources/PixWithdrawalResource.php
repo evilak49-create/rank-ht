@@ -3,10 +3,12 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PixWithdrawalResource\Pages\ListPixWithdrawals;
+use App\Models\PixPayoutChannel;
 use App\Models\PixWithdrawal;
 use App\Models\User;
 use App\Points\PointRules;
 use App\RedPackets\Cpf;
+use App\RedPackets\ExternalPixChannel;
 use App\RedPackets\PixWithdrawals;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -15,6 +17,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -89,9 +92,13 @@ class PixWithdrawalResource extends Resource
                         ->authorize(fn () => self::allowed('pix.review'))->visible(self::mayReview(...))
                         ->modalDescription('选定渠道后，订单将进入出款处理中。人工渠道完成转账后，请回来登记流水。')
                         ->schema([
-                            Select::make('channel')->label('出款渠道')->required()->searchable()
+                            Select::make('channel')->label('出款渠道')->required()->searchable()->live()
                                 ->options(fn (PixWithdrawal $record): array => app(PixWithdrawals::class)->payoutOptions($record)),
-                        ])->action(fn (PixWithdrawal $record, array $data) => app(PixWithdrawals::class)->approve($record, self::operator(), $data['channel'])),
+                            TextInput::make('recipient_name')->label('CPF 持有人真实姓名')->maxLength(120)
+                                ->visible(fn (Get $get): bool => self::automatedProvider($get('channel')))
+                                ->required(fn (Get $get): bool => self::automatedProvider($get('channel'))),
+                        ])->action(fn (PixWithdrawal $record, array $data) => app(PixWithdrawals::class)->approve(
+                            $record, self::operator(), $data['channel'], $data['recipient_name'] ?? null)),
                     Action::make('reject')->label('拒绝')->color('danger')
                         ->authorize(fn () => self::allowed('pix.review'))
                         ->visible(fn (PixWithdrawal $record): bool => $record->member->disabled_at === null && $record->canCloseWithoutPayout($record->task))
@@ -135,6 +142,12 @@ class PixWithdrawalResource extends Resource
                         ->implode(' · '))
                     ->modalSubmitAction(false)->modalCancelActionLabel('关闭'),
             ]);
+    }
+
+    private static function automatedProvider(?string $selection): bool
+    {
+        return $selection !== null && preg_match('/\Aprovider:([1-9][0-9]{0,18})\z/', $selection, $parts)
+            && PixPayoutChannel::query()->whereIn('driver', array_keys(ExternalPixChannel::PROVIDERS))->whereKey($parts[1])->exists();
     }
 
     public static function getPages(): array
