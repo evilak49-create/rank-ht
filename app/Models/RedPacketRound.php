@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['member_id', 'red_packet_rule_id', 'threshold_cents', 'initial_bps', 'initial_cents', 'balance_cents', 'frozen_cents'])]
 class RedPacketRound extends Model
@@ -20,5 +21,10 @@ class RedPacketRound extends Model
     public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function invites(): HasMany
+    {
+        return $this->hasMany(RedPacketInvite::class);
     }
 }

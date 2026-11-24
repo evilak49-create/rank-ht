@@ -6,7 +6,9 @@ use App\Auth\ImageCaptcha;
 use App\Auth\MemberPassword;
 use App\Auth\MemberPhone;
 use App\Auth\MemberVerification;
+use App\Auth\RegistrationOrigin;
 use App\Auth\SmsChallenges;
+use App\Auth\TurnstileVerification;
 use App\Models\Member;
 use App\RedPackets\InvitationRewards;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -22,22 +24,26 @@ class MemberAuthController extends Controller
 {
     public function __construct(private readonly MemberVerification $verification) {}
 
-    public function verification(): JsonResponse
+    public function verification(Request $request): JsonResponse
     {
-        $sms = $this->verification->smsEnabled();
+        $mode = $this->verification->mode();
 
         return response()->json(['data' => [
-            'mode' => $sms ? 'sms' : 'image',
-            'can_reset_password' => $sms || Auth::guard('member')->check(),
-        ]])->header('Cache-Control', 'private, no-store');
+            'mode' => $mode,
+            'reset_mode' => $this->resetMode(Auth::guard('member')->user(), $mode),
+            'can_reset_password' => true,
+            'turnstile_site_key' => $mode === 'cloudflare' ? config('services.turnstile.site_key') : null,
+        ]])->header('Cache-Control', 'private, no-store')->withCookie(RegistrationOrigin::fromRequest($request)->cookie());
     }
 
     public function captcha(Request $request, ImageCaptcha $captcha): JsonResponse
     {
-        abort_if($this->verification->smsEnabled(), 409, '当前使用短信验证码。');
         $data = $request->validate(['purpose' => 'required|in:register,reset_password,platform_binding']);
-        abort_if($data['purpose'] === 'platform_binding' && ! Auth::guard('member')->check(), 401);
-        abort_if($data['purpose'] === 'reset_password' && ! Auth::guard('member')->check(), 409, '短信找回暂不可用，请联系人工客服。');
+        $current = Auth::guard('member')->user();
+        $mode = $this->verification->mode();
+        abort_if($data['purpose'] === 'platform_binding' && ! ($current instanceof Member), 401);
+        $challengeMode = $data['purpose'] === 'reset_password' ? $this->resetMode($current, $mode) : $mode;
+        abort_unless($challengeMode === 'image', 409, '当前验证方式未启用图片验证码。');
 
         return response()->json(['data' => $captcha->issue($request->session()->getId(), $data['purpose'])])
             ->header('Cache-Control', 'private, no-store');
@@ -45,9 +51,12 @@ class MemberAuthController extends Controller
 
     public function sendCode(Request $request, SmsChallenges $sms): JsonResponse
     {
-        $this->verification->requireSms();
         $data = $this->validatePhone($request, ['purpose' => 'required|in:register,reset_password']);
-        if ($data['purpose'] === 'reset_password' && ($current = Auth::guard('member')->user()) instanceof Member) {
+        $mode = $this->verification->mode();
+        $current = Auth::guard('member')->user();
+        $challengeMode = $data['purpose'] === 'reset_password' ? $this->resetMode($current, $mode) : $mode;
+        abort_unless($challengeMode === 'sms', 409, '当前验证方式未启用短信验证码。');
+        if ($data['purpose'] === 'reset_password' && $current instanceof Member) {
             $this->validateResetAccount($request, $current->refresh(), $data['phone']);
         }
         $sms->send($data['phone'], $data['purpose']);
@@ -55,30 +64,37 @@ class MemberAuthController extends Controller
         return response()->json(['status' => 'accepted'], 202);
     }
 
-    public function register(Request $request, SmsChallenges $sms, InvitationRewards $invitations, ImageCaptcha $captcha): JsonResponse
-    {
-        $useSms = $this->verification->smsEnabled();
+    public function register(
+        Request $request, SmsChallenges $sms, InvitationRewards $invitations, ImageCaptcha $captcha, TurnstileVerification $turnstile,
+    ): JsonResponse {
+        $mode = $this->verification->mode();
+        $origin = RegistrationOrigin::fromRequest($request);
         $data = $this->validatePhone($request, [
-            ...$this->challengeRules($useSms),
+            ...$this->challengeRules($mode),
             'password' => MemberPassword::RULE,
             'invite_code' => ['nullable', 'string', 'regex:/\A[0-9a-fA-F]{32}\z/'],
         ]);
         MemberPassword::validateBytes($data['password']);
-        if (! $useSms) {
+        if ($mode === 'image') {
             $captcha->consume($request->session()->getId(), 'register', $data['challenge_id'], $data['code']);
+        } elseif ($mode === 'cloudflare') {
+            $turnstile->validate($data['turnstile_token'], 'register', $origin->ip);
         }
 
         try {
-            $member = DB::transaction(function () use ($data, $sms, $invitations, $useSms): Member {
-                abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
-                if ($useSms) {
+            $member = DB::transaction(function () use ($data, $sms, $invitations, $mode, $origin): Member {
+                $settings = $this->verification->settings(lock: true);
+                abort_if($settings->mode !== $mode, 409, '验证方式已更新，请重新获取验证码。');
+                $origin->enforceLimits($settings);
+                if ($mode === 'sms') {
                     $sms->consume($data['phone'], 'register', $data['code']);
                 }
 
                 $member = Member::create([
                     'phone' => $data['phone'],
                     'password' => $data['password'],
-                    'phone_verified_at' => $useSms ? now() : null,
+                    'phone_verified_at' => $mode === 'sms' ? now() : null,
+                    ...$origin->attributes(),
                 ]);
                 if (filled($data['invite_code'] ?? null)) {
                     $invitations->register($member, $data['invite_code']);
@@ -90,7 +106,7 @@ class MemberAuthController extends Controller
             throw ValidationException::withMessages(['phone' => '该手机号已注册。']);
         }
 
-        return response()->json($this->memberData($member), 201);
+        return response()->json($this->memberData($member), 201)->withCookie($origin->cookie());
     }
 
     public function login(Request $request): JsonResponse
@@ -138,11 +154,11 @@ class MemberAuthController extends Controller
 
     public function resetPassword(Request $request, SmsChallenges $sms, ImageCaptcha $captcha): Response
     {
-        $useSms = $this->verification->smsEnabled();
         $current = Auth::guard('member')->user();
-        abort_if(! $useSms && ! ($current instanceof Member), 409, '短信找回暂不可用，请联系人工客服。');
+        $mode = $this->resetMode($current, $this->verification->mode());
+        $useSms = $mode === 'sms';
         $data = $this->validatePhone($request, [
-            ...$this->challengeRules($useSms),
+            ...$this->challengeRules($mode),
             'password' => MemberPassword::RULE,
             ...($useSms ? [] : ['current_password' => 'required|string|max:72']),
         ]);
@@ -153,8 +169,8 @@ class MemberAuthController extends Controller
             $captcha->consume($request->session()->getId(), 'reset_password', $data['challenge_id'], $data['code']);
         }
 
-        DB::transaction(function () use ($request, $current, $data, $sms, $useSms): void {
-            abort_if($this->verification->smsEnabled() !== $useSms, 409, '验证方式已更新，请重新获取验证码。');
+        DB::transaction(function () use ($request, $current, $data, $sms, $useSms, $mode): void {
+            abort_if($this->resetMode($current, $this->verification->mode()) !== $mode, 409, '验证方式已更新，请重新获取验证码。');
             $query = Member::query()->lockForUpdate();
             if ($current instanceof Member) {
                 $member = $query->findOrFail($current->id);
@@ -177,9 +193,18 @@ class MemberAuthController extends Controller
         return $this->logout($request);
     }
 
-    private function challengeRules(bool $useSms): array
+    private function challengeRules(string $mode): array
     {
-        return $useSms ? ['code' => 'required|digits:6'] : ImageCaptcha::RULES;
+        return match ($mode) {
+            'sms' => ['code' => 'required|digits:6'],
+            'cloudflare' => TurnstileVerification::RULES,
+            default => ImageCaptcha::RULES,
+        };
+    }
+
+    private function resetMode(?Member $member, string $registrationMode): string
+    {
+        return $member !== null && $registrationMode === 'image' ? 'image' : 'sms';
     }
 
     private function validateResetAccount(Request $request, Member $member, string $phone): void

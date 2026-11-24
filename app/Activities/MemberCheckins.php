@@ -2,16 +2,18 @@
 
 namespace App\Activities;
 
-use App\Models\CheckinRuleVersion;
 use App\Models\Member;
 use App\Models\MemberCheckin;
-use App\Points\PointWallet;
+use App\Points\CashBalance;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class MemberCheckins
 {
-    public function __construct(private readonly BusinessClock $clock, private readonly PointWallet $wallet) {}
+    public function __construct(
+        private readonly BusinessClock $clock,
+        private readonly CashBalance $wallet,
+        private readonly CheckinRules $rules,
+    ) {}
 
     public function record(Member $member): MemberCheckin
     {
@@ -30,25 +32,21 @@ class MemberCheckins
             }
 
             $previous = $records->where('business_date', $local->copy()->subDay()->toDateString())->first();
-            $carryRound = $previous !== null && ! $previous->completed_round;
-            $rule = $carryRound ? CheckinRuleVersion::findOrFail($previous->checkin_rule_version_id)
-                : CheckinRuleVersion::query()->latest('id')->firstOrFail();
-            abort_if($rule->tiers === [], 409, '运营尚未配置签到奖励。');
+            [$rule, $carryRound] = $this->rules->forNextCheckin($previous);
+            abort_if($rule === null || $rule->tiers === [], 409, '运营尚未配置签到奖励。');
             $days = $carryRound ? $previous->streak + 1 : 1;
             $reward = $rule->tiers[$days] ?? 0;
             $record = MemberCheckin::create([
                 'member_id' => $owner->id, 'checkin_rule_version_id' => $rule->id, 'timezone' => $zone,
                 'business_date' => $day, 'round_started_on' => $carryRound ? $previous->round_started_on : $day,
-                'streak' => $days, 'reward_points' => $reward,
+                'streak' => $days, 'reward_points' => 0, 'reward_cents' => $reward,
                 'completed_round' => $days === max(array_keys($rule->tiers)),
             ]);
 
             if ($reward > 0) {
-                $entry = $this->wallet->record($owner, $reward, [
-                    'operation_key' => (string) Str::uuid(), 'reason' => '连续签到奖励',
-                    'source' => 'checkin', 'source_id' => $record->id,
-                ]);
-                $record->forceFill(['point_entry_id' => $entry->id])->save();
+                $this->wallet->refund($owner, $reward, 'checkin', $record->id);
+                $entryId = DB::table('cash_balance_entries')->where('source', 'checkin')->where('source_id', $record->id)->value('id');
+                $record->forceFill(['cash_balance_entry_id' => $entryId])->save();
             }
 
             return $record;

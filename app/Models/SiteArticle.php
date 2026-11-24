@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['type', 'title', 'body', 'steps', 'target_type', 'target_id', 'sort_order', 'published', 'published_at', 'user_id'])]
+#[Fillable(['type', 'title', 'body', 'body_html', 'steps', 'target_type', 'target_id', 'sort_order', 'published', 'published_at', 'user_id'])]
 class SiteArticle extends Model
 {
     protected function casts(): array

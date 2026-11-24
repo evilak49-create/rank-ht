@@ -13,6 +13,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class ProtectionClaim extends Model
 {
+    public const CASE_STATUSES = ['pending' => '待处理', 'resolved' => '已解决', 'unresolved' => '未解决'];
+
+    protected $attributes = ['case_status' => 'pending'];
+
     protected function casts(): array
     {
         return ['amount_cents' => 'integer', 'withdrawn_at' => 'datetime'];

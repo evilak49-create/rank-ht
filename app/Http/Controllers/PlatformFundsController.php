@@ -62,6 +62,7 @@ class PlatformFundsController extends Controller
             'masked_platform_account' => ProtectionClaims::maskAccount($order->platform_account_id),
             'currency' => 'BRL',
             'rate_version' => $order->fund_rate_version_id,
+            'payment_refunded' => PlatformFundOrder::paymentWasRefunded($order->status, (bool) $order->rejection_deducted),
             'paused' => $order->relationLoaded('task') && $order->task?->paused_at !== null,
             'needs_review' => $order->relationLoaded('task') && $order->task?->needs_review_at !== null,
         ];

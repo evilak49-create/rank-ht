@@ -2,13 +2,10 @@
 
 namespace App\Filament\Pages;
 
-use App\Models\FundRateVersion;
+use App\Filament\Resources\CashbackSettlementResource;
 use App\Models\PointRule;
 use App\Models\User;
 use App\Points\PlatformRebateTiers;
-use App\Points\PointRules;
-use App\Shop\Funds\FundRates;
-use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
@@ -21,7 +18,12 @@ class RebateConfiguration extends Page
 {
     protected static ?string $title = '返利配置';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分与配置';
+    protected static string|\UnitEnum|null $navigationGroup = '平台管理';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return ! CashbackSettlementResource::canViewAny();
+    }
 
     protected static ?int $navigationSort = 10;
 
@@ -77,23 +79,6 @@ class RebateConfiguration extends Page
 
         $this->fillTiers($rule);
         Notification::make()->title('返利配置已保存')->success()->send();
-    }
-
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('update_fund_rate')->label('设置平台资金比例')
-                ->authorize(fn (): bool => self::canAccess())
-                ->schema([TextInput::make('rate')->label('每积分到账金额（BRL）')->inputMode('decimal')->required()])
-                ->fillForm(fn (): array => [
-                    'rate' => PointRules::display(FundRateVersion::query()->latest('id')->firstOrFail()->cents_per_point, 2),
-                ])->successNotificationTitle('平台资金比例已更新')
-                ->action(function (array $data): void {
-                    $operator = Filament::auth()->user();
-                    abort_unless($operator instanceof User, 403);
-                    app(FundRates::class)->save($data['rate'], $operator);
-                }),
-        ];
     }
 
     private function fillTiers(PointRule $rule): void

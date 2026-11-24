@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Auth\ImageCaptcha;
 use App\Auth\MemberPhone;
 use App\Auth\MemberVerification;
+use App\Auth\RegistrationOrigin;
+use App\Auth\TurnstileVerification;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
+use App\Models\PlatformBindingAttempt;
 use App\Models\PointRule;
 use App\Platforms\BindPlatformAccount;
 use App\Platforms\PlatformParticipation;
@@ -18,6 +21,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class PlatformController extends Controller
 {
@@ -164,7 +169,7 @@ class PlatformController extends Controller
         $confirmedQuotes = fn (Builder $quotes) => $quotes
             ->where('member_id', $memberId)->whereNotNull('confirmed_at');
 
-        return PlatformBinding::query()->where('member_id', $memberId)->with('platform:id,name,logo_url')
+        return PlatformBinding::query()->where('member_id', $memberId)->with('platform:id,name,logo_url,guarantee_amount_brl')
             ->withSum(['pointQuotes as redeemed_points' => $confirmedQuotes], 'estimated_points')
             ->withMax(['pointQuotes as last_redeemed_at' => $confirmedQuotes], 'confirmed_at')
             ->withCasts(['last_redeemed_at' => 'datetime']);
@@ -178,17 +183,35 @@ class PlatformController extends Controller
         return response()->json(['status' => 'accepted'], 202);
     }
 
-    public function bind(Request $request, string $platform, BindPlatformAccount $binding, MemberVerification $verification, ImageCaptcha $captcha): JsonResponse
-    {
-        $useSms = $verification->smsEnabled();
+    public function bind(
+        Request $request, string $platform, BindPlatformAccount $binding, MemberVerification $verification,
+        ImageCaptcha $captcha, TurnstileVerification $turnstile,
+    ): JsonResponse {
+        $mode = $verification->mode();
         $activePlatform = Platform::query()->available()->findOrFail($platform);
-        $data = $this->validatePhone($request, $useSms ? ['code' => 'nullable|digits:6'] : ImageCaptcha::RULES);
-        if (! $useSms) {
-            $captcha->consume($request->session()->getId(), 'platform_binding', $data['challenge_id'], $data['code']);
+        $data = $this->validatePhone($request, match ($mode) {
+            'sms' => ['code' => 'nullable|digits:6'],
+            'cloudflare' => TurnstileVerification::RULES,
+            default => ImageCaptcha::RULES,
+        });
+        $attempt = PlatformBindingAttempt::create([
+            'member_id' => $request->user()->id, 'platform_id' => $activePlatform->id,
+            'method' => 'self', 'status' => 'processing',
+        ]);
+        try {
+            if ($mode === 'image') {
+                $captcha->consume($request->session()->getId(), 'platform_binding', $data['challenge_id'], $data['code']);
+            } elseif ($mode === 'cloudflare') {
+                $turnstile->validate($data['turnstile_token'], 'platform_binding', RegistrationOrigin::fromRequest($request)->ip);
+            }
+            $record = $binding->bind(
+                $request->user(), $activePlatform, $data['phone'], $mode === 'sms' ? ($data['code'] ?? null) : null, $mode, $attempt,
+            );
+        } catch (ValidationException|HttpExceptionInterface $exception) {
+            $attempt->fail($exception->getMessage() ?: '绑定未完成。');
+
+            throw $exception;
         }
-        $record = $binding->bind(
-            $request->user(), $activePlatform, $data['phone'], $useSms ? ($data['code'] ?? null) : null, $useSms,
-        );
 
         $record = $this->ownedBindings($request)->findOrFail($record->id);
 
@@ -224,7 +247,7 @@ class PlatformController extends Controller
             ...($detail ? ['query_phone' => $binding->query_phone] : []),
             'redeemed_points' => (int) $binding->redeemed_points,
             'last_redeemed_at' => $binding->last_redeemed_at?->toISOString(),
-            'protection_status' => $binding->protection_status,
+            'protection_status' => $binding->currentProtectionStatus(),
             'created_at' => $binding->created_at?->toISOString(),
         ];
     }

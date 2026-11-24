@@ -28,6 +28,7 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
     Route::get('health', fn () => response()->json(['status' => 'ok']));
     Route::post('visitor-activity', VisitorActivityController::class)->middleware('throttle:60,1,visitor-activity');
     Route::get('support', [SupportController::class, 'index']);
+    Route::get('support/conversation', [SupportController::class, 'conversation'])->middleware('throttle:support-conversation');
     Route::post('support/chat', [SupportController::class, 'chat'])->middleware('throttle:8,1,support-chat');
     Route::prefix('content')->controller(PublicContentController::class)->group(function (): void {
         Route::get('banners', 'banners');

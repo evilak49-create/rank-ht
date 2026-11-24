@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Pages\RebateConfiguration;
 use App\Models\AdminRole;
 use App\Models\FundRateVersion;
 use App\Jobs\DispatchDailyCashback;
@@ -16,7 +15,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Livewire\Livewire;
 use Tests\TestCase;
 
 class PointSettlementTest extends TestCase
@@ -98,17 +96,15 @@ class PointSettlementTest extends TestCase
         $this->assertDatabaseCount('point_entries', 0);
     }
 
-    public function test_platform_funding_rate_remains_editable_without_changing_rebate_tiers(): void
+    public function test_legacy_platform_funding_rate_is_not_in_cashback_configuration(): void
     {
         $operator = User::factory()->create();
         $operator->forceFill(['panel_enabled' => true])->save();
         $operator->roles()->attach(AdminRole::create(['name' => '返利运营', 'permissions' => ['points.manage-rules']]));
         $this->actingAs($operator, 'web');
         $rule = PointRule::query()->latest('id')->firstOrFail();
-        $this->get('/admin/rebate-configuration')->assertOk()->assertSee('设置平台资金比例');
-        Livewire::test(RebateConfiguration::class)->callAction('update_fund_rate', [
-            'rate' => '1.75',
-        ])->assertHasNoActionErrors();
+        $this->get('/admin/rebate-configuration')->assertOk()->assertDontSee('设置平台资金比例');
+        app(\App\Shop\Funds\FundRates::class)->save('1.75', $operator);
 
         $this->assertSame(175, FundRateVersion::query()->latest('id')->firstOrFail()->cents_per_point);
         $this->assertSame($rule->id, PointRule::query()->latest('id')->value('id'));

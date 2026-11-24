@@ -7,6 +7,7 @@ use App\Auth\MemberPhone;
 use App\Models\Member;
 use App\Models\PointEntry;
 use App\Models\User;
+use App\Points\CashBalance;
 use App\Points\PointWallet;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,9 @@ class MemberAdministration
 {
     public const PERMISSIONS = ['members.change-phone', 'members.reset-password', 'members.adjust-points', 'points.view'];
 
-    public function __construct(private readonly PointWallet $wallet) {}
+    public const ADJUST_CASH = 'members.adjust-cash';
+
+    public function __construct(private readonly PointWallet $wallet, private readonly CashBalance $cash) {}
 
     public function changePhone(Member $member, string $newPhone, User $operator): void
     {
@@ -95,5 +98,54 @@ class MemberAdministration
             'details' => $details === null ? null : json_encode($details, JSON_THROW_ON_ERROR),
             'created_at' => now(),
         ]);
+    }
+
+    public function adjustCash(Member $member, array $data, User $operator): int
+    {
+        abort_unless($operator->hasPermission(self::ADJUST_CASH), 403);
+        $data = Validator::make($data, [
+            'direction' => 'required|in:credit,debit',
+            'amount_cents' => ['required', 'integer', 'min:1', 'max:'.CashBalance::MAX_CENTS],
+            'reason' => 'required|string|max:300',
+            'operation_key' => 'required|uuid',
+        ])->validate();
+        $operationKey = strtolower($data['operation_key']);
+        $delta = (int) $data['amount_cents'] * ($data['direction'] === 'debit' ? -1 : 1);
+
+        return DB::transaction(function () use ($member, $operator, $data, $operationKey, $delta): int {
+            $current = Member::query()->lockForUpdate()->findOrFail($member->id);
+            $adjustments = DB::table('member_cash_adjustments');
+            $existing = (clone $adjustments)->where(['member_id' => $current->id, 'operation_key' => $operationKey])->first();
+            if ($existing !== null) {
+                abort_unless((int) $existing->user_id === $operator->id && (int) $existing->amount_cents === $delta
+                    && $existing->reason === $data['reason'], 409, '该操作编号已使用。');
+
+                return (int) $existing->id;
+            }
+
+            $balance = $current->available_balance_cents;
+            $after = $balance + $delta;
+            if ($after < 0 || $after > CashBalance::MAX_CENTS - $current->held_balance_cents) {
+                throw ValidationException::withMessages([
+                    'amount_cents' => $after < 0 ? '可用余额不足。' : '余额超出可入账范围。',
+                ]);
+            }
+            $details = [
+                'amount_cents' => $delta, 'balance_before_cents' => $balance,
+                'balance_after_cents' => $after, 'reason' => $data['reason'],
+            ];
+            $id = $adjustments->insertGetId([
+                'member_id' => $current->id, 'user_id' => $operator->id, 'operation_key' => $operationKey, 'created_at' => now(),
+                ...$details,
+            ]);
+            if ($delta > 0) {
+                $this->cash->refund($current, $delta, 'manual_adjustment', $id);
+            } else {
+                $this->cash->charge($current, -$delta, 'manual_adjustment', $id);
+            }
+            $this->audit($current, $operator, 'member.cash_adjusted', ['adjustment_id' => $id, ...$details]);
+
+            return $id;
+        }, 3);
     }
 }

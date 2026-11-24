@@ -24,7 +24,7 @@ class AdminAccountResource extends Resource
 
     protected static ?string $pluralModelLabel = '后台账号';
 
-    protected static string|\UnitEnum|null $navigationGroup = '系统设置';
+    protected static string|\UnitEnum|null $navigationGroup = '系统管理';
 
     protected static ?int $navigationSort = 10;
 

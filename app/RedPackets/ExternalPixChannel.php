@@ -64,7 +64,7 @@ class ExternalPixChannel
     {
         $config = $order->payout_configuration;
         $accountKey = $config['driver'] === '4zpay' ? 'account' : 'accountNo';
-        $this->request($config, 'create', $this->identifiers($order) + [
+        $response = $this->request($config, 'create', $this->identifiers($order) + [
             'amount' => $order->amount_cents,
             'currency' => 'BRL',
             'accountType' => 'PIX_CPF',
@@ -73,7 +73,12 @@ class ExternalPixChannel
             'callback' => route('pix.provider-callback', ['channel' => $order->payout_channel_id]),
         ]);
 
-        return new PixResult('unknown');
+        if ($order->payout_number === null || $response === []) {
+            return new PixResult('unknown');
+        }
+
+        // Create responses can acknowledge submission, but the signed callback owns settlement.
+        return new PixResult('submitted', $this->reference($response));
     }
 
     public function lookup(PixWithdrawal $order): PixResult
@@ -126,17 +131,27 @@ class ExternalPixChannel
             || ($data['currency'] ?? null) !== 'BRL') {
             return null;
         }
+        $reference = $this->reference($data);
+        if ($reference === null) {
+            return null;
+        }
+
+        return match ($data['status'] ?? null) {
+            'SUCCESS' => new PixResult('paid', $reference),
+            'FAILED', 'REJECT' => new PixResult('failed', $reference),
+            'TOBE_AUDIT', 'PAYING' => new PixResult('unknown', $reference),
+            default => null,
+        };
+    }
+
+    private function reference(#[SensitiveParameter] array $data): ?string
+    {
         $reference = $data['orderNo'] ?? null;
         if ((! is_string($reference) && ! is_int($reference)) || trim((string) $reference) === '' || strlen((string) $reference) > 190) {
             return null;
         }
 
-        return match ($data['status'] ?? null) {
-            'SUCCESS' => new PixResult('paid', (string) $reference),
-            'FAILED', 'REJECT' => new PixResult('failed'),
-            'TOBE_AUDIT', 'PAYING' => new PixResult('unknown'),
-            default => null,
-        };
+        return (string) $reference;
     }
 
     public static function signature(#[SensitiveParameter] array $fields, #[SensitiveParameter] string $secret): string

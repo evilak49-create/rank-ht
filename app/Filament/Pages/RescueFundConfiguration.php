@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Resources\RescueFundClaimResource;
 use App\Models\User;
 use App\Points\PointRules;
 use App\Points\RescueFundSettings;
@@ -17,7 +18,12 @@ class RescueFundConfiguration extends Page
 {
     protected static ?string $title = '救援金配置';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分与配置';
+    protected static string|\UnitEnum|null $navigationGroup = '平台管理';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return ! RescueFundClaimResource::canViewAny();
+    }
 
     protected static ?int $navigationSort = 15;
 

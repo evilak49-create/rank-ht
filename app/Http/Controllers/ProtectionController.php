@@ -30,13 +30,13 @@ class ProtectionController extends Controller
 
     public function bindings(Request $request): JsonResponse
     {
-        $bindings = $this->ownedBindings($request)->with('platform:id,name')->latest('id')->paginate(20);
+        $bindings = $this->ownedBindings($request)->with('platform:id,name,guarantee_amount_brl')->latest('id')->paginate(20);
 
         return $this->privateJson($bindings->through(fn (PlatformBinding $binding): array => [
             'id' => $binding->id, 'platform_id' => $binding->platform_id, 'platform_name' => $binding->platform->name,
             'platform_account_id' => $binding->platform_account_id,
             'masked_platform_account' => ProtectionClaims::maskAccount($binding->platform_account_id),
-            'protection_status' => $binding->protection_status,
+            'protection_status' => $binding->currentProtectionStatus(),
         ]));
     }
 
@@ -110,6 +110,7 @@ class ProtectionController extends Controller
             'platform_account_id' => $case->platform_account_id,
             'masked_platform_account' => ProtectionClaims::maskAccount($case->platform_account_id),
             'protection_status' => $case->protection_status, 'term_version_id' => $case->protection_term_id,
+            'case_status' => $case->case_status,
             'amount_cents' => $case->amount_cents, 'currency' => 'BRL', 'withdrawn_at' => $case->withdrawn_at,
             'created_at' => $case->created_at,
         ];

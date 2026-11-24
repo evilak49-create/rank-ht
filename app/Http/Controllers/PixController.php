@@ -61,6 +61,7 @@ class PixController extends Controller
                 'cancelled' => 'cancelled',
                 default => 'reviewing',
             },
+            'lifecycle_status' => $order->status,
             'review_reason' => $order->review_reason, 'rejection_deducted' => (bool) $order->rejection_deducted,
             'created_at' => $order->created_at, 'paid_at' => $order->paid_at,
         ]))->header('Cache-Control', 'private, no-store');

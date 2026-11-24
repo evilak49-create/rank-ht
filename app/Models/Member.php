@@ -5,11 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\DB;
 
-#[Fillable(['phone', 'password', 'phone_verified_at'])]
-#[Hidden(['password', 'session_version', 'pix_cpf', 'invite_code'])]
+#[Fillable(['phone', 'password', 'phone_verified_at', 'registration_ip', 'registration_country', 'registration_device_hash'])]
+#[Hidden(['password', 'session_version', 'pix_cpf', 'invite_code', 'registration_ip', 'registration_country', 'registration_device_hash'])]
 class Member extends Authenticatable
 {
     protected function casts(): array
@@ -30,6 +31,11 @@ class Member extends Authenticatable
     public function platforms(): BelongsToMany
     {
         return $this->belongsToMany(Platform::class, 'platform_bindings');
+    }
+
+    public function platformBindings(): HasMany
+    {
+        return $this->hasMany(PlatformBinding::class);
     }
 
     public function favoritePlatforms(): BelongsToMany
@@ -53,6 +59,8 @@ class Member extends Authenticatable
             if ($disabled) {
                 PlatformFundTask::pauseForMember($member->id);
                 PixTask::pauseForMember($member->id);
+            } else {
+                PixTask::resumeProviderPayoutsForMember($member->id);
             }
 
             if ($operator !== null) {

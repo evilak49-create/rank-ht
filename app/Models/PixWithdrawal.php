@@ -18,6 +18,7 @@ class PixWithdrawal extends Model
             'cpf_snapshot' => 'encrypted', 'amount_cents' => 'integer',
             'reviewed_at' => 'datetime', 'paid_at' => 'datetime', 'payout_channel_id' => 'integer',
             'rejection_deducted' => 'boolean', 'payout_configuration' => 'encrypted:array',
+            'callback_received_at' => 'datetime',
         ];
     }
 

@@ -125,10 +125,16 @@ class RescueFundTest extends TestCase
         $this->deposit += 50_000;
         $this->bet += 50_000;
         $this->netProfit = -50_000;
-        $binding->forceFill(['protection_status' => 'inactive'])->save();
+        $platform = $binding->platform;
+        $originalGuarantee = $platform->guarantee_amount_brl;
+        $platform->forceFill(['guarantee_amount_brl' => 0])->save();
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
 
-        $binding->forceFill(['protection_status' => 'active', 'rescue_baseline' => null])->save();
+        $platform->forceFill(['guarantee_amount_brl' => $originalGuarantee])->save();
+        $binding->forceFill(['rescue_baseline' => null])->save();
+        $assessment = app(\App\Points\RescueFund::class)->inspectBinding($binding->refresh());
+        $this->assertSame('等待建立有效基线', $assessment['result']);
+        $this->assertNull($binding->refresh()->rescue_baseline);
         $this->postJson("/api/v1/rescue-fund/{$binding->id}/claim", ['request_id' => (string) Str::uuid()])->assertConflict();
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
         $this->assertDatabaseEmpty('rescue_fund_claims');
@@ -251,7 +257,7 @@ class RescueFundTest extends TestCase
             $configuration = array_diff_key($configuration, array_flip(['net_profit_field', 'net_profit_unit', 'net_profit_direction']));
         }
         $platform->forceFill(['active_query_revision' => 1, 'active_query' => $configuration])->save();
-        $binding = app(BindPlatformAccount::class)->bind($member->refresh(), $platform, $member->phone, null, true);
+        $binding = app(BindPlatformAccount::class)->bind($member->refresh(), $platform, $member->phone, null, 'sms');
         $binding->forceFill(['protection_status' => 'active'])->save();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $this->travel(1)->minutes();

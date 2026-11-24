@@ -23,17 +23,18 @@ class PlatformFundOrderResource extends Resource
 
     protected static ?string $pluralModelLabel = '平台资金兑换';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分与配置';
+    protected static string|\UnitEnum|null $navigationGroup = '资金管理';
 
-    protected static ?int $navigationSort = 60;
+    protected static ?int $navigationSort = 50;
 
     private const STATUSES = [
         'pending' => '待审核', 'rejected' => '已驳回', 'processing' => '发放中',
-        'unresolved' => '结果待确认', 'paid' => '已到账', 'failed' => '发放失败',
+        'unresolved' => '结果待确认', 'paid' => '已到账', 'failed' => '发放失败', 'cancelled' => '已取消',
     ];
 
     private const EVENTS = [
-        'submitted' => '提交兑换', 'approved' => '审核通过', 'rejected' => '审核驳回',
+        'submitted' => '提交兑换', 'approved' => '审核通过', 'rejected' => '审核驳回并退款',
+        'rejected_deducted' => '审核拒绝并保留扣款', 'cancelled' => '取消并退款',
         'resumed' => '恢复发放', 'lookup_requested' => '人工申请查单', 'send_started' => '开始发放',
         'lookup_started' => '开始查单', 'paid' => '确认到账', 'failed' => '确认失败并退款', 'unresolved' => '结果待确认',
     ];
@@ -50,14 +51,17 @@ class PlatformFundOrderResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table->defaultSort('id', 'desc')->columns([
+        return $table->defaultSort('created_at', 'asc')->columns([
             TextColumn::make('order_number')->label('订单号')->searchable(),
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('platform.name')->label('平台'),
             TextColumn::make('platform_account_id')->label('平台账号'),
             TextColumn::make('balance_paid_cents')->label('余额实付')->formatStateUsing(fn (int $state): string => 'R$ '.PointRules::display($state, 2))->placeholder('历史订单'),
             TextColumn::make('amount_cents')->label('到账金额')->formatStateUsing(fn (int $state) => 'R$ '.PointRules::display($state, 2)),
-            TextColumn::make('status')->label('状态')->badge()->formatStateUsing(fn (string $state) => self::STATUSES[$state]),
+            TextColumn::make('status')->label('状态')->badge()
+                ->formatStateUsing(fn (string $state, PlatformFundOrder $record): string => $state === 'rejected'
+                    ? ($record->rejection_deducted ? '已拒绝，款项已扣除' : '已驳回并退款')
+                    : (self::STATUSES[$state] ?? $state)),
             TextColumn::make('hold')->label('处理提示')->state(fn (PlatformFundOrder $record): ?string => match (true) {
                 $record->task?->needs_review_at !== null => '待人工核对',
                 $record->task?->pause_reason === 'member_disabled' => '会员禁用后暂停发放',
@@ -70,15 +74,27 @@ class PlatformFundOrderResource extends Resource
             TextColumn::make('channel_reference')->label('渠道流水号')->toggleable(),
             TextColumn::make('review_reason')->label('驳回原因')->toggleable(),
             TextColumn::make('created_at')->label('申请时间')->dateTime()->sortable(),
-        ])->filters([SelectFilter::make('status')->label('状态')->options(self::STATUSES)])
+        ])->filters([
+            SelectFilter::make('status')->label('状态')->options(self::STATUSES),
+            SelectFilter::make('platform')->label('平台')->relationship('platform', 'name')->searchable(),
+        ])
             ->recordActions([
                 Action::make('approve')->label('审核通过')->requiresConfirmation()
                     ->authorize(fn () => self::allowed('funds.review'))->visible(self::mayReview(...))
                     ->action(fn (PlatformFundOrder $record) => app(PlatformFunds::class)->approve($record, self::operator())),
-                Action::make('reject')->label('驳回并退款')->color('danger')
+                Action::make('reject')->label(fn (PlatformFundOrder $record): string => $record->balance_paid_cents === null
+                    ? '驳回并退款' : '拒绝并保留扣款')->color('danger')
                     ->authorize(fn () => self::allowed('funds.review'))->visible(self::mayReview(...))
-                    ->schema([Textarea::make('reason')->label('驳回原因')->maxLength(300)->required()])
-                    ->action(fn (PlatformFundOrder $record, array $data) => app(PlatformFunds::class)->reject($record, $data['reason'], self::operator())),
+                    ->schema([Textarea::make('reason')->label('拒绝原因')->maxLength(300)->required()])
+                    ->action(fn (Action $action, PlatformFundOrder $record, array $data) => ActionForm::submit($action,
+                        fn () => app(PlatformFunds::class)->reject($record, $data['reason'], self::operator()))),
+                Action::make('cancel')->label('取消并退回')->requiresConfirmation()
+                    ->authorize(fn () => self::allowed('funds.review'))
+                    ->visible(fn (PlatformFundOrder $record): bool => $record->status === 'pending')
+                    ->action(fn (PlatformFundOrder $record) => app(PlatformFunds::class)->cancel($record, self::operator())),
+                Action::make('cash_history')->label('现金流水')
+                    ->url(fn (PlatformFundOrder $record): string => CashBalanceEntryResource::orderUrl('platform', $record->id))
+                    ->visible(fn (PlatformFundOrder $record): bool => $record->balance_paid_cents !== null && CashBalanceEntryResource::canViewAny()),
                 Action::make('resume')->label('恢复发放')->requiresConfirmation()
                     ->authorize(fn () => self::allowed('funds.resume'))
                     ->visible(fn (PlatformFundOrder $record): bool => $record->status === 'processing'

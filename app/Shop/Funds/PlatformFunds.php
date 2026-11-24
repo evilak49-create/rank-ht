@@ -122,11 +122,32 @@ class PlatformFunds
             }
             abort_unless($current->status === 'pending', 409, '只有待审核订单可以驳回。');
             $this->requireAvailable($platform, $member, requireChannel: false);
-            $this->refund($member, $current, $reason, $operator);
+            $deducted = $current->balance_paid_cents !== null;
+            if (! $deducted) {
+                $this->refund($member, $current, $reason, $operator);
+            }
             $current->forceFill([
                 'status' => 'rejected', 'reviewer_id' => $operator->id, 'reviewed_at' => now(), 'review_reason' => $reason,
+                'rejection_deducted' => $deducted,
             ])->save();
-            $this->event($current, 'rejected', $operator);
+            $this->event($current, $deducted ? 'rejected_deducted' : 'rejected', $operator);
+        });
+    }
+
+    public function cancel(PlatformFundOrder $order, User $operator): void
+    {
+        abort_unless($operator->hasPermission('funds.review'), 403);
+        $this->withLockedOrder($order, function (Platform $platform, Member $member, PlatformFundOrder $current) use ($operator): void {
+            if ($current->status === 'cancelled') {
+                return;
+            }
+
+            abort_unless($current->status === 'pending', 409, '只有待审核订单可以取消。');
+            $this->refund($member, $current, '取消平台资金兑换', $operator);
+            $current->forceFill([
+                'status' => 'cancelled', 'reviewer_id' => $operator->id, 'reviewed_at' => now(),
+            ])->save();
+            $this->event($current, 'cancelled', $operator);
         });
     }
 

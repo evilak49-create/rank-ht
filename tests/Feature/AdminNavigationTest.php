@@ -29,13 +29,21 @@ class AdminNavigationTest extends TestCase
 
         $this->get('/admin')->assertOk();
 
-        $this->assertSame([
-            '会员与活动' => ['会员列表', '签到记录', '红包轮次', '红包邀请记录'],
-            '平台与保障' => ['平台列表', '平台评价', 'AI 评价批次', '保障条款', '保障资格', '申诉案件'],
-            '积分与配置' => ['返利配置', '救援金配置', '积分流水', '资金明细', '兑换查询记录', '商品管理', '商品订单', '平台资金兑换', 'Pix 提现审核'],
-            '内容与客服' => ['Banner', '公告管理', '帮助中心', '客服设置', '常见问题'],
-            '系统设置' => ['后台账号', '角色权限', '后台授权审计', '业务时区', 'OSS 配置', 'AI 配置', '会员验证码'],
-        ], $this->groupedItems());
+        $groups = $this->groupedItems();
+        $this->assertSame(['会员管理', '平台管理', '资金管理', '活动管理', '内容管理', '客服管理', '系统管理'], array_keys($groups));
+        $this->assertContains('返利管理', $groups['平台管理']);
+        $this->assertContains('救援管理', $groups['平台管理']);
+        $this->assertContains('出款管理', $groups['资金管理']);
+        $this->assertContains('三方渠道', $groups['资金管理']);
+        $this->assertContains('对话列表', $groups['客服管理']);
+        foreach (['返利配置', '救援金配置', '商品管理', '商品订单', '积分流水', '保障资格'] as $entry) {
+            $this->assertNotContains($entry, array_merge(...array_values($groups)));
+        }
+
+        $this->get('/admin/cashback-settlements')->assertOk()->assertSee('返利配置');
+        $this->get('/admin/rescue-fund-claims')->assertOk()->assertSee('救援金配置');
+        $this->get('/admin/products')->assertNotFound();
+        $this->get('/admin/shop-orders')->assertNotFound();
     }
 
     public function test_consolidated_sidebar_only_lists_authorized_entries(): void
@@ -44,7 +52,7 @@ class AdminNavigationTest extends TestCase
 
         $this->get('/admin')->assertOk();
 
-        $this->assertSame(['内容与客服' => ['Banner', '公告管理', '帮助中心']], $this->groupedItems());
+        $this->assertSame(['内容管理' => ['Banner', '公告管理', '帮助中心']], $this->groupedItems());
         $this->get('/admin/support-settings')->assertForbidden();
         $this->get('/admin/rescue-fund-configuration')->assertForbidden();
         $this->get('/admin/cash-balance-entries')->assertForbidden();
@@ -66,6 +74,14 @@ class AdminNavigationTest extends TestCase
             ->filterTable('source', 'rescue_fund')->assertSee('R$ 15.00')->assertDontSee('R$ 25.00');
     }
 
+    public function test_configuration_permission_alone_does_not_expose_financial_records(): void
+    {
+        $this->signInWith(['points.manage-rules']);
+        $this->get('/admin/rebate-configuration')->assertOk();
+        $this->get('/admin/cashback-settlements')->assertForbidden();
+        $this->get('/admin/rescue-fund-claims')->assertForbidden();
+    }
+
     public function test_platform_and_member_rows_each_render_one_named_action_menu(): void
     {
         $this->signInWith(array_keys(AdminPermissions::LABELS));
@@ -75,8 +91,9 @@ class AdminNavigationTest extends TestCase
         foreach ([ListPlatforms::class => 'configure_query', ListMembers::class => 'reset_password'] as $page => $entry) {
             $component = Livewire::test($page)->assertSee('操作');
             $actions = $component->instance()->getTable()->getRecordActions();
-            $this->assertCount(1, $actions);
-            $menu = array_values($actions)[0];
+            $menus = array_values(array_filter($actions, fn ($action): bool => $action instanceof ActionGroup));
+            $this->assertCount(1, $menus);
+            $menu = $menus[0];
             $this->assertInstanceOf(ActionGroup::class, $menu);
             $this->assertSame('操作', $menu->getLabel());
             $this->assertArrayHasKey($entry, $menu->getFlatActions());

@@ -21,6 +21,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class PlatformFundsTest extends TestCase
@@ -166,7 +167,7 @@ class PlatformFundsTest extends TestCase
         $this->assertDatabaseCount('platform_fund_orders', 0);
     }
 
-    public function test_balance_checkout_and_rejection_charge_and_refund_the_exact_reais_amount(): void
+    public function test_cash_rejection_retains_the_debit_and_cancel_only_refunds_pending_orders(): void
     {
         [$member, $binding, $operator] = $this->fixture();
         $member->forceFill(['available_balance_cents' => 2100])->save();
@@ -184,10 +185,26 @@ class PlatformFundsTest extends TestCase
         $funds = app(PlatformFunds::class);
         $funds->reject($order, '订单无法受理', $operator);
         $funds->reject($order, '订单无法受理', $operator);
-        $this->assertSame(2100, $member->refresh()->available_balance_cents);
+        $this->assertSame(525, $member->refresh()->available_balance_cents);
         $this->assertSame(20, $member->points_balance);
-        $this->assertDatabaseCount('cash_balance_entries', 2);
+        $this->assertDatabaseCount('cash_balance_entries', 1);
+        $this->assertDatabaseEmpty('platform_fund_tasks');
         $this->assertDatabaseEmpty('point_entries');
+        $this->getJson('/api/v1/platform-funds/orders/'.$id)->assertOk()->assertJsonPath('data.payment_refunded', false);
+
+        $secondId = $this->postJson('/api/v1/platform-funds/orders', [...$request,
+            'amount_cents' => 425, 'request_id' => (string) Str::uuid(),
+        ])->assertCreated()->json('data.id');
+        $second = PlatformFundOrder::findOrFail($secondId);
+        $this->assertSame(100, $member->refresh()->available_balance_cents);
+        $funds->cancel($second, $operator);
+        $funds->cancel($second, $operator);
+        $this->assertSame('cancelled', $second->refresh()->status);
+        $this->assertSame(525, $member->refresh()->available_balance_cents);
+        $this->assertDatabaseCount('cash_balance_entries', 3);
+        $this->assertDatabaseEmpty('platform_fund_tasks');
+        $this->getJson('/api/v1/platform-funds/orders/'.$secondId)->assertOk()->assertJsonPath('data.payment_refunded', true);
+        $this->assertThrows(fn () => $funds->cancel($order, $operator), HttpException::class);
     }
 
     private function makeOrder(PlatformBinding $binding): PlatformFundOrder

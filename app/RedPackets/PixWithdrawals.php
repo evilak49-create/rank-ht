@@ -27,6 +27,7 @@ class PixWithdrawals
         private readonly RedPacketLedger $ledger,
         private readonly PixChannel $channel,
         private readonly CashBalance $cash,
+        private readonly PixChannelBalances $balances,
     ) {}
 
     public function submit(Member $member, string $request, ?int $amount = null): PixWithdrawal
@@ -43,7 +44,8 @@ class PixWithdrawals
             }
 
             abort_if($amount === null && ! $this->channel->isAvailable()
-                && ! PixPayoutChannel::query()->where('enabled', true)->exists(), 503, 'Pix 出款暂未开放。');
+                && ! PixPayoutChannel::query()->where('enabled', true)->whereNotNull('configuration')
+                    ->whereIn('driver', array_keys(ExternalPixChannel::PROVIDERS))->exists(), 503, 'Pix 出款暂未开放。');
             abort_if($owner->pix_cpf === null, 422, '请先设置 Pix CPF。');
             $round = null;
             if ($amount === null) {
@@ -70,26 +72,57 @@ class PixWithdrawals
 
     public function payoutOptions(PixWithdrawal $order): array
     {
-        $options = [];
-        foreach (PixPayoutChannel::query()->where('enabled', true)->orderBy('id')->get() as $channel) {
-            if ($this->supportsAmount($channel, $order)) {
-                $options['provider:'.$channel->id] = $channel->name;
-            }
-        }
-        if ($order->red_packet_round_id === null) {
-            $options['manual'] = self::MANUAL_CHANNEL;
-        }
-        if ($this->channel->isAvailable()) {
-            $options['simulator'] = self::SIMULATOR_CHANNEL;
-        }
-
-        return $options;
+        return PixPayoutChannel::query()->where('enabled', true)
+            ->whereIn('driver', array_keys(ExternalPixChannel::PROVIDERS))->orderBy('id')->get()
+            ->filter(fn (PixPayoutChannel $channel): bool => $this->supportsAmount($channel, $order))
+            ->mapWithKeys(fn (PixPayoutChannel $channel): array => ['provider:'.$channel->id => $channel->name])->all();
     }
 
-    public function approve(PixWithdrawal $order, User $operator, ?string $selection = null, ?string $recipientName = null): void
+    public function previewBalance(PixWithdrawal $order, User $operator, string $selection): ?int
     {
         abort_unless($operator->hasPermission('pix.review'), 403);
-        $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member) use ($operator, $selection, $recipientName): void {
+        $channel = $this->selectedProvider($selection);
+        if ($channel === null || $channel->driver === 'manual' || ! $this->supportsAmount($channel, $order)) {
+            return null;
+        }
+
+        return $this->balances->lookup($channel);
+    }
+
+    public function approveCallbackPayout(PixWithdrawal $order, User $operator, string $selection, ?string $recipientName): void
+    {
+        abort_unless($operator->hasPermission('pix.review'), 403);
+        $this->approve($order, $operator, $selection, $recipientName, callbackRequired: true);
+    }
+
+    public function approve(PixWithdrawal $order, User $operator, ?string $selection = null, ?string $recipientName = null, bool $callbackRequired = false): void
+    {
+        abort_unless($operator->hasPermission('pix.review'), 403);
+        if ($order->fresh()?->status !== 'pending') {
+            return;
+        }
+
+        $selected = $this->selectedProvider($selection);
+        $configuration = null;
+        if ($selected !== null && $selected->driver !== 'manual') {
+            if (! $this->supportsAmount($selected, $order)) {
+                throw ValidationException::withMessages(['channel' => '该渠道不可用或订单金额超出渠道范围。']);
+            }
+            $name = Validator::make(['recipient_name' => trim($recipientName ?? '')], [
+                'recipient_name' => ['required', 'string', 'max:120', 'not_regex:/[[:cntrl:]]/'],
+            ])->validate()['recipient_name'];
+            $available = $this->balances->lookup($selected);
+            if ($available !== null && $available < $order->amount_cents) {
+                throw ValidationException::withMessages(['channel' => '三方可用余额不足']);
+            }
+            $configuration = [...$selected->configuration, 'recipient_name' => $name];
+        }
+
+        if ($callbackRequired && $configuration === null) {
+            throw ValidationException::withMessages(['channel' => '请选择可用的三方出款渠道。']);
+        }
+
+        $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member) use ($operator, $selection, $selected, $configuration): void {
             if ($current->status !== 'pending') {
                 return;
             }
@@ -99,19 +132,11 @@ class PixWithdrawals
                 $selection = $this->channel->isAvailable() ? 'simulator' : 'manual';
                 abort_if($selection === 'manual' && $round !== null, 503, '请选择红包的 Pix 出款渠道。');
             }
-            $provider = null;
-            if (preg_match('/\Aprovider:([1-9][0-9]{0,18})\z/', $selection, $matches)) {
-                $provider = PixPayoutChannel::query()->where('enabled', true)->lockForUpdate()->find($matches[1]);
-            }
-            $configuration = null;
-            if ($provider !== null && $provider->driver !== 'manual') {
-                if (! $this->supportsAmount($provider, $current)) {
-                    throw ValidationException::withMessages(['channel' => '该渠道不可用或订单金额超出渠道范围。']);
-                }
-                $name = Validator::make(['recipient_name' => trim($recipientName ?? '')], [
-                    'recipient_name' => ['required', 'string', 'max:120', 'not_regex:/[[:cntrl:]]/'],
-                ])->validate()['recipient_name'];
-                $configuration = $provider->configuration + ['recipient_name' => $name];
+            $provider = $selected === null ? null : PixPayoutChannel::query()->where('enabled', true)->lockForUpdate()->find($selected->id);
+            if ($selected !== null && ($provider === null || $provider->driver !== $selected->driver
+                || $provider->getRawOriginal('configuration') !== $selected->getRawOriginal('configuration')
+                || ! $this->supportsAmount($provider, $current))) {
+                throw ValidationException::withMessages(['channel' => '出款渠道已变更，请重新选择。']);
             }
             $automated = $configuration !== null || ($selection === 'simulator' && $this->channel->isAvailable());
             $channelName = match (true) {
@@ -125,12 +150,22 @@ class PixWithdrawals
                 'status' => 'processing', 'reviewer_id' => $operator->id, 'reviewed_at' => now(),
                 'payout_channel_id' => $provider?->id, 'payout_channel_name' => $channelName,
                 'payout_configuration' => $configuration,
+                'payout_number' => $configuration === null ? null : (string) Str::uuid(),
             ])->save();
             if ($automated) {
                 $current->task()->create(['next_run_at' => now()]);
             }
             $this->event($current, $automated ? 'approved' : 'manual_approved', $operator);
         });
+    }
+
+    private function selectedProvider(?string $selection): ?PixPayoutChannel
+    {
+        if ($selection === null || ! preg_match('/\Aprovider:([1-9][0-9]{0,18})\z/', $selection, $matches)) {
+            return null;
+        }
+
+        return PixPayoutChannel::query()->where('enabled', true)->find($matches[1]);
     }
 
     private function supportsAmount(PixPayoutChannel $channel, PixWithdrawal $order): bool
@@ -213,7 +248,7 @@ class PixWithdrawals
     {
         abort_unless($operator->hasPermission('pix.review'), 403);
         $this->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($operator): void {
-            abort_unless(in_array($current->status, ['processing', 'unresolved'], true)
+            abort_unless($current->payout_number === null && in_array($current->status, ['processing', 'unresolved'], true)
                 && $task?->send_started_at !== null && ! $task->lease_until?->isFuture(), 409);
             abort_unless($current->payout_configuration !== null || $this->channel->isAvailable(), 503, 'Pix 出款暂未开放。');
             $task->forceFill(['next_run_at' => now()])->save();

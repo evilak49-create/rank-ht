@@ -69,7 +69,7 @@ class ProtectionClaims
                     'request_id' => $requestId, 'member_id' => $owner->id, 'platform_binding_id' => $binding->id,
                     'platform_id' => $binding->platform_id, 'protection_term_id' => $termId,
                     'platform_name' => $binding->platform->name, 'platform_account_id' => $binding->platform_account_id,
-                    'protection_status' => $binding->protection_status, 'amount_cents' => $cents,
+                    'protection_status' => $binding->currentProtectionStatus(), 'amount_cents' => $cents,
                     'withdrawn_at' => Carbon::parse($data['withdrawn_at'])->utc(), 'description' => $data['description'],
                 ]);
                 $claim->evidence()->createMany($files);
@@ -92,6 +92,26 @@ class ProtectionClaims
     public static function maskAccount(string $account): string
     {
         return '****'.(mb_strlen($account) > 4 ? mb_substr($account, -4) : '');
+    }
+
+    public function resolve(ProtectionClaim $case, User $operator, string $outcome): void
+    {
+        abort_unless($operator->hasPermission('protection.claims.resolve'), 403);
+        abort_unless(in_array($outcome, ['resolved', 'unresolved'], true), 422);
+        DB::transaction(function () use ($case, $operator, $outcome): void {
+            $updated = ProtectionClaim::query()->whereKey($case->id)->where('case_status', 'pending')
+                ->update(['case_status' => $outcome]);
+            if ($updated === 0) {
+                abort_unless($case->fresh()?->case_status === $outcome, 409, '该申诉已结案。');
+
+                return;
+            }
+            DB::table('admin_audits')->insert([
+                'user_id' => $operator->id, 'member_id' => $case->member_id, 'action' => 'protection.case_resolved',
+                'details' => json_encode(['case_id' => $case->id, 'new_status' => $outcome], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+            ]);
+        }, 3);
     }
 
     public function setEligibility(PlatformBinding $binding, User $operator, string $status): void

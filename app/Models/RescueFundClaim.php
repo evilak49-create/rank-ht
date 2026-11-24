@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'member_id', 'platform_id', 'platform_binding_id', 'platform_name', 'request_id',
@@ -12,6 +13,11 @@ use Illuminate\Database\Eloquent\Model;
 class RescueFundClaim extends Model
 {
     public $timestamps = false;
+
+    public function member(): BelongsTo
+    {
+        return $this->belongsTo(Member::class);
+    }
 
     protected function casts(): array
     {

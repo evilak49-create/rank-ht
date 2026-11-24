@@ -72,12 +72,9 @@ class MemberAdministrationTest extends TestCase
 
         $this->assertDatabaseCount('point_entries', 1);
         $this->assertSame(35, $member->refresh()->points_balance);
-        $this->actingAs($operator, 'web')->get('/admin/point-entries')->assertOk()->assertSee('测试活动补发');
-        $this->get('/admin/members')->assertOk();
-        Livewire::test(ListMembers::class)
-            ->callAction(TestAction::make('adjust_points')->table($member), [
-                'direction' => 'debit', 'amount' => 5, 'reason' => '补发修正',
-            ])->assertHasNoActionErrors();
+        $service->adjustPoints($member, [
+            ...$command, 'direction' => 'debit', 'amount' => 5, 'operation_key' => (string) Str::uuid(),
+        ], $operator);
         $this->assertSame(30, $member->refresh()->points_balance);
         $this->assertDatabaseCount('point_entries', 2);
     }

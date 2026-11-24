@@ -35,6 +35,14 @@ return [
     'sms' => [
         'driver' => env('SMS_DRIVER'),
     ],
+    'turnstile' => [
+        'site_key' => env('TURNSTILE_SITE_KEY'),
+        'secret' => env('TURNSTILE_SECRET'),
+        'hostname' => env('TURNSTILE_HOSTNAME'),
+    ],
+    'registration' => [
+        'trusted_edge_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) env('REGISTRATION_TRUSTED_EDGE_PROXIES', ''))))),
+    ],
 
     /*
     |--------------------------------------------------------------------------

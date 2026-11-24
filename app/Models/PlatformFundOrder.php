@@ -17,8 +17,13 @@ class PlatformFundOrder extends Model
     {
         return [
             'points' => 'integer', 'cents_per_point' => 'integer', 'amount_cents' => 'integer', 'balance_paid_cents' => 'integer',
-            'reviewed_at' => 'datetime', 'paid_at' => 'datetime',
+            'reviewed_at' => 'datetime', 'paid_at' => 'datetime', 'rejection_deducted' => 'boolean',
         ];
+    }
+
+    public static function paymentWasRefunded(string $status, bool $rejectionDeducted): bool
+    {
+        return in_array($status, ['cancelled', 'failed'], true) || ($status === 'rejected' && ! $rejectionDeducted);
     }
 
     public function platform(): BelongsTo

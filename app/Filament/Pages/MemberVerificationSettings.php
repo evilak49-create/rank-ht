@@ -5,7 +5,8 @@ namespace App\Filament\Pages;
 use App\Auth\MemberVerification;
 use App\Models\User;
 use Filament\Facades\Filament;
-use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
@@ -13,11 +14,11 @@ use Illuminate\Validation\ValidationException;
 
 class MemberVerificationSettings extends Page
 {
-    protected static ?string $title = '会员验证码';
+    protected static ?string $title = '注册配置';
 
-    protected static string|\UnitEnum|null $navigationGroup = '系统设置';
+    protected static string|\UnitEnum|null $navigationGroup = '会员管理';
 
-    protected static ?int $navigationSort = 70;
+    protected static ?int $navigationSort = 20;
 
     protected string $view = 'filament.pages.member-verification-settings';
 
@@ -32,7 +33,12 @@ class MemberVerificationSettings extends Page
 
     public function mount(MemberVerification $verification): void
     {
-        $this->form->fill(['sms_enabled' => $verification->smsEnabled()]);
+        $settings = $verification->settings();
+        $this->form->fill([
+            'mode' => $settings->mode,
+            'ip_registration_limit' => $settings->ip_registration_limit,
+            'device_registration_limit' => $settings->device_registration_limit,
+        ]);
     }
 
     public function hydrate(): void
@@ -43,8 +49,12 @@ class MemberVerificationSettings extends Page
     public function form(Schema $schema): Schema
     {
         return $schema->statePath('data')->components([
-            Toggle::make('sms_enabled')->label('启用手机号短信验证码')
-                ->helperText('关闭后，注册和平台绑定使用图片验证码。已登录会员可用当前密码和图片验证码修改密码，短信找回密码暂停。'),
+            Radio::make('mode')->label('注册及自助绑定验证')->options(MemberVerification::MODES)->required()
+                ->helperText('未登录会员找回密码使用独立的短信验证。'),
+            TextInput::make('ip_registration_limit')->label('同 IP 历史注册上限')->integer()->minValue(1)->maxValue(2147483647)
+                ->helperText('只累计成功注册的会员。留空表示不限制。'),
+            TextInput::make('device_registration_limit')->label('同设备历史注册上限')->integer()->minValue(1)->maxValue(2147483647)
+                ->helperText('根据当前浏览器的设备标识累计。留空表示不限制。'),
         ]);
     }
 
@@ -52,13 +62,15 @@ class MemberVerificationSettings extends Page
     {
         abort_unless(self::canAccess(), 403);
         try {
-            $verification->save($this->form->getState()['sms_enabled'], Filament::auth()->user());
+            $verification->save($this->form->getState(), Filament::auth()->user());
         } catch (ValidationException $exception) {
-            $this->addError('data.sms_enabled', $exception->errors()['sms_enabled'][0]);
+            foreach ($exception->errors() as $field => $messages) {
+                $this->addError('data.'.$field, $messages[0]);
+            }
 
             return;
         }
 
-        Notification::make()->title('会员验证码设置已保存')->success()->send();
+        Notification::make()->title('注册配置已保存')->success()->send();
     }
 }

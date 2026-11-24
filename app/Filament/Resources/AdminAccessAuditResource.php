@@ -19,7 +19,7 @@ class AdminAccessAuditResource extends Resource
 
     protected static ?string $pluralModelLabel = '后台授权审计';
 
-    protected static string|\UnitEnum|null $navigationGroup = '系统设置';
+    protected static string|\UnitEnum|null $navigationGroup = '系统管理';
 
     protected static ?int $navigationSort = 30;
 

@@ -20,7 +20,7 @@ class BusinessTimezoneResource extends Resource
 
     protected static ?string $pluralModelLabel = '业务时区';
 
-    protected static string|\UnitEnum|null $navigationGroup = '系统设置';
+    protected static string|\UnitEnum|null $navigationGroup = '系统管理';
 
     protected static ?int $navigationSort = 40;
 

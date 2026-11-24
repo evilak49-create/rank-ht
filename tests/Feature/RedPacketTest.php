@@ -282,11 +282,12 @@ class RedPacketTest extends TestCase
         $this->assertDatabaseEmpty('pix_withdrawals');
     }
 
-    public function test_selected_manual_channel_can_settle_a_red_packet_after_the_channel_is_disabled(): void
+    public function test_a_legacy_manual_channel_can_settle_a_red_packet_after_the_channel_is_disabled(): void
     {
-        config(['services.pix.driver' => 'disabled']);
+        config(['services.pix.driver' => 'simulator']);
         $provider = PixPayoutChannel::create(['name' => 'Pix 人工渠道', 'enabled' => true]);
         [, $order] = $this->readyOrder();
+        config(['services.pix.driver' => 'disabled']);
         $operator = $this->operator(['pix.review']);
         $withdrawals = app(PixWithdrawals::class);
         $withdrawals->approve($order, $operator, 'provider:'.$provider->id);

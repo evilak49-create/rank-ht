@@ -23,7 +23,7 @@ class RedPackets
         'balance_title' => '累计红包',
         'invite_label' => '邀请好友',
         'rules_title' => '活动规则',
-        'rules_html' => '<p>拆开红包后可获得本轮提现目标金额 85% 至 95% 的初始奖励。好友通过邀请链接注册后，每次按剩余差额的 50% 至 70% 发放奖励。差额低于 R$ 0,10 时，下次有效邀请可补齐。</p>'
+        'rules_html' => '<p>拆开红包后可获得本轮提现目标金额的一部分作为初始奖励。好友通过邀请链接注册后，每次按剩余差额和当前活动比例发放奖励。差额低于 R$ 0,10 时，下次有效邀请可补齐。</p>'
             .'<p>邀请链接可跨轮次使用。达到本轮目标后产生的有效邀请，将在下一轮结算。达标后可通过 Pix 提现。</p>',
     ];
 
@@ -44,7 +44,8 @@ class RedPackets
             $round = RedPacketRound::query()->where('member_id', $owner->id)->whereNull('closed_at')->lockForUpdate()->first();
             if ($round === null) {
                 $rules = RedPacketRule::query()->latest('id')->firstOrFail();
-                $bps = random_int(8500, 9500);
+                $ratios = $rules->ratios();
+                $bps = random_int($ratios['initial_min'], $ratios['initial_max']);
                 $initial = intdiv($rules->threshold_cents * $bps, 10000);
                 $round = RedPacketRound::create([
                     'member_id' => $owner->id, 'red_packet_rule_id' => $rules->id, 'threshold_cents' => $rules->threshold_cents,
@@ -99,6 +100,22 @@ class RedPackets
         return $this->version(['threshold_cents' => $cents], $operator);
     }
 
+    public function saveRatios(array $input, User $operator): RedPacketRule
+    {
+        abort_unless($operator->hasPermission('red-packets.manage'), 403);
+        $format = ['required', 'regex:/\A\d{1,3}(?:\.\d{1,2})?\z/', 'numeric'];
+        $values = Validator::make($input, [
+            'initial_min' => [...$format, 'between:0,100'], 'initial_max' => [...$format, 'between:0,100'],
+            'invite_min' => [...$format, 'between:0.01,100'], 'invite_max' => [...$format, 'between:0.01,100'],
+        ])->validate();
+        $ratios = array_map(fn ($value): int => (int) round((float) $value * 100), $values);
+        if ($ratios['initial_min'] > $ratios['initial_max'] || $ratios['invite_min'] > $ratios['invite_max']) {
+            throw ValidationException::withMessages(['initial_min' => '比例最小值不能高于最大值。']);
+        }
+
+        return $this->version(['ratio_bps' => $ratios], $operator);
+    }
+
     public function pageCopy(): array
     {
         $active = RedPacketRule::query()->latest('id')->firstOrFail();
@@ -146,7 +163,7 @@ class RedPackets
             RedPacketRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
             $active = RedPacketRule::query()->latest('id')->lockForUpdate()->firstOrFail();
 
-            return RedPacketRule::create($changes + ['user_id' => $operator->id] + $active->only(['threshold_cents', 'page_copy']));
+            return RedPacketRule::create($changes + ['user_id' => $operator->id] + $active->only(['threshold_cents', 'page_copy', 'ratio_bps']));
         }, 3);
     }
 

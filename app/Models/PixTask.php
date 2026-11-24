@@ -28,4 +28,12 @@ class PixTask extends Model
             ->whereHas('withdrawal', fn ($query) => $query->where('member_id', $memberId)->where('status', 'processing'))
             ->update(['paused_at' => now(), 'next_run_at' => null]);
     }
+
+    public static function resumeProviderPayoutsForMember(int $memberId): void
+    {
+        self::query()->whereNull('send_started_at')->whereNotNull('paused_at')
+            ->whereHas('withdrawal', fn ($query) => $query->where('member_id', $memberId)->where('status', 'processing')
+                ->whereNotNull('payout_number'))
+            ->update(['paused_at' => null, 'next_run_at' => now()]);
+    }
 }

@@ -2,17 +2,14 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Resources\ShopOrderResource\Pages\ListShopOrders;
 use App\Models\AdminRole;
 use App\Models\Member;
 use App\Models\Product;
 use App\Models\ShopOrder;
 use App\Models\User;
 use App\Shop\PhysicalShop;
-use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Livewire\Livewire;
 use Tests\TestCase;
 
 class ShopOrderTest extends TestCase
@@ -93,18 +90,12 @@ class ShopOrderTest extends TestCase
         $next = $shop->checkout($member, [...$request, 'request_id' => (string) Str::uuid()])->id;
         $this->putJson('/api/v1/shipping-address', [...$request['address'], 'street' => 'Novo endereço'])->assertOk();
 
-        $this->actingAs($operator, 'web')->get('/admin/shop-orders')->assertOk()->assertSee('查看详情');
+        $this->actingAs($operator, 'web')->get('/admin/shop-orders')->assertNotFound();
         $nextOrder = ShopOrder::findOrFail($next);
-        $details = Livewire::test(ListShopOrders::class)->mountAction(TestAction::make('view_details')->table($nextOrder));
         foreach ($request['address'] as $field => $value) {
-            $details->assertSchemaComponentStateSet('address.'.$field, $value);
+            $this->assertSame($value, $nextOrder->address[$field]);
         }
-        Livewire::test(ListShopOrders::class)
-            ->assertActionHidden(TestAction::make('edit_tracking')->table($nextOrder))
-            ->assertActionHidden(TestAction::make('edit_tracking')->table($order));
-        Livewire::test(ListShopOrders::class)->callAction(TestAction::make('ship')->table($nextOrder), [
-            'carrier' => 'Test Carrier', 'tracking_number' => 'TRACK-123',
-        ])->assertHasNoActionErrors();
+        $shop->ship($nextOrder, ['carrier' => 'Test Carrier', 'tracking_number' => 'TRACK-123'], $operator);
 
         $this->actingAs($member, 'member')->getJson("/api/v1/shop/orders/$next")
             ->assertOk()->assertJsonPath('data.status', 'shipped')->assertJsonPath('data.tracking_number', 'TRACK-123');
@@ -115,19 +106,16 @@ class ShopOrderTest extends TestCase
 
         $viewer = User::factory()->create(['panel_enabled' => true]);
         $viewer->roles()->attach(AdminRole::create(['name' => 'shop-viewer', 'permissions' => ['shop.view-orders']]));
-        $this->actingAs($viewer, 'web');
-        Livewire::test(ListShopOrders::class)
-            ->assertActionHidden(TestAction::make('edit_tracking')->table($shippedOrder));
+        try {
+            $shop->correctTracking($shippedOrder, ['carrier' => 'Correios', 'tracking_number' => 'TRACK-456'], $viewer);
+            $this->fail('Expected a shipping permission check.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
 
         $editor = User::factory()->create(['panel_enabled' => true]);
         $editor->roles()->attach(AdminRole::create(['name' => 'shipping', 'permissions' => ['shop.view-orders', 'shop.ship-orders']]));
-        $this->actingAs($editor, 'web');
-        Livewire::test(ListShopOrders::class)
-            ->mountAction(TestAction::make('edit_tracking')->table($shippedOrder))
-            ->assertActionDataSet(['carrier' => 'Test Carrier', 'tracking_number' => 'TRACK-123'])
-            ->setActionData(['carrier' => 'Correios', 'tracking_number' => 'TRACK-456'])
-            ->callMountedAction()
-            ->assertHasNoActionErrors();
+        $shop->correctTracking($shippedOrder, ['carrier' => 'Correios', 'tracking_number' => 'TRACK-456'], $editor);
 
         $this->assertEquals($shippedAt, $shippedOrder->refresh()->shipped_at);
         $this->assertSame($operator->id, $shippedOrder->user_id);

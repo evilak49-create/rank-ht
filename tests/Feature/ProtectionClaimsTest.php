@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Resources\ProtectionEligibilityResource\Pages\ListProtectionEligibility;
 use App\Filament\Resources\ProtectionTermResource\Pages\ListProtectionTerms;
 use App\Models\AdminRole;
 use App\Models\ClaimEvidence;
@@ -15,7 +14,6 @@ use App\Storage\OssConfiguration;
 use App\Storage\OssGateway;
 use Aws\MockHandler;
 use Aws\Result;
-use Filament\Actions\Testing\TestAction;
 use GuzzleHttp\Psr7\Utils;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -88,6 +86,24 @@ class ProtectionClaimsTest extends TestCase
         $this->get($url)->assertForbidden();
     }
 
+    public function test_case_outcome_is_visible_to_member_without_touching_wallet(): void
+    {
+        Storage::fake('claim-evidence-local');
+        $member = $this->member('11912345678');
+        $binding = $this->binding($member);
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $id = $this->post('/api/v1/protection/claims', $this->payload($binding), ['Accept' => 'application/json'])
+            ->assertCreated()->assertJsonPath('data.case_status', 'pending')->json('data.id');
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => '申诉处理', 'permissions' => ['protection.claims.resolve']]));
+        app(\App\Protection\ProtectionClaims::class)->resolve(\App\Models\ProtectionClaim::findOrFail($id), $operator, 'resolved');
+        $this->getJson('/api/v1/protection/claims/'.$id)->assertOk()->assertJsonPath('data.case_status', 'resolved');
+        $this->assertSame(0, $member->refresh()->available_balance_cents);
+        $this->assertDatabaseCount('cash_balance_entries', 0);
+        app(\App\Protection\ProtectionClaims::class)->resolve(\App\Models\ProtectionClaim::findOrFail($id), $operator, 'resolved');
+        $this->assertDatabaseCount('admin_audits', 1);
+    }
+
     public function test_failed_or_invalid_uploads_leave_no_case_or_files(): void
     {
         $disk = Storage::fake('claim-evidence-local');
@@ -111,7 +127,7 @@ class ProtectionClaimsTest extends TestCase
         $this->assertSame([], $disk->allFiles());
     }
 
-    public function test_terms_have_versions_and_staff_can_update_eligibility_with_an_audit(): void
+    public function test_terms_have_versions_and_case_keeps_the_original_binding_snapshot(): void
     {
         Storage::fake('claim-evidence-local');
         $member = $this->member('11912345678');
@@ -123,14 +139,11 @@ class ProtectionClaimsTest extends TestCase
         ]));
         $this->actingAs($operator, 'web');
         $this->get('/admin/protection-terms')->assertOk();
-        $this->get('/admin/protection-eligibility')->assertOk();
+        $this->get('/admin/protection-eligibility')->assertNotFound();
         $platform = $binding->platform;
         $publish = ['platform_id' => $platform->id, 'title' => '保障说明', 'body' => '第一版条款'];
         Livewire::test(ListProtectionTerms::class)->callAction('publish', $publish)->assertHasNoActionErrors();
-        Livewire::test(ListProtectionEligibility::class)->callAction(TestAction::make('set_status')->table($binding), [
-            'status' => 'active',
-        ])->assertHasNoActionErrors();
-        $this->assertDatabaseHas('admin_audits', ['user_id' => $operator->id, 'member_id' => $member->id, 'action' => 'protection.eligibility_changed']);
+        $platform->forceFill(['guarantee_amount_brl' => 100])->save();
 
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $url = '/api/v1/protection/bindings/'.$binding->id.'/terms';

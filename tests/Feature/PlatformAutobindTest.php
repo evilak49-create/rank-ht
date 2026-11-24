@@ -38,7 +38,7 @@ class PlatformAutobindTest extends TestCase
         $this->assertSame(-325, $platform->bindings()->firstOrFail()->rescue_baseline['net_profit_cents']);
     }
 
-    public function test_a_missing_account_preserves_manual_binding_and_an_expired_click_cannot_bind(): void
+    public function test_unsuccessful_partner_lookup_keeps_manual_binding_available_even_after_a_late_retry(): void
     {
         [$member, $platform] = $this->fixture();
         $this->accountFound = false;
@@ -49,7 +49,7 @@ class PlatformAutobindTest extends TestCase
 
         $this->travel(2)->hours();
         $this->getJson($this->callbackUrl($member))->assertNoContent();
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
 
         $this->accountFound = true;
         $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated();

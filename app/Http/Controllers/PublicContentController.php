@@ -13,7 +13,7 @@ class PublicContentController extends Controller
     {
         $records = SiteBanner::query()->where('active', true)->orderBy('sort_order')->orderBy('id')->lazy(50)
             ->map(function (SiteBanner $banner) use ($publishing): ?array {
-                $target = $publishing->publicTarget($banner->target_type, $banner->target_id);
+                $target = $publishing->bannerTarget($banner);
 
                 return $target === null ? null : ['id' => $banner->id, 'name' => $banner->name, 'image_url' => $banner->image_url, 'target' => $target];
             })->filter()->take(5)->values()->all();
@@ -58,6 +58,7 @@ class PublicContentController extends Controller
 
         return response()->json(['data' => [
             ...$this->summary($article), 'body' => $article->body, 'steps' => $article->steps ?? [],
+            'body_html' => $article->body_html === null ? null : $publishing->sanitize($article->body_html),
             'action_target' => $publishing->publicTarget($article->target_type, $article->target_id),
         ]]);
     }

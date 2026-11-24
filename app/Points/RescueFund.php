@@ -34,7 +34,7 @@ class RescueFund
         foreach ($bindings as $binding) {
             $platform = $binding->platform;
             $entry = ['binding_id' => $binding->id, 'platform_name' => $platform->name, 'logo_url' => $platform->logo_url];
-            if ($tiers === [] || ! $this->canQuery($binding, $platform)) {
+            if ($tiers === [] || ! $this->canQuery($platform)) {
                 $unavailable[] = $entry;
 
                 continue;
@@ -70,7 +70,7 @@ class RescueFund
         }
 
         $platform = $binding->platform;
-        abort_unless($this->settings->current()['enabled'] && $this->canQuery($binding, $platform)
+        abort_unless($this->settings->current()['enabled'] && $this->canQuery($platform)
             && $binding->rescue_baseline !== null, 409, self::INELIGIBLE);
         try {
             $snapshot = $this->lookup($binding, $platform)?->rescueSnapshot();
@@ -91,7 +91,7 @@ class RescueFund
             }
 
             $settings = $this->settings->current(lock: true);
-            abort_unless($settings['enabled'] && $this->canQuery($current, $currentPlatform)
+            abort_unless($settings['enabled'] && $this->canQuery($currentPlatform)
                 && $current->rescue_baseline === $binding->rescue_baseline
                 && $current->platform_account_id === $binding->platform_account_id
                 && $currentPlatform->network === $platform->network
@@ -120,10 +120,40 @@ class RescueFund
         }, 3);
     }
 
-    private function canQuery(PlatformBinding $binding, Platform $platform): bool
+    public function inspectBinding(PlatformBinding $binding): array
     {
-        return $binding->protection_status === 'active'
-            && $platform->status() === 'available' && $platform->guarantee_amount_brl > 0
+        $settings = $this->settings->current();
+        $platform = $binding->platform;
+        $baseline = ['baseline_at' => $binding->rescue_baseline['observed_at'] ?? null];
+        if (! $settings['enabled']) {
+            return $baseline + ['result' => '救援金未开放'];
+        }
+        if (! $this->canQuery($platform)) {
+            return $baseline + ['result' => '平台或绑定当前不支持救援金'];
+        }
+        if ($binding->rescue_baseline === null) {
+            return $baseline + ['result' => '等待建立有效基线'];
+        }
+        $tiers = PlatformRebateTiers::effective(PointRule::query()->latest('id')->first());
+        if ($tiers === []) {
+            return $baseline + ['result' => '暂无返利档位'];
+        }
+        try {
+            $snapshot = $this->lookup($binding, $platform)?->rescueSnapshot();
+        } catch (PlatformQueryFailure) {
+            return $baseline + ['result' => '合作平台查询暂不可用'];
+        }
+        $assessment = $this->assess($binding, $snapshot, $settings, $tiers);
+        if ($assessment === []) {
+            return $baseline + ['result' => '未取得可与基线比较的有效数据'];
+        }
+
+        return $baseline + $assessment + ['result' => $assessment['amount_cents'] > 0 ? '可领取' : '本期尚未达标'];
+    }
+
+    private function canQuery(Platform $platform): bool
+    {
+        return $platform->status() === 'available' && $platform->guarantee_amount_brl > 0
             && ($platform->network === PlatformNetwork::Panda || isset($platform->active_query['net_profit_field']));
     }
 
@@ -139,7 +169,7 @@ class RescueFund
             $current = PlatformBinding::query()->lockForUpdate()->find($binding->id);
             if ($current !== null && $current->rescue_baseline === null
                 && $current->platform_id === $platform->id && $current->platform_account_id === $binding->platform_account_id
-                && $this->canQuery($current, $currentPlatform)) {
+                && $this->canQuery($currentPlatform)) {
                 $current->forceFill(['rescue_baseline' => $snapshot])->save();
             }
         }, 3);

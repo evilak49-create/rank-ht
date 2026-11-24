@@ -26,7 +26,7 @@ class SupportSettings extends Page
 
     protected static ?string $title = '客服设置';
 
-    protected static string|\UnitEnum|null $navigationGroup = '内容与客服';
+    protected static string|\UnitEnum|null $navigationGroup = '客服管理';
 
     protected static ?int $navigationSort = 40;
 

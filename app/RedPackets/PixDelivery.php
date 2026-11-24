@@ -31,6 +31,12 @@ class PixDelivery
             }
 
             $send = $task->send_started_at === null;
+            if (! $send && $current->payout_number !== null) {
+                $this->recordExternalSubmission($current, $task, new PixResult('unknown'));
+
+                return null;
+            }
+
             if ($send && $member->disabled_at !== null) {
                 $task->forceFill(['paused_at' => now(), 'next_run_at' => null])->save();
                 $this->withdrawals->event($current, 'paused');
@@ -60,9 +66,48 @@ class PixDelivery
         }
 
         $this->withdrawals->withLockedOrder($current, function (PixWithdrawal $order, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($key, $result): void {
-            if ($task?->lease_key === $key) {
+            if ($task?->lease_key !== $key) {
+                return;
+            }
+
+            if ($order->payout_number !== null) {
+                $this->recordExternalSubmission($order, $task, $result);
+            } else {
                 $this->applyResult($order, $round, $member, $task, $result);
             }
+        });
+    }
+
+    private function recordExternalSubmission(PixWithdrawal $order, PixTask $task, PixResult $result): void
+    {
+        $submitted = $result->status === 'submitted';
+        $order->forceFill([
+            'status' => $submitted ? 'processing' : 'unresolved',
+            'channel_reference' => $order->channel_reference ?? $result->reference,
+        ])->save();
+        $task->forceFill(['next_run_at' => null, 'lease_key' => null, 'lease_until' => null])->save();
+        $this->withdrawals->event($order, $submitted ? 'awaiting_callback' : 'result_unknown');
+    }
+
+    public function reconcileProviderCallback(PixWithdrawal $order, PixResult $result): void
+    {
+        $this->withdrawals->withLockedOrder($order, function (PixWithdrawal $current, ?RedPacketRound $round, Member $member, ?PixTask $task) use ($result): void {
+            if (! in_array($current->status, ['processing', 'unresolved'], true) || $task?->send_started_at === null) {
+                return;
+            }
+
+            if ($result->status === 'unknown') {
+                if ($current->callback_received_at === null) {
+                    $current->forceFill(['callback_received_at' => now(), 'channel_reference' => $result->reference])->save();
+                    $this->withdrawals->event($current, 'callback_pending');
+                }
+
+                return;
+            }
+
+            $current->forceFill(['callback_received_at' => now()]);
+            $this->withdrawals->finish($current, $round, $member, $task, $result->status, $result->reference);
+            $this->withdrawals->event($current, $result->status);
         });
     }
 

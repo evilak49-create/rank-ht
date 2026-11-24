@@ -54,6 +54,9 @@ class OperationsDashboardTest extends TestCase
         $paid = $this->withdrawal($member, $round->id, 'paid', 7045, now());
         $paid->forceFill(['created_at' => now()->subDay()])->save();
         $waiting = $this->withdrawal($member, $round->id, 'pending', 10000);
+        $awaiting = $this->withdrawal($member, $round->id, 'processing', 5000);
+        $task = $awaiting->task()->create(['next_run_at' => null]);
+        $task->forceFill(['send_started_at' => now()])->save();
         $this->withdrawal($member, $round->id, 'failed', 5000);
 
         $stats = app(DashboardStatistics::class)->overview(true);
@@ -67,8 +70,10 @@ class OperationsDashboardTest extends TestCase
         $this->actingAs($operator, 'web')->get('/admin')->assertOk()->assertDontSee('待审核提款')->assertDontSee('R$ 1.320,80');
         $operator->roles()->attach(AdminRole::create(['name' => '待办处理', 'permissions' => ['pix.view', 'pix.review']]));
         $list = '/admin/pix-withdrawals?'.http_build_query(['filters' => ['status' => ['value' => 'pending']]]);
-        $this->get('/admin')->assertOk()->assertSee('待审核提款')->assertSee('R$ 1.320,80')->assertSee($list);
+        $this->get('/admin')->assertOk()->assertSeeInOrder(['出款结果待确认', '待审核提款', '数据概览'])->assertSee('R$ 1.320,80')->assertSee($list);
         $this->get($list)->assertOk()->assertSee($waiting->order_number)->assertDontSee($paid->order_number);
+        $payouts = '/admin/pix-payouts?'.http_build_query(['filters' => ['awaiting_result' => ['isActive' => true]]]);
+        $this->get($payouts)->assertOk()->assertSee($awaiting->order_number)->assertDontSee($paid->order_number);
     }
 
     private function withdrawal(Member $member, int $round, string $status, int $amount, ?Carbon $paidAt = null): PixWithdrawal

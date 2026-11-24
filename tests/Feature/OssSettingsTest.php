@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Content\Publishing;
 use App\Filament\Pages\OssSettings;
-use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Models\AdminRole;
 use App\Models\ClaimEvidence;
 use App\Models\OssLocation;
@@ -121,11 +120,9 @@ class OssSettingsTest extends TestCase
         $banner = app(Publishing::class)->banner(null, [
             'name' => 'Banner', 'image_upload' => $this->image(), 'target_type' => 'home', 'sort_order' => 0, 'active' => true,
         ], $staff);
-        $this->actingAs($staff, 'web');
-        Livewire::test(ListProducts::class)->mountAction('create_product')
-            ->setActionData(['name' => 'Product', 'price_brl' => '25.75', 'is_active' => true])
-            ->set('mountedActions.0.data.image_upload', [$this->image()])
-            ->callMountedAction()->assertHasNoActionErrors();
+        app(PhysicalShop::class)->saveProduct(null, [
+            'name' => 'Product', 'price_brl' => '25.75', 'is_active' => true, 'image_upload' => $this->image(),
+        ], $staff);
         $images = [$platform->logo_url, $banner->image_url, Product::query()->sole()->image_url];
         $this->assertCount(3, array_unique($images));
         foreach ($images as $url) {

@@ -63,38 +63,33 @@ class AdminImageUploadsTest extends TestCase
         $this->assertCount(4, $disk->allFiles());
     }
 
-    public function test_admin_forms_upload_banner_and_nested_help_image_and_menu_groups_are_ordered(): void
+    public function test_banner_upload_and_legacy_help_images_are_preserved_in_the_rich_editor(): void
     {
         Storage::fake('site-images');
         app(AdminAccountCreator::class)->create('admin-uploads', 'Admin', 'password');
         $this->actingAs(User::query()->where('username', 'admin-uploads')->sole(), 'web');
         $this->get('/admin')->assertOk()->assertSeeInOrder([
-            '运营总览', '会员与活动', '平台与保障', '积分与配置', '内容与客服', '系统设置',
+            '运营总览', '会员管理', '平台管理', '资金管理', '活动管理', '内容管理', '客服管理', '系统管理',
         ]);
 
         Livewire::test(ListSiteBanners::class)->mountAction('create_banner')
-            ->setActionData(['name' => 'Banner', 'active' => true, 'sort_order' => 0, 'target_type' => 'home'])
+            ->setActionData(['name' => 'Banner', 'active' => true, 'sort_order' => 0, 'target_path' => '#/'])
             ->set('mountedActions.0.data.image_upload', [$this->image()])
             ->callMountedAction()->assertHasNoActionErrors();
         $this->assertStringStartsWith('/uploads/images/', SiteBanner::query()->sole()->image_url);
 
-        $form = Livewire::test(ListHelpArticles::class)->mountAction('create_article')
-            ->setActionData([
-                'title' => 'Help', 'body' => 'Body', 'published' => true, 'sort_order' => 0,
-                'steps' => [['title' => 'First', 'body' => 'Details']],
-            ]);
-        $step = array_key_first($form->get('mountedActions.0.data.steps'));
-        $form->set("mountedActions.0.data.steps.$step.image_upload", [$this->image()])
-            ->callMountedAction()->assertHasNoActionErrors();
-        $article = SiteArticle::query()->sole();
-        $this->getJson('/api/v1/content/help/'.$article->id)->assertOk()
-            ->assertJsonPath('data.steps.0.image_url', $article->steps[0]['image_url']);
-        $this->assertStringStartsWith('/uploads/images/', $article->steps[0]['image_url']);
+        $article = app(Publishing::class)->article('help', null, [
+            'title' => 'Help', 'body' => 'Body', 'published' => true,
+            'steps' => [['title' => 'First', 'body' => 'Details', 'image_upload' => $this->image()]],
+        ], User::query()->where('username', 'admin-uploads')->sole());
+        $imageUrl = $article->steps[0]['image_url'];
         Livewire::test(ListHelpArticles::class)->mountAction(TestAction::make('edit_article')->table($article))
             ->set('mountedActions.0.data.title', 'Updated')
             ->callMountedAction()->assertHasNoActionErrors();
-        $this->getJson('/api/v1/content/help/'.$article->id)->assertOk()
-            ->assertJsonPath('data.title', 'Updated')->assertJsonPath('data.steps.0.image_url', $article->steps[0]['image_url']);
+        $detail = $this->getJson('/api/v1/content/help/'.$article->id)->assertOk()->assertJsonPath('data.title', 'Updated')
+            ->assertJsonCount(0, 'data.steps');
+        $this->assertStringContainsString($imageUrl, $detail->json('data.body_html'));
+        $this->get($imageUrl)->assertOk()->assertHeader('Content-Type', 'image/png');
     }
 
     private function image(): UploadedFile

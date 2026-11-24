@@ -16,6 +16,6 @@ class ListRedPacketRounds extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [RedPacketRoundResource::pageCopyAction(), RedPacketRoundResource::thresholdAction()];
+        return [RedPacketRoundResource::pageCopyAction(), RedPacketRoundResource::thresholdAction(), RedPacketRoundResource::ratioAction()];
     }
 }

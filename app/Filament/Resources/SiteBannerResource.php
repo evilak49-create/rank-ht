@@ -21,7 +21,7 @@ class SiteBannerResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Banner';
 
-    protected static string|\UnitEnum|null $navigationGroup = '内容与客服';
+    protected static string|\UnitEnum|null $navigationGroup = '内容管理';
 
     protected static ?int $navigationSort = 10;
 
@@ -37,11 +37,12 @@ class SiteBannerResource extends Resource
         return $table->defaultSort('sort_order')->columns([
             TextColumn::make('name')->label('名称')->searchable(),
             TextColumn::make('sort_order')->label('顺序')->sortable(),
-            TextColumn::make('target_type')->label('站内目标')->formatStateUsing(fn (string $state) => Publishing::TARGETS[$state]),
+            TextColumn::make('target_path')->label('跳转链接')->state(fn (SiteBanner $record) => app(Publishing::class)->bannerTarget($record)),
             IconColumn::make('active')->label('启用')->boolean(),
         ])->recordActions([
             Action::make('edit_banner')->label('编辑')->authorize(fn () => self::canViewAny())->schema(self::fields())
-                ->fillForm(fn (SiteBanner $record): array => $record->only(['name', 'image_url', 'target_type', 'target_id', 'sort_order', 'active']))
+                ->fillForm(fn (SiteBanner $record): array => $record->only(['name', 'image_url', 'sort_order', 'active'])
+                    + ['target_path' => app(Publishing::class)->bannerTarget($record) ?? '/'])
                 ->action(fn (Action $action, SiteBanner $record, array $data) => ActionForm::submit($action, fn () => self::save($record, $data))),
         ]);
     }
@@ -66,7 +67,7 @@ class SiteBannerResource extends Resource
             PublicImageField::current('image_url'),
             TextInput::make('sort_order')->label('展示顺序')->integer()->minValue(0)->maxValue(100000)->default(0)->required(),
             Toggle::make('active')->label('启用')->default(false),
-            ...SiteTargetFields::make(true),
+            TextInput::make('target_path')->label('跳转链接')->placeholder('#/announcements/12')->maxLength(1024)->required(),
         ];
     }
 

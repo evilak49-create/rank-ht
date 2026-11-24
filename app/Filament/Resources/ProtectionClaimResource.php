@@ -16,6 +16,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 
@@ -23,9 +24,9 @@ class ProtectionClaimResource extends Resource
 {
     protected static ?string $model = ProtectionClaim::class;
 
-    protected static ?string $pluralModelLabel = '申诉案件';
+    protected static ?string $pluralModelLabel = '保障申诉';
 
-    protected static string|\UnitEnum|null $navigationGroup = '平台与保障';
+    protected static string|\UnitEnum|null $navigationGroup = '平台管理';
 
     protected static ?int $navigationSort = 60;
 
@@ -66,6 +67,10 @@ class ProtectionClaimResource extends Resource
             TextColumn::make('amount_cents')->label('出款金额')->formatStateUsing(self::money(...)),
             TextColumn::make('withdrawn_at')->label('出款时间')->dateTime()->sortable(),
             TextColumn::make('created_at')->label('提交时间')->dateTime()->sortable(),
+            TextColumn::make('case_status')->label('案件状态')->badge()
+                ->formatStateUsing(fn (string $state): string => ProtectionClaim::CASE_STATUSES[$state]),
+        ])->filters([
+            SelectFilter::make('case_status')->label('案件状态')->options(ProtectionClaim::CASE_STATUSES)->default('pending'),
         ])->recordActions([ViewAction::make()->label('查看案件')]);
     }
 
@@ -76,6 +81,8 @@ class ProtectionClaimResource extends Resource
             TextEntry::make('member.phone')->label('提交会员'),
             TextEntry::make('platform_name')->label('申请时平台'),
             TextEntry::make('platform_account_id')->label('平台账号'),
+            TextEntry::make('case_status')->label('案件状态')->badge()
+                ->formatStateUsing(fn (string $state): string => ProtectionClaim::CASE_STATUSES[$state]),
             TextEntry::make('protection_status')->label('提交时保障状态')
                 ->formatStateUsing(fn (string $state): string => ProtectionClaims::STATUSES[$state]),
             TextEntry::make('protection_term_id')->label('提交时条款版本')->placeholder('未发布'),

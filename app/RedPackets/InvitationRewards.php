@@ -5,6 +5,7 @@ namespace App\RedPackets;
 use App\Models\Member;
 use App\Models\RedPacketInvite;
 use App\Models\RedPacketRound;
+use App\Models\RedPacketRule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -35,6 +36,8 @@ class InvitationRewards
     // The caller locks the inviter and the active round in that order.
     public function settlePending(RedPacketRound $lockedRound): void
     {
+        $rule = RedPacketRule::query()->latest('id')->firstOrFail();
+        $ratios = $rule->ratios();
         $pending = RedPacketInvite::query()->where('inviter_id', $lockedRound->member_id)
             ->whereNull('settled_at')->lockForUpdate()->lazyById(50);
         foreach ($pending as $invite) {
@@ -43,12 +46,13 @@ class InvitationRewards
                 break;
             }
 
-            $bps = $remaining < 10 ? null : random_int(5000, 7000);
-            $reward = $bps === null ? $remaining : intdiv($remaining * $bps, 10000);
+            $bps = $remaining < 10 ? null : random_int($ratios['invite_min'], $ratios['invite_max']);
+            $reward = $bps === null ? $remaining : max(1, intdiv($remaining * $bps, 10000));
             $lockedRound->forceFill(['balance_cents' => $lockedRound->balance_cents + $reward])->save();
             $invite->forceFill(['red_packet_round_id' => $lockedRound->id, 'reward_cents' => $reward, 'settled_at' => now()])->save();
             $this->ledger->record($lockedRound, 'invite', $reward, inviteId: $invite->id, calculation: [
                 'remaining_before' => $remaining, 'method' => $bps === null ? 'tail' : 'percentage', 'bps' => $bps,
+                'ratio_rule_id' => $rule->id,
             ]);
         }
     }

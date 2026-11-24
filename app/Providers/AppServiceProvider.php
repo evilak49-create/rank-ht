@@ -49,6 +49,10 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(10)->by('ip:'.$request->ip()),
             Limit::perMinute(1)->by('phone:'.MemberPhone::normalize($request->input('phone'))),
         ]);
+        RateLimiter::for('support-conversation', fn (Request $request): array => [
+            Limit::perMinute(360)->by('ip:'.$request->ip()),
+            Limit::perMinute(60)->by('browser:'.hash('sha256', $request->session()->getId())),
+        ]);
 
         foreach (['member-verification', 'member-login'] as $name) {
             RateLimiter::for($name, fn (Request $request): array => [

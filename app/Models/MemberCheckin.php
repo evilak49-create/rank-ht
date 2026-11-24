@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'member_id', 'checkin_rule_version_id', 'business_date', 'timezone',
-    'round_started_on', 'streak', 'reward_points', 'completed_round',
+    'round_started_on', 'streak', 'reward_points', 'reward_cents', 'completed_round',
 ])]
 class MemberCheckin extends Model
 {
@@ -16,7 +16,7 @@ class MemberCheckin extends Model
     {
         return [
             'streak' => 'integer',
-            'reward_points' => 'integer', 'completed_round' => 'boolean',
+            'reward_points' => 'integer', 'reward_cents' => 'integer', 'completed_round' => 'boolean',
         ];
     }
 

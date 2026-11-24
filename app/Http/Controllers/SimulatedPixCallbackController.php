@@ -26,7 +26,7 @@ class SimulatedPixCallbackController extends Controller
             'reference' => ['required_if:status,paid', 'nullable', 'string', 'max:190'],
         ])->validate();
 
-        $order = PixWithdrawal::query()->where('order_number', $data['order_number'])->firstOrFail();
+        $order = PixWithdrawal::query()->whereNull('payout_configuration')->where('order_number', $data['order_number'])->firstOrFail();
         $delivery->reconcile($order, new PixResult($data['status'], $data['reference'] ?? null));
 
         return response()->noContent();

@@ -16,14 +16,15 @@ use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\DB;
 
 class RedPacketRoundResource extends Resource
 {
     protected static ?string $model = RedPacketRound::class;
 
-    protected static ?string $pluralModelLabel = '红包轮次';
+    protected static ?string $pluralModelLabel = '红包管理';
 
-    protected static string|\UnitEnum|null $navigationGroup = '会员与活动';
+    protected static string|\UnitEnum|null $navigationGroup = '活动管理';
 
     protected static ?int $navigationSort = 30;
 
@@ -35,8 +36,9 @@ class RedPacketRoundResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->defaultSort('id', 'desc')->columns([
-            TextColumn::make('id')->label('轮次')->sortable(),
+            TextColumn::make('id')->label('红包编号')->sortable()->searchable(),
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
+            TextColumn::make('invites_count')->label('已结算邀请')->counts('invites'),
             TextColumn::make('red_packet_rule_id')->label('规则版本'),
             TextColumn::make('threshold_cents')->label('提现门槛')->formatStateUsing(self::money(...)),
             TextColumn::make('initial_cents')->label('初始红包')->formatStateUsing(self::money(...)),
@@ -44,7 +46,35 @@ class RedPacketRoundResource extends Resource
             TextColumn::make('frozen_cents')->label('冻结金额')->formatStateUsing(self::money(...)),
             TextColumn::make('created_at')->label('开启时间')->dateTime(),
             TextColumn::make('closed_at')->label('到账结清时间')->dateTime(),
+        ])->recordActions([
+            Action::make('cashflow')->label('红包流水')->modalSubmitAction(false)
+                ->authorize(fn (): bool => self::canViewAny())
+                ->modalContent(fn (RedPacketRound $record) => view('filament.red-packet-ledger', [
+                    'entries' => DB::table('red_packet_entries')->where('red_packet_round_id', $record->id)->orderByDesc('id')->get(),
+                ])),
+            Action::make('invitations')->label('邀请明细')->visible(fn (): bool => RedPacketInviteResource::canViewAny())
+                ->url(fn (RedPacketRound $record): string => RedPacketInviteResource::getUrl(parameters: [
+                    'filters' => ['packet' => ['id' => (string) $record->id]],
+                ])),
         ]);
+    }
+
+    public static function ratioAction(): Action
+    {
+        $labels = [
+            'initial_min' => '初始比例最小值', 'initial_max' => '初始比例最大值',
+            'invite_min' => '邀请比例最小值', 'invite_max' => '邀请比例最大值',
+        ];
+
+        return Action::make('configure_ratios')->label('设置红包比例')
+            ->authorize(fn (): bool => self::allowed('red-packets.manage'))
+            ->fillForm(fn (): array => array_map(fn (int $bps): string => PointRules::display($bps, 2),
+                RedPacketRule::query()->latest('id')->firstOrFail()->ratios()))
+            ->schema(array_map(fn (string $key, string $label) => TextInput::make($key)->label($label)
+                ->inputMode('decimal')->suffix('%')->required(), array_keys($labels), $labels))
+            ->action(fn (Action $action, array $data) => ActionForm::submit($action,
+                fn () => app(RedPackets::class)->saveRatios($data, Filament::auth()->user())))
+            ->successNotificationTitle('已保存红包比例');
     }
 
     public static function thresholdAction(): Action

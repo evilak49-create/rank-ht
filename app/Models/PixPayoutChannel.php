@@ -14,6 +14,10 @@ class PixPayoutChannel extends Model
 
     protected function casts(): array
     {
-        return ['enabled' => 'boolean', 'configuration' => 'encrypted:array'];
+        return [
+            'enabled' => 'boolean', 'configuration' => 'encrypted:array',
+            'last_balance_cents' => 'integer', 'last_balance_at' => 'datetime',
+            'last_balance_attempt_at' => 'datetime', 'last_balance_failed' => 'boolean',
+        ];
     }
 }

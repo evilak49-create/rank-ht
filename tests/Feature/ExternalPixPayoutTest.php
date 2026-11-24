@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\PixPayoutChannelResource\Pages\ListPixPayoutChannels;
+use App\Filament\Resources\PixPayoutResource;
 use App\Filament\Resources\PixWithdrawalResource\Pages\ListPixWithdrawals;
 use App\Models\AdminRole;
 use App\Models\Member;
@@ -11,6 +13,7 @@ use App\Models\User;
 use App\RedPackets\ExternalPixChannel;
 use App\RedPackets\PixDelivery;
 use App\RedPackets\PixWithdrawals;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,13 +37,14 @@ class ExternalPixPayoutTest extends TestCase
     }
 
     #[DataProvider('providers')]
-    public function test_approval_submits_once_and_query_settles_only_the_matching_order(string $driver, string $merchantField, string $accountField): void
+    public function test_approval_submits_once_and_only_a_matching_callback_can_settle(string $driver, string $merchantField, string $accountField): void
     {
         [$order, $operator, $channel, $config] = $this->fixture($driver);
         $subject = app(PixWithdrawals::class);
         $choice = 'provider:'.$channel->id;
         $this->assertArrayHasKey($choice, $subject->payoutOptions($order));
         $this->assertThrows(fn () => $subject->approve($order, $operator, $choice), ValidationException::class);
+        Http::fake([$config['balance'] => Http::response(['success' => true, 'data' => [['currency' => 'BRL', 'balance' => 400]]])]);
         $subject->approve($order, $operator, $choice, 'Nome De Teste');
         $order->refresh();
         $this->assertStringNotContainsString('fixture-secret', (string) DB::table('pix_withdrawals')->value('payout_configuration'));
@@ -50,13 +54,11 @@ class ExternalPixPayoutTest extends TestCase
             'orderNo' => 'provider-ref', 'status' => 'SUCCESS', 'currency' => 'BRL', 'amount' => 400];
         Http::fake([
             $config['create'] => Http::response(['success' => true, 'data' => $payload]),
-            $config['query'] => Http::sequence()
-                ->push(['success' => true, 'data' => array_replace($payload, ['amount' => 500])])
-                ->push(['success' => true, 'data' => $payload]),
         ])->preventStrayRequests();
         $delivery = app(PixDelivery::class);
         $delivery->process($order->task->id);
-        $this->assertSame('unresolved', $order->refresh()->status);
+        $this->assertSame('processing', $order->refresh()->status);
+        $this->assertSame('provider-ref', $order->channel_reference);
         Http::assertSent(function (Request $request) use ($config, $accountField, $merchantField, $order): bool {
             if ($request->url() !== $config['create']) {
                 return false;
@@ -71,19 +73,51 @@ class ExternalPixPayoutTest extends TestCase
                 && $signature === ExternalPixChannel::signature($sent, 'fixture-secret');
         });
 
-        $this->travel(6)->minutes();
+        $this->travel(2)->days();
         $delivery->process($order->task->id);
-        $this->assertSame('unresolved', $order->refresh()->status);
-        $this->travel(6)->minutes();
-        $delivery->process($order->task->id);
+        $this->assertSame('processing', $order->refresh()->status);
+        $this->assertSame(400, $order->member->held_balance_cents);
+        Http::assertNotSent(fn (Request $request) => $request->url() === $config['query']);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.30'])
+            ->postJson('/api/v1/pix/provider-callback/'.$channel->id,
+                $payload + ['sign' => ExternalPixChannel::signature($payload, 'fixture-secret')])
+            ->assertOk();
         $this->assertSame('paid', $order->refresh()->status);
+        $this->assertNotNull($order->callback_received_at);
         $this->assertSame(0, $order->member->held_balance_cents);
-        Http::assertSentCount(3);
+    }
+
+    public function test_confirmation_blocks_known_insufficiency_and_proceeds_when_balance_is_unavailable(): void
+    {
+        [$order, $operator, $channel, $config] = $this->fixture('u2cpay');
+        $subject = app(PixWithdrawals::class);
+        $choice = 'provider:'.$channel->id;
+        Http::fake([$config['balance'] => Http::sequence()
+            ->push(['success' => true, 'data' => [['currency' => 'BRL', 'balance' => 399]]])
+            ->pushStatus(503)])->preventStrayRequests();
+
+        try {
+            $subject->approve($order, $operator, $choice, 'Nome De Teste');
+            $this->fail('A known insufficient balance must block approval.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['三方可用余额不足'], $exception->errors()['channel']);
+        }
+        $this->assertSame('pending', $order->refresh()->status);
+        $this->assertNull($order->task);
+        $this->assertSame(400, $order->member->held_balance_cents);
+
+        $subject->approve($order, $operator, $choice, 'Nome De Teste');
+        $this->assertSame('processing', $order->refresh()->status);
+        $this->assertNotNull($order->task);
+        $this->assertNotNull($order->payout_number);
+        Http::assertSentCount(2);
     }
 
     public function test_signed_and_allowlisted_callback_is_idempotent_and_preserves_the_approved_settings(): void
     {
         [$order, $operator, $channel, $config] = $this->fixture('u2cpay');
+        Http::fake([$config['balance'] => Http::response([])]);
         app(PixWithdrawals::class)->approve($order, $operator, 'provider:'.$channel->id, 'Nome De Teste');
         $order->task()->update(['send_started_at' => now()]);
         $channel->update(['configuration' => array_replace($config, ['secret' => 'new-secret'])]);
@@ -111,7 +145,7 @@ class ExternalPixPayoutTest extends TestCase
         [, $operator, $channel, $config] = $this->fixture('u2cpay');
         $operator->roles()->firstOrFail()->update(['permissions' => ['pix.view', 'pix.manage-channels']]);
         $this->actingAs($operator, 'web')->get('/admin/pix-withdrawals')->assertOk();
-        Livewire::test(ListPixWithdrawals::class)->mountAction('configure_u2cpay')
+        Livewire::test(ListPixPayoutChannels::class)->mountAction('configure_u2cpay')
             ->assertActionDataSet(['merchant' => 'fixture-merchant', 'secret' => null])
             ->setActionData([
                 'enabled' => false, 'merchant' => 'updated-merchant', 'secret' => '',
@@ -123,6 +157,46 @@ class ExternalPixPayoutTest extends TestCase
         $this->assertSame('fixture-secret', $channel->configuration['secret']);
         $this->assertSame(['192.0.2.45', '192.0.2.46'], $channel->configuration['callback_ips']);
         $this->assertStringNotContainsString('fixture-secret', (string) DB::table('pix_payout_channels')->value('configuration'));
+    }
+
+    public function test_channel_list_only_updates_balance_after_the_row_action(): void
+    {
+        [, $operator, $channel, $config] = $this->fixture('u2cpay');
+        $operator->roles()->firstOrFail()->update(['permissions' => ['pix.view', 'pix.manage-channels']]);
+        $this->actingAs($operator, 'web');
+        Http::fake([$config['balance'] => Http::sequence()
+            ->push(['success' => true, 'data' => [['currency' => 'BRL', 'balance' => 1250]]])
+            ->pushStatus(503)])->preventStrayRequests();
+
+        $page = Livewire::test(ListPixPayoutChannels::class)->assertCanSeeTableRecords([$channel]);
+        Http::assertNothingSent();
+        $page->callTableAction('refresh_balance', $channel)->assertHasNoTableActionErrors();
+        $this->assertSame(1250, $channel->refresh()->last_balance_cents);
+        $this->assertNotNull($channel->last_balance_at);
+        $page->callTableAction('refresh_balance', $channel)->assertHasNoTableActionErrors();
+        $this->assertSame(1250, $channel->refresh()->last_balance_cents);
+        $this->assertTrue($channel->last_balance_failed);
+    }
+
+    public function test_review_form_loads_the_selected_channels_balance_and_links_the_separate_payout(): void
+    {
+        [$order, $operator, $channel, $config] = $this->fixture('u2cpay');
+        $operator->roles()->firstOrFail()->update(['permissions' => ['pix.view', 'pix.review']]);
+        $this->actingAs($operator, 'web');
+        Http::fake([$config['balance'] => Http::response(['success' => true, 'data' => [['currency' => 'BRL', 'balance' => 750]]])])
+            ->preventStrayRequests();
+
+        $page = Livewire::test(ListPixWithdrawals::class)->mountAction(TestAction::make('approve')->table($order));
+        Http::assertNothingSent();
+        $page->set('mountedActions.0.data.channel', 'provider:'.$channel->id);
+        Http::assertSentCount(1);
+        $page->assertSet('mountedActions.0.data.preview_balance_cents', 750);
+        $this->assertStringContainsString('R$ 7.50', $page->getMountedActionModalHtml());
+        $page->set('mountedActions.0.data.recipient_name', 'Nome De Teste')->callMountedAction()->assertHasNoActionErrors();
+        $this->assertSame('processing', $order->refresh()->status);
+        Http::assertSentCount(2);
+        $this->get(PixPayoutResource::getUrl('index', ['search' => $order->order_number]))
+            ->assertOk()->assertSee($order->payout_number)->assertSee($order->order_number);
     }
 
     private function fixture(string $driver): array

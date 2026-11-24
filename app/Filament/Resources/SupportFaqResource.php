@@ -26,7 +26,7 @@ class SupportFaqResource extends Resource
 
     protected static ?string $pluralModelLabel = '常见问题';
 
-    protected static string|\UnitEnum|null $navigationGroup = '内容与客服';
+    protected static string|\UnitEnum|null $navigationGroup = '客服管理';
 
     protected static ?int $navigationSort = 50;
 

@@ -3,38 +3,40 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PixWithdrawalResource\Pages\ListPixWithdrawals;
-use App\Models\PixPayoutChannel;
 use App\Models\PixWithdrawal;
 use App\Models\User;
 use App\Points\PointRules;
 use App\RedPackets\Cpf;
-use App\RedPackets\ExternalPixChannel;
 use App\RedPackets\PixWithdrawals;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PixWithdrawalResource extends Resource
 {
     protected static ?string $model = PixWithdrawal::class;
 
-    protected static ?string $pluralModelLabel = 'Pix 提现审核';
+    protected static ?string $pluralModelLabel = '提现管理';
 
-    protected static string|\UnitEnum|null $navigationGroup = '积分与配置';
+    protected static string|\UnitEnum|null $navigationGroup = '资金管理';
 
-    protected static ?int $navigationSort = 70;
+    protected static ?int $navigationSort = 10;
 
-    private const STATUSES = [
+    public const STATUSES = [
         'pending' => '待审核', 'processing' => '出款处理中', 'unresolved' => '结果待确认',
         'paid' => '已到账', 'failed' => '出款失败', 'rejected' => '已拒绝',
         'cancelled' => '已取消',
@@ -46,7 +48,7 @@ class PixWithdrawalResource extends Resource
         'resumed' => '恢复出款', 'paused' => '暂停出款', 'lookup_requested' => '人工申请查单',
         'send_started' => '领取出款任务', 'lookup_started' => '开始查单', 'paid' => '确认到账',
         'failed' => '确认失败并解冻', 'result_unknown' => '渠道结果待确认', 'needs_review' => '转人工核对',
-        'cpf_viewed' => '查看 CPF',
+        'cpf_viewed' => '查看 CPF', 'awaiting_callback' => '等待三方回调', 'callback_pending' => '收到三方处理中回调',
         'manual_approved' => '审核通过，待人工出款', 'paid_manually' => '已登记人工出款',
     ];
 
@@ -62,7 +64,7 @@ class PixWithdrawalResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table->defaultSort('id', 'desc')->columns([
+        return $table->defaultSort('created_at', 'asc')->columns([
             TextColumn::make('order_number')->label('订单号')->searchable(),
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('funding_source')->label('提现来源')
@@ -73,6 +75,9 @@ class PixWithdrawalResource extends Resource
             TextColumn::make('amount_cents')->label('提现金额')->formatStateUsing(fn (int $state) => 'R$ '.PointRules::display($state, 2)),
             TextColumn::make('status')->label('状态')->badge()->formatStateUsing(fn (string $state) => self::STATUSES[$state]),
             TextColumn::make('payout_channel_name')->label('出款渠道')->placeholder('—'),
+            TextColumn::make('payout_number')->label('出款单号')->placeholder('—')->copyable()
+                ->url(fn (PixWithdrawal $record): ?string => $record->payout_number === null ? null
+                    : PixPayoutResource::getUrl('index', ['search' => $record->order_number])),
             TextColumn::make('reviewer.username')->label('审核员')->toggleable(),
             TextColumn::make('hold')->label('处理提示')->state(fn (PixWithdrawal $record): ?string => match (true) {
                 $record->task?->needs_review_at !== null && $record->status === 'unresolved' => '待人工核对',
@@ -84,22 +89,55 @@ class PixWithdrawalResource extends Resource
             TextColumn::make('channel_reference')->label('渠道流水号')->toggleable(),
             TextColumn::make('review_reason')->label('拒绝理由')->toggleable(),
             TextColumn::make('created_at')->label('申请时间')->dateTime()->sortable(),
+            TextColumn::make('wait_minutes')->label('等待时长')->state(fn (PixWithdrawal $record): ?string => $record->status === 'pending'
+                ? $record->created_at?->diffForHumans(['parts' => 2]) : null)->placeholder('—'),
             TextColumn::make('paid_at')->label('到账时间')->dateTime()->sortable(),
-        ])->filters([SelectFilter::make('status')->label('状态')->options(self::STATUSES)])
+        ])->filters([
+            SelectFilter::make('status')->label('状态')->options(self::STATUSES),
+            SelectFilter::make('funding_source')->label('提现来源')->options(['cash' => '可用余额', 'red_packet' => '红包'])
+                ->query(fn (Builder $query, array $data): Builder => match ($data['value'] ?? null) {
+                    'cash' => $query->whereNull('red_packet_round_id'),
+                    'red_packet' => $query->whereNotNull('red_packet_round_id'),
+                    default => $query,
+                }),
+        ])
             ->recordActions([
                 ActionGroup::make([
-                    Action::make('approve')->label('通过')
+                    Action::make('approve')->label('审核通过并出款')
                         ->authorize(fn () => self::allowed('pix.review'))->visible(self::mayReview(...))
-                        ->modalDescription('选定渠道后，订单将进入出款处理中。人工渠道完成转账后，请回来登记流水。')
+                        ->modalSubmitActionLabel('确认出款')
+                        ->modalDescription('选定三方渠道并确认后发起出款，出款结果由三方回调确认。')
                         ->schema([
                             Select::make('channel')->label('出款渠道')->required()->searchable()->live()
-                                ->options(fn (PixWithdrawal $record): array => app(PixWithdrawals::class)->payoutOptions($record)),
+                                ->options(fn (PixWithdrawal $record): array => app(PixWithdrawals::class)->payoutOptions($record))
+                                ->afterStateUpdated(function (PixWithdrawal $record, Set $set, ?string $state): void {
+                                    $balance = $state === null ? null : app(PixWithdrawals::class)->previewBalance($record, self::operator(), $state);
+                                    $set('preview_balance_cents', $balance);
+                                }),
+                            Hidden::make('preview_balance_cents'),
+                            Placeholder::make('channel_balance')->label('三方可用余额')
+                                ->visible(fn (Get $get): bool => filled($get('channel')))
+                                ->content(function (Get $get, PixWithdrawal $record): string {
+                                    $balance = $get('preview_balance_cents');
+                                    if ($balance === null) {
+                                        return '余额查询失败，可以继续出款。';
+                                    }
+
+                                    $money = ($balance < 0 ? '−' : '').'R$ '.PointRules::display(abs((int) $balance), 2);
+
+                                    return (int) $balance < $record->amount_cents ? $money.' · 三方可用余额不足' : $money;
+                                }),
                             TextInput::make('recipient_name')->label('CPF 持有人真实姓名')->maxLength(120)
-                                ->visible(fn (Get $get): bool => self::automatedProvider($get('channel')))
-                                ->required(fn (Get $get): bool => self::automatedProvider($get('channel'))),
-                        ])->action(fn (PixWithdrawal $record, array $data) => app(PixWithdrawals::class)->approve(
-                            $record, self::operator(), $data['channel'], $data['recipient_name'] ?? null)),
-                    Action::make('reject')->label('拒绝')->color('danger')
+                                ->visible(fn (Get $get): bool => filled($get('channel')))
+                                ->required(fn (Get $get): bool => filled($get('channel'))),
+                        ])->action(fn (Action $action, PixWithdrawal $record, array $data) => ActionForm::submit($action, function () use ($record, $data): void {
+                            if (isset($data['preview_balance_cents']) && (int) $data['preview_balance_cents'] < $record->amount_cents) {
+                                throw ValidationException::withMessages(['channel' => '三方可用余额不足']);
+                            }
+
+                            app(PixWithdrawals::class)->approveCallbackPayout($record, self::operator(), $data['channel'], $data['recipient_name'] ?? null);
+                        })),
+                    Action::make('reject')->label('拒绝并扣款')->color('danger')
                         ->authorize(fn () => self::allowed('pix.review'))
                         ->visible(fn (PixWithdrawal $record): bool => $record->member->disabled_at === null && $record->canCloseWithoutPayout($record->task))
                         ->modalDescription(fn (PixWithdrawal $record): string => self::awaitingManualTransfer($record)
@@ -107,7 +145,7 @@ class PixWithdrawalResource extends Resource
                         ->schema([Textarea::make('reason')->label('拒绝理由')->maxLength(300)->required()])
                         ->action(fn (Action $action, PixWithdrawal $record, array $data) => ActionForm::submit($action,
                             fn () => app(PixWithdrawals::class)->reject($record, self::operator(), $data['reason']))),
-                    Action::make('cancel')->label('取消')->requiresConfirmation()
+                    Action::make('cancel')->label('取消并退回')->requiresConfirmation()
                         ->modalHeading('取消提现订单')->modalSubmitActionLabel('确认取消')->modalCancelActionLabel('返回')
                         ->authorize(fn () => self::allowed('pix.review'))
                         ->visible(fn (PixWithdrawal $record): bool => $record->canCloseWithoutPayout($record->task))
@@ -123,31 +161,39 @@ class PixWithdrawalResource extends Resource
                         ])->action(fn (PixWithdrawal $record, array $data) => app(PixWithdrawals::class)->confirmManualTransfer($record, self::operator(), $data['reference'])),
                     Action::make('resume')->label('恢复出款')->requiresConfirmation()
                         ->authorize(fn () => self::allowed('pix.resume'))
-                        ->visible(fn (PixWithdrawal $record): bool => $record->status === 'processing'
+                        ->visible(fn (PixWithdrawal $record): bool => $record->payout_number === null && $record->status === 'processing'
                             && $record->task?->paused_at !== null && $record->member->disabled_at === null)
                         ->action(fn (PixWithdrawal $record) => app(PixWithdrawals::class)->resume($record, self::operator())),
                     Action::make('lookup')->label('申请查单')->requiresConfirmation()
                         ->authorize(fn () => self::allowed('pix.review'))
-                        ->visible(fn (PixWithdrawal $record): bool => in_array($record->status, ['processing', 'unresolved'], true)
+                        ->visible(fn (PixWithdrawal $record): bool => $record->payout_number === null && in_array($record->status, ['processing', 'unresolved'], true)
                             && $record->task?->send_started_at !== null && ! $record->task->lease_until?->isFuture())
                         ->action(fn (PixWithdrawal $record) => app(PixWithdrawals::class)->requestLookup($record, self::operator())),
                 ])->label('审核订单')->button()->color('gray'),
-                Action::make('history')->label('处理记录')->authorize(fn () => self::canViewAny())
-                    ->modalDescription(fn (PixWithdrawal $record): string => DB::table('pix_events')
-                        ->leftJoin('users', 'users.id', '=', 'pix_events.user_id')
-                        ->where('pix_withdrawal_id', $record->id)->orderByDesc('pix_events.id')
-                        ->limit(20)->get(['event', 'pix_events.created_at', 'users.username'])
-                        ->map(fn ($event): string => $event->created_at.' '.$event->username.' '.(self::EVENTS[$event->event] ?? $event->event)
-                            .(in_array($event->event, ['rejected', 'rejected_deducted'], true) ? ' '.$record->review_reason : ''))
-                        ->implode(' · '))
-                    ->modalSubmitAction(false)->modalCancelActionLabel('关闭'),
+                Action::make('view_payout')->label('出款单')
+                    ->url(fn (PixWithdrawal $record): string => PixPayoutResource::getUrl('index', ['search' => $record->order_number]))
+                    ->visible(fn (PixWithdrawal $record): bool => $record->payout_number !== null || $record->payout_channel_name !== null || $record->task !== null),
+                Action::make('packet_history')->label('红包记录')
+                    ->url(fn (PixWithdrawal $record): string => RedPacketRoundResource::getUrl('index', ['search' => (string) $record->red_packet_round_id]))
+                    ->visible(fn (PixWithdrawal $record): bool => $record->red_packet_round_id !== null && RedPacketRoundResource::canViewAny()),
+                Action::make('cash_history')->label('现金流水')
+                    ->url(fn (PixWithdrawal $record): string => CashBalanceEntryResource::orderUrl('withdrawal', $record->id))
+                    ->visible(fn (PixWithdrawal $record): bool => $record->red_packet_round_id === null && CashBalanceEntryResource::canViewAny()),
+                self::historyAction(),
             ]);
     }
 
-    private static function automatedProvider(?string $selection): bool
+    public static function historyAction(): Action
     {
-        return $selection !== null && preg_match('/\Aprovider:([1-9][0-9]{0,18})\z/', $selection, $parts)
-            && PixPayoutChannel::query()->whereIn('driver', array_keys(ExternalPixChannel::PROVIDERS))->whereKey($parts[1])->exists();
+        return Action::make('history')->label('处理记录')->authorize(fn () => self::canViewAny())
+            ->modalDescription(fn (PixWithdrawal $record): string => DB::table('pix_events')
+                ->leftJoin('users', 'users.id', '=', 'pix_events.user_id')
+                ->where('pix_withdrawal_id', $record->id)->orderByDesc('pix_events.id')
+                ->limit(20)->get(['event', 'pix_events.created_at', 'users.username'])
+                ->map(fn ($event): string => $event->created_at.' '.$event->username.' '.(self::EVENTS[$event->event] ?? $event->event)
+                    .(in_array($event->event, ['rejected', 'rejected_deducted'], true) ? ' '.$record->review_reason : ''))
+                ->implode(' · '))
+            ->modalSubmitAction(false)->modalCancelActionLabel('关闭');
     }
 
     public static function getPages(): array

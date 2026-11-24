@@ -54,7 +54,8 @@ class AdminAccessTest extends TestCase
         $this->assertFalse($staff->hasPermission('members.view'));
         $this->assertTrue($staff->hasPermission('points.view'));
         $this->withSession(['password_hash_web' => null])->actingAs($staff, 'web')->get('/admin/members')->assertForbidden();
-        $this->get('/admin/point-entries')->assertOk();
+        $this->get('/admin/cashback-settlements')->assertOk();
+        $this->get('/admin/point-entries')->assertNotFound();
         $this->withSession(['password_hash_web' => null])->actingAs($operator, 'web');
         $this->assertDatabaseHas('admin_access_audits', ['user_id' => $operator->id, 'target_user_id' => $staff->id, 'action' => 'roles.changed']);
         $this->get('/admin/admin-access-audits')->assertOk();

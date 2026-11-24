@@ -37,9 +37,7 @@ class ExternalPixCallbackController extends Controller
         abort_if($result === null, 400);
         abort_unless($order->task()->whereNotNull('send_started_at')->exists(), 409);
 
-        if ($result->status !== 'unknown') {
-            $delivery->reconcile($order, $result);
-        }
+        $delivery->reconcileProviderCallback($order, $result);
 
         return response('success', 200)->header('Content-Type', 'text/plain');
     }

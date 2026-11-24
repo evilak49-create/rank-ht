@@ -134,7 +134,7 @@ class CashWithdrawalTest extends TestCase
         $this->assertDatabaseCount('cash_balance_entries', 2);
     }
 
-    public function test_staff_can_configure_channels_and_choose_one_for_a_pending_withdrawal(): void
+    public function test_staff_can_only_approve_new_payouts_through_an_automated_channel_and_still_close_legacy_transfers(): void
     {
         config(['services.pix.driver' => 'disabled']);
         [$member, $operator] = $this->scenario();
@@ -142,28 +142,20 @@ class CashWithdrawalTest extends TestCase
             'request_id' => (string) Str::uuid(), 'amount_cents' => 250,
         ])->assertCreated()->json('data.id');
         $order = PixWithdrawal::findOrFail($id);
+        $oldChannel = PixPayoutChannel::create(['name' => '历史人工渠道', 'enabled' => true]);
         $this->actingAs($operator, 'web');
-        Livewire::test(ListPixWithdrawals::class)->assertActionHidden('add_channel');
-        $operator->roles()->firstOrFail()->update(['permissions' => ['pix.view', 'pix.review', 'pix.manage-channels']]);
-        Livewire::test(ListPixWithdrawals::class)->callAction('add_channel', ['name' => '渠道甲'])->assertHasNoActionErrors()
-            ->callAction('add_channel', ['name' => '渠道乙'])->assertHasNoActionErrors();
-        $first = PixPayoutChannel::where('name', '渠道甲')->sole();
-        $second = PixPayoutChannel::where('name', '渠道乙')->sole();
-        Livewire::test(ListPixWithdrawals::class)->callAction('channel_availability', ['channel' => $second->id, 'enabled' => false])
-            ->assertHasNoActionErrors();
 
         $approve = TestAction::make('approve')->table($order);
         Livewire::test(ListPixWithdrawals::class)->callAction($approve, [])->assertHasActionErrors(['channel' => 'required']);
-        Livewire::test(ListPixWithdrawals::class)->callAction($approve, ['channel' => 'provider:'.$second->id])->assertHasActionErrors(['channel']);
+        Livewire::test(ListPixWithdrawals::class)->callAction($approve, ['channel' => 'provider:'.$oldChannel->id])
+            ->assertHasActionErrors(['channel']);
         $this->assertSame('pending', $order->refresh()->status);
-        Livewire::test(ListPixWithdrawals::class)->callAction($approve, ['channel' => 'provider:'.$first->id])->assertHasNoActionErrors();
+
+        app(PixWithdrawals::class)->approve($order, $operator, 'provider:'.$oldChannel->id);
         $this->assertSame('processing', $order->refresh()->status);
-        $this->assertSame($first->id, $order->payout_channel_id);
-        $this->assertSame('渠道甲', $order->payout_channel_name);
+        $this->assertSame($oldChannel->id, $order->payout_channel_id);
         $this->assertDatabaseEmpty('pix_tasks');
 
-        app(PixWithdrawals::class)->approve($order, $operator, 'manual');
-        $this->assertSame($first->id, $order->refresh()->payout_channel_id);
         Livewire::test(ListPixWithdrawals::class)->callAction(TestAction::make('manual_paid')->table($order), [
             'reference' => 'CHANNEL-TRANSFER-1',
         ])->assertHasNoActionErrors();
@@ -194,7 +186,7 @@ class CashWithdrawalTest extends TestCase
                 'member_id' => $member->id, 'red_packet_round_id' => $roundId,
                 'amount_cents' => 250, 'cpf_snapshot' => '52998224725', 'status' => $status,
             ]);
-            $expected[] = [$order->id, $roundId === null ? 'balance' : 'red_packet', $summary];
+            $expected[] = [$order->id, $roundId === null ? 'balance' : 'red_packet', $summary, $status];
         }
         $unrelated = PixWithdrawal::create([
             'order_number' => (string) Str::uuid(), 'request_id' => (string) Str::uuid(),
@@ -205,7 +197,7 @@ class CashWithdrawalTest extends TestCase
         $history = $this->getJson($url)->assertOk()->assertJsonPath('total', 7)
             ->assertJsonPath('data.0.amount_cents', 250)->assertJsonMissingPath('data.0.masked_cpf')
             ->assertDontSee('52998224725')->assertDontSee($unrelated->order_number);
-        $actual = array_map(fn (array $order): array => [$order['id'], $order['source'], $order['status']], $history->json('data'));
+        $actual = array_map(fn (array $order): array => [$order['id'], $order['source'], $order['status'], $order['lifecycle_status']], $history->json('data'));
         $this->assertSame(array_reverse($expected), $actual);
     }
 

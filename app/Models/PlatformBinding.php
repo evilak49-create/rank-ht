@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'member_id', 'platform_id', 'platform_account_id', 'query_phone',
-    'baseline_deposit_cents', 'baseline_valid_bet_cents', 'baseline_observed_at', 'rescue_baseline',
+    'baseline_deposit_cents', 'baseline_valid_bet_cents', 'baseline_observed_at', 'rescue_baseline', 'protection_status',
 ])]
 class PlatformBinding extends Model
 {
@@ -26,6 +26,11 @@ class PlatformBinding extends Model
     public function platform(): BelongsTo
     {
         return $this->belongsTo(Platform::class);
+    }
+
+    public function currentProtectionStatus(): string
+    {
+        return $this->platform->guarantee_amount_brl > 0 ? 'active' : 'inactive';
     }
 
     public function member(): BelongsTo

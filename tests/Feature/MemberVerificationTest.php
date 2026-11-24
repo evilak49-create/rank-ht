@@ -28,7 +28,7 @@ class MemberVerificationTest extends TestCase
         $operator->forceFill(['panel_enabled' => true])->save();
         $this->actingAs($operator, 'web')->get('/admin/member-verification-settings')->assertForbidden();
         $operator->roles()->attach(AdminRole::create(['name' => '验证码管理', 'permissions' => ['system.manage-member-verification']]));
-        Livewire::test(MemberVerificationSettings::class)->fillForm(['sms_enabled' => false])->call('save')->assertHasNoFormErrors();
+        Livewire::test(MemberVerificationSettings::class)->fillForm(['mode' => 'image'])->call('save')->assertHasNoFormErrors();
 
         $this->getJson('/api/v1/auth/verification')->assertOk()->assertJsonPath('data.mode', 'image');
         $this->postJson('/api/v1/auth/sms-code', ['phone' => '11912345678', 'purpose' => 'register'])->assertConflict();
@@ -44,7 +44,8 @@ class MemberVerificationTest extends TestCase
     {
         DB::table('member_verification_settings')->where('id', 1)->update(['sms_enabled' => false]);
         $member = Member::create(['phone' => '11912345678', 'password' => 'test-password']);
-        $this->postJson('/api/v1/auth/reset-password', ['phone' => $member->phone, 'password' => 'new-password'])->assertConflict();
+        $this->postJson('/api/v1/auth/reset-password', ['phone' => $member->phone, 'password' => 'new-password'])
+            ->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         [$challenge, $answer] = $this->challenge('reset_password');
         $body = ['phone' => $member->phone, 'password' => 'new-password', 'challenge_id' => $challenge, 'code' => $answer];

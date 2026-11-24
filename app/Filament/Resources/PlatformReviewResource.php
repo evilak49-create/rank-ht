@@ -20,7 +20,7 @@ class PlatformReviewResource extends Resource
 
     protected static ?string $pluralModelLabel = '平台评价';
 
-    protected static string|\UnitEnum|null $navigationGroup = '平台与保障';
+    protected static string|\UnitEnum|null $navigationGroup = '平台管理';
 
     protected static ?int $navigationSort = 20;
 
