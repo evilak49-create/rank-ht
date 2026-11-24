@@ -156,15 +156,38 @@ class PlatformFundsTest extends TestCase
         $this->assertDatabaseCount('jobs', 0);
     }
 
-    public function test_production_cannot_use_the_simulated_channel(): void
+    public function test_cash_exchange_is_manually_completed_in_production_without_a_delivery_task(): void
     {
-        [, $binding] = $this->fixture();
+        [$member, $binding, $operator] = $this->fixture();
         $this->app->instance('env', 'production');
+        $member->forceFill(['available_balance_cents' => 1000])->save();
+        $request = ['binding_id' => $binding->id, 'amount_cents' => 300, 'request_id' => (string) Str::uuid()];
+        $this->withSession(['_token' => 'fixture-csrf']);
+        $request['_token'] = 'fixture-csrf';
 
-        $this->withSession(['_token' => 'fixture-csrf'])
-            ->postJson('/api/v1/platform-funds/preview', ['binding_id' => $binding->id, 'amount_cents' => 300, '_token' => 'fixture-csrf'])
-            ->assertServiceUnavailable();
-        $this->assertDatabaseCount('platform_fund_orders', 0);
+        $this->postJson('/api/v1/platform-funds/preview', $request)->assertOk()
+            ->assertJsonPath('data.amount_cents', 300);
+        $id = $this->postJson('/api/v1/platform-funds/orders', $request)->assertCreated()
+            ->assertJsonPath('data.status', 'pending')->json('data.id');
+
+        $order = PlatformFundOrder::findOrFail($id);
+        $this->actingAs($operator, 'web')->get('/admin/platform-fund-orders')->assertOk();
+        Livewire::test(ListPlatformFundOrders::class)
+            ->callAction(TestAction::make('approve')->table($order))->assertHasNoActionErrors();
+        app(PlatformFunds::class)->approve($order, $operator);
+
+        $this->assertSame('paid', $order->refresh()->status);
+        $this->assertSame($operator->id, $order->reviewer_id);
+        $this->assertNotNull($order->paid_at);
+        $this->assertSame(700, $member->refresh()->available_balance_cents);
+        $this->assertDatabaseCount('cash_balance_entries', 1);
+        $this->assertDatabaseEmpty('platform_fund_tasks');
+        $this->assertDatabaseHas('platform_fund_events', [
+            'platform_fund_order_id' => $id, 'user_id' => $operator->id, 'event' => 'manual_paid',
+        ]);
+        $this->assertDatabaseCount('platform_fund_events', 3);
+        $this->actingAs($member, 'member')->getJson('/api/v1/platform-funds/orders/'.$id)
+            ->assertOk()->assertJsonPath('data.status', 'paid');
     }
 
     public function test_cash_rejection_retains_the_debit_and_cancel_only_refunds_pending_orders(): void

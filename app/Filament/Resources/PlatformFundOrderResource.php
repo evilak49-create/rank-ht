@@ -36,7 +36,7 @@ class PlatformFundOrderResource extends Resource
         'submitted' => '提交兑换', 'approved' => '审核通过', 'rejected' => '审核驳回并退款',
         'rejected_deducted' => '审核拒绝并保留扣款', 'cancelled' => '取消并退款',
         'resumed' => '恢复发放', 'lookup_requested' => '人工申请查单', 'send_started' => '开始发放',
-        'lookup_started' => '开始查单', 'paid' => '确认到账', 'failed' => '确认失败并退款', 'unresolved' => '结果待确认',
+        'lookup_started' => '开始查单', 'paid' => '确认到账', 'manual_paid' => '人工确认到账', 'failed' => '确认失败并退款', 'unresolved' => '结果待确认',
     ];
 
     public static function canViewAny(): bool
@@ -80,6 +80,9 @@ class PlatformFundOrderResource extends Resource
         ])
             ->recordActions([
                 Action::make('approve')->label('审核通过')->requiresConfirmation()
+                    ->modalDescription(fn (PlatformFundOrder $record): ?string => $record->balance_paid_cents === null
+                        ? null : '请先在平台为该账号完成加款，并核对账号和金额。确认后订单将显示为已到账。')
+                    ->modalSubmitActionLabel('确认通过')
                     ->authorize(fn () => self::allowed('funds.review'))->visible(self::mayReview(...))
                     ->action(fn (PlatformFundOrder $record) => app(PlatformFunds::class)->approve($record, self::operator())),
                 Action::make('reject')->label(fn (PlatformFundOrder $record): string => $record->balance_paid_cents === null

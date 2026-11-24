@@ -35,7 +35,7 @@ class PlatformFunds
     public function preview(Member $member, array $data): array
     {
         $binding = $this->binding($member, $data['binding_id']);
-        $this->requireAvailable($binding->platform, $member);
+        $this->requireAvailable($binding->platform, $member, requireChannel: ! isset($data['amount_cents']));
 
         if (isset($data['amount_cents'])) {
             $amount = (int) $data['amount_cents'];
@@ -67,7 +67,7 @@ class PlatformFunds
                 return $existing;
             }
 
-            $this->requireAvailable($platform, $owner);
+            $this->requireAvailable($platform, $owner, requireChannel: $cashAmount === null);
             $conversion = $cashAmount === null
                 ? $this->confirmPointConversion((int) $data['points'], (int) $data['rate_version'])
                 : ['amount_cents' => $cashAmount];
@@ -98,15 +98,28 @@ class PlatformFunds
     {
         abort_unless($operator->hasPermission('funds.review'), 403);
 
-        $this->withLockedOrder($order, function (Platform $platform, Member $member, PlatformFundOrder $current) use ($operator): void {
-            if ($current->task()->exists()) {
+        $this->withLockedOrder($order, function (Platform $platform, Member $member, PlatformFundOrder $current, ?PlatformFundTask $task) use ($operator): void {
+            $manual = $current->balance_paid_cents !== null;
+            if ($task !== null || ($manual && $current->status === 'paid')) {
                 return;
             }
             abort_unless($current->status === 'pending', 409, '只有待审核订单可以审核。');
-            $this->requireAvailable($platform, $member);
-            $current->forceFill(['status' => 'processing', 'reviewer_id' => $operator->id, 'reviewed_at' => now()])->save();
-            $current->task()->create(['next_run_at' => now()]);
+            $this->requireAvailable($platform, $member, requireChannel: ! $manual);
+            $reviewedAt = now();
+            $current->forceFill([
+                'status' => $manual ? 'paid' : 'processing',
+                'reviewer_id' => $operator->id,
+                'reviewed_at' => $reviewedAt,
+                'paid_at' => $manual ? $reviewedAt : null,
+            ])->save();
             $this->event($current, 'approved', $operator);
+            if ($manual) {
+                $this->event($current, 'manual_paid', $operator);
+
+                return;
+            }
+
+            $current->task()->create(['next_run_at' => $reviewedAt]);
         });
     }
 

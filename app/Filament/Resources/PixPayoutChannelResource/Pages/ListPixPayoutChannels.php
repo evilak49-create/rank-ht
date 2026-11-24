@@ -20,29 +20,20 @@ class ListPixPayoutChannels extends ListRecords
 {
     protected static string $resource = PixPayoutChannelResource::class;
 
-    protected function getHeaderActions(): array
-    {
-        return [
-            self::providerAction('u2cpay'),
-            self::providerAction('4zpay'),
-        ];
-    }
-
     public static function providerAction(string $driver): Action
     {
         $definition = ExternalPixChannel::PROVIDERS[$driver];
 
         return Action::make('configure_'.$driver)->label($definition['label'])->authorize(self::canManageChannels(...))
-            ->fillForm(function () use ($driver, $definition): array {
-                $channel = PixPayoutChannel::query()->where('driver', $driver)->first();
-                $stored = $channel?->configuration ?? [];
+            ->fillForm(function (PixPayoutChannel $record) use ($definition): array {
+                $stored = $record->configuration ?? [];
                 $settings = [
-                    'enabled' => $channel?->enabled ?? false,
+                    'enabled' => $record->enabled,
                     'merchant' => $stored['merchant'] ?? null,
                     'callback_ips' => implode("\n", $stored['callback_ips'] ?? explode(' ', $definition['ips'])),
                     'min_cents' => $stored['min_cents'] ?? null,
                     'max_cents' => $stored['max_cents'] ?? null,
-                    'callback' => $channel === null ? '首次保存后生成' : route('pix.provider-callback', ['channel' => $channel->id]),
+                    'callback' => route('pix.provider-callback', ['channel' => $record->id]),
                 ];
                 foreach (['create', 'query', 'balance'] as $key) {
                     $settings[$key] = $stored[$key] ?? 'https://'.$definition['host'].$definition[$key];
@@ -63,17 +54,16 @@ class ListPixPayoutChannels extends ListRecords
                     ->helperText($driver === 'u2cpay' ? '如使用测试账户，可填写 100。' : null),
                 TextInput::make('max_cents')->label('最高代付金额（分）')->integer()->minValue(1)
                     ->helperText($driver === 'u2cpay' ? '如使用测试账户，可填写 1000。' : null),
-            ])->action(function (array $data) use ($driver, $definition): void {
+            ])->action(function (PixPayoutChannel $record, array $data) use ($driver): void {
                 abort_unless(self::canManageChannels(), 403);
                 try {
-                    DB::transaction(function () use ($data, $driver, $definition): void {
-                        $channel = PixPayoutChannel::query()->where('driver', $driver)->lockForUpdate()->first();
+                    DB::transaction(function () use ($record, $data, $driver): void {
+                        $channel = PixPayoutChannel::query()->where('driver', $driver)->lockForUpdate()->findOrFail($record->id);
                         $settings = ExternalPixChannel::validateConfiguration(array_replace($data, [
                             'driver' => $driver,
-                            'secret' => filled($data['secret'] ?? null) ? $data['secret'] : ($channel?->configuration['secret'] ?? null),
+                            'secret' => filled($data['secret'] ?? null) ? $data['secret'] : ($channel->configuration['secret'] ?? null),
                             'callback_ips' => preg_split('/\s+/', trim($data['callback_ips']), -1, PREG_SPLIT_NO_EMPTY),
                         ]));
-                        $channel ??= new PixPayoutChannel(['name' => $definition['label'], 'driver' => $driver]);
                         $channel->fill(['enabled' => (bool) $data['enabled']]);
                         if ($channel->configuration !== $settings) {
                             $channel->forceFill([

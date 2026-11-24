@@ -145,7 +145,7 @@ class ExternalPixPayoutTest extends TestCase
         [, $operator, $channel, $config] = $this->fixture('u2cpay');
         $operator->roles()->firstOrFail()->update(['permissions' => ['pix.view', 'pix.manage-channels']]);
         $this->actingAs($operator, 'web')->get('/admin/pix-withdrawals')->assertOk();
-        Livewire::test(ListPixPayoutChannels::class)->mountAction('configure_u2cpay')
+        Livewire::test(ListPixPayoutChannels::class)->mountAction(TestAction::make('configure_u2cpay')->table($channel))
             ->assertActionDataSet(['merchant' => 'fixture-merchant', 'secret' => null])
             ->setActionData([
                 'enabled' => false, 'merchant' => 'updated-merchant', 'secret' => '',
@@ -156,7 +156,24 @@ class ExternalPixPayoutTest extends TestCase
         $this->assertSame('updated-merchant', $channel->configuration['merchant']);
         $this->assertSame('fixture-secret', $channel->configuration['secret']);
         $this->assertSame(['192.0.2.45', '192.0.2.46'], $channel->configuration['callback_ips']);
-        $this->assertStringNotContainsString('fixture-secret', (string) DB::table('pix_payout_channels')->value('configuration'));
+        $this->assertStringNotContainsString('fixture-secret', (string) DB::table('pix_payout_channels')->where('id', $channel->id)->value('configuration'));
+    }
+
+    public function test_both_supported_channels_are_listed_before_configuration(): void
+    {
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => 'Pix channels', 'permissions' => ['pix.manage-channels']]));
+        $this->actingAs($operator, 'web')->get('/admin/pix-payout-channels')->assertOk()->assertSee('U2Cpay')->assertSee('4zpay');
+
+        $channels = PixPayoutChannel::query()->whereIn('driver', ['u2cpay', '4zpay'])->get();
+        $this->assertCount(2, $channels);
+        foreach ($channels as $channel) {
+            $this->assertFalse($channel->enabled);
+            $this->assertNull($channel->configuration);
+        }
+        Livewire::test(ListPixPayoutChannels::class)->assertCanSeeTableRecords($channels)
+            ->assertTableActionVisible('configure_u2cpay', $channels->firstWhere('driver', 'u2cpay'))
+            ->assertTableActionVisible('configure_4zpay', $channels->firstWhere('driver', '4zpay'));
     }
 
     public function test_channel_list_only_updates_balance_after_the_row_action(): void
@@ -217,7 +234,7 @@ class ExternalPixPayoutTest extends TestCase
             'query' => 'https://'.$definition['host'].$definition['query'],
             'balance' => 'https://'.$definition['host'].$definition['balance'],
         ]);
-        $channel = PixPayoutChannel::create(['name' => $definition['label'], 'enabled' => true, 'driver' => $driver, 'configuration' => $config]);
+        $channel = PixPayoutChannel::updateOrCreate(['driver' => $driver], ['name' => $definition['label'], 'enabled' => true, 'configuration' => $config]);
 
         return [PixWithdrawal::findOrFail($id), $operator, $channel, $config];
     }

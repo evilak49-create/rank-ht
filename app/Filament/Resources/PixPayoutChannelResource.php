@@ -50,6 +50,7 @@ class PixPayoutChannelResource extends Resource
             TextColumn::make('last_balance_at')->label('余额查询时间')->dateTime()->placeholder('—'),
             TextColumn::make('balance_status')->label('最近查询结果')
                 ->state(fn (PixPayoutChannel $record): string => match (true) {
+                    $record->getRawOriginal('configuration') === null => '未配置',
                     $record->last_balance_attempt_at === null => '未查询',
                     $record->last_balance_failed => '查询失败',
                     default => '已取得余额',
@@ -60,6 +61,7 @@ class PixPayoutChannelResource extends Resource
         ])->recordActions([
             Action::make('refresh_balance')->label('查余额')
                 ->authorize(fn () => self::canViewAny())
+                ->disabled(fn (PixPayoutChannel $record): bool => $record->getRawOriginal('configuration') === null)
                 ->action(function (PixPayoutChannel $record): void {
                     abort_unless(self::canViewAny(), 403);
                     $amount = app(PixChannelBalances::class)->refresh($record);
@@ -73,13 +75,15 @@ class PixPayoutChannelResource extends Resource
                 }),
             Action::make('toggle_enabled')->label(fn (PixPayoutChannel $record): string => $record->enabled ? '停用' : '启用')
                 ->authorize(fn () => self::canViewAny())->requiresConfirmation()
+                ->disabled(fn (PixPayoutChannel $record): bool => $record->getRawOriginal('configuration') === null)
                 ->action(function (PixPayoutChannel $record): void {
                     abort_unless(self::canViewAny(), 403);
+                    abort_if($record->getRawOriginal('configuration') === null, 409, '请先配置三方渠道。');
                     $record->update(['enabled' => ! $record->enabled]);
                 }),
-            ListPixPayoutChannels::providerAction('u2cpay')->label('配置')
+            ListPixPayoutChannels::providerAction('u2cpay')->label('编辑配置')
                 ->visible(fn (PixPayoutChannel $record): bool => $record->driver === 'u2cpay'),
-            ListPixPayoutChannels::providerAction('4zpay')->label('配置')
+            ListPixPayoutChannels::providerAction('4zpay')->label('编辑配置')
                 ->visible(fn (PixPayoutChannel $record): bool => $record->driver === '4zpay'),
         ]);
     }
