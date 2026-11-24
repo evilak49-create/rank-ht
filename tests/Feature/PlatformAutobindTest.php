@@ -55,14 +55,18 @@ class PlatformAutobindTest extends TestCase
         $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated();
     }
 
-    public function test_an_unverified_member_leaves_no_phone_in_the_outbound_url(): void
+    public function test_an_unverified_member_can_bind_using_their_registration_phone(): void
     {
         [$member, $platform] = $this->fixture();
         $member->forceFill(['phone_verified_at' => null])->save();
         $this->fakeLookup();
-        $this->launch($member, $platform)->assertOk()->assertJsonPath('data.url', $platform->promotion_url);
+        $this->launch($member, $platform)->assertOk()
+            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&bd_id=11912345678&platform=777PUB');
         $this->getJson($this->callbackUrl($member))->assertNoContent();
-        Http::assertNothingSent();
+        Http::assertSentCount(1);
+        $this->assertDatabaseHas('platform_bindings', [
+            'member_id' => $member->id, 'platform_id' => $platform->id, 'query_phone' => $member->phone,
+        ]);
     }
 
     private function fixture(): array
