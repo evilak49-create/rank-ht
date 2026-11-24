@@ -88,6 +88,34 @@ class PlatformAutobindTest extends TestCase
         $this->assertDatabaseCount('platform_bindings', 1);
     }
 
+    public function test_a_platform_without_a_guarantee_uses_its_own_promotion_link_and_query_configuration(): void
+    {
+        [$member, $firstPlatform] = $this->fixture();
+        $second = Platform::create([
+            'name' => 'Second Site', 'promotion_url' => 'https://second.example.test/?ref=42',
+            'rating' => 5, 'guarantee_amount_brl' => 0,
+        ]);
+        $second->forceFill(['active_query_revision' => 1, 'active_query' => array_replace($firstPlatform->active_query, [
+            'tenant_id' => 42,
+        ])])->save();
+        $this->fakeLookup();
+
+        $this->launch($member, $firstPlatform)->assertOk();
+        $url = $this->launch($member, $second)->assertOk()->json('data.url');
+        parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
+        $this->assertSame(['ref' => '42', 'bd_id' => $member->phone, 'platform' => 'Second Site'], $parameters);
+        $this->getJson($this->callbackUrl($member, $second->name))->assertNoContent();
+
+        $this->assertDatabaseCount('platform_bindings', 1);
+        $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'platform_id' => $second->id]);
+        Http::assertSentCount(1);
+        Http::assertSent(function ($request): bool {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return json_decode($query['input'], true)['json']['tenantId'] === 42;
+        });
+    }
+
     private function fixture(): array
     {
         config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);

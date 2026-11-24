@@ -23,7 +23,7 @@ class PlatformRegistration
             abort_if($owner->session_version !== $member->session_version, 401);
 
             $url = Uri::of($platform->promotion_url);
-            if ($platform->guarantee_amount_brl <= 0 || $url->scheme() !== 'https') {
+            if ($url->scheme() !== 'https') {
                 return $platform->promotion_url;
             }
 
@@ -47,7 +47,7 @@ class PlatformRegistration
             return;
         }
 
-        $platforms = Platform::query()->available()->where('name', $platformName)->where('guarantee_amount_brl', '>', 0)
+        $platforms = Platform::query()->available()->where('name', $platformName)
             ->whereIn('id', DB::table('platform_registration_intents')->select('platform_id')
                 ->where('member_id', $owner->id)->where('session_version', $owner->session_version)
                 ->where('expires_at', '>', now()))->limit(2)->get();
@@ -67,7 +67,7 @@ class PlatformRegistration
                 }
                 $this->binding->complete($owner, $platform, $phone, $account, function (Member $current, Platform $currentPlatform) use ($phone, $platform): void {
                     abort_if($current->phone !== $phone, 409);
-                    abort_if($currentPlatform->name !== $platform->name || $currentPlatform->guarantee_amount_brl <= 0, 409);
+                    abort_if($currentPlatform->name !== $platform->name, 409);
                     abort_unless($this->activeIntent($current, $currentPlatform)->delete() === 1, 409);
                 });
             } catch (PlatformQueryFailure) {
