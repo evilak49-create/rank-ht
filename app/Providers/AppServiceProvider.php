@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Auth\LocalLogSmsSender;
 use App\Auth\MemberPhone;
+use App\Auth\PersistentSessionGuard;
 use App\Auth\SmsChallenges;
 use App\RedPackets\PixChannel;
 use App\RedPackets\SimulatedPixChannel;
@@ -13,6 +14,7 @@ use App\Shop\Funds\SimulatedFundChannel;
 use Filament\Notifications\Notification;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\Sanctum;
@@ -42,6 +44,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Auth::extend('persistent-session', function ($app, string $name, array $config): PersistentSessionGuard {
+            $guard = new PersistentSessionGuard(
+                $name,
+                Auth::createUserProvider($config['provider']),
+                $app['session.store'],
+                rehashOnLogin: config('hashing.rehash_on_login', true),
+                timeboxDuration: config('auth.timebox_duration', 200000),
+                hashKey: config('app.key'),
+            );
+            $guard->setCookieJar($app['cookie']);
+            $guard->setDispatcher($app['events']);
+            $guard->setRequest($app->refresh('request', $guard, 'setRequest'));
+
+            return $guard;
+        });
         Sanctum::getAccessTokenFromRequestUsing(fn (): null => null);
         Notification::configureUsing(fn (Notification $notification) => $notification->safeViews('filament.platforms.query-response'));
 

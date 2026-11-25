@@ -10,7 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\DB;
 
 #[Fillable(['phone', 'password', 'phone_verified_at', 'registration_ip', 'registration_country', 'registration_device_hash'])]
-#[Hidden(['password', 'session_version', 'pix_cpf', 'pix_recipient_name', 'invite_code', 'registration_ip', 'registration_country', 'registration_device_hash'])]
+#[Hidden(['password', 'remember_token', 'session_version', 'pix_cpf', 'pix_recipient_name', 'invite_code', 'registration_ip', 'registration_country', 'registration_device_hash'])]
 class Member extends Authenticatable
 {
     protected function casts(): array
@@ -55,6 +55,7 @@ class Member extends Authenticatable
             $member->forceFill([
                 'disabled_at' => $disabled ? now() : null,
                 'session_version' => $member->session_version + 1,
+                'remember_token' => null,
             ])->save();
 
             if ($disabled) {

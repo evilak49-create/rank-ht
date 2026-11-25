@@ -40,11 +40,11 @@ return [
 
     'guards' => [
         'web' => [
-            'driver' => 'session',
+            'driver' => 'persistent-session',
             'provider' => 'users',
         ],
         'member' => [
-            'driver' => 'session',
+            'driver' => 'persistent-session',
             'provider' => 'members',
         ],
     ],

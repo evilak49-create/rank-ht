@@ -133,7 +133,6 @@ class MemberAuthController extends Controller
         }
 
         Auth::guard('member')->login($member);
-        $request->session()->put('member_session_version', $member->session_version);
         $request->session()->regenerateToken();
 
         return response()->json($this->memberData($member));
@@ -155,8 +154,7 @@ class MemberAuthController extends Controller
 
     public function resetPassword(
         Request $request, SmsChallenges $sms, ImageCaptcha $captcha, TurnstileVerification $turnstile,
-    ): Response
-    {
+    ): Response {
         $current = Auth::guard('member')->user();
         $mode = $this->resetMode($current, $this->verification->mode());
         $useSms = $mode === 'sms';
@@ -194,6 +192,7 @@ class MemberAuthController extends Controller
             $member?->forceFill([
                 'password' => $data['password'],
                 'session_version' => $member->session_version + 1,
+                'remember_token' => null,
             ])->save();
         }, 3);
 

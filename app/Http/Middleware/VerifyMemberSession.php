@@ -17,7 +17,7 @@ class VerifyMemberSession
         $member->refresh();
 
         if ($member->disabled_at !== null || $request->session()->get('member_session_version') !== $member->session_version) {
-            Auth::guard('member')->logout();
+            Auth::guard('member')->logoutCurrentDevice();
             $request->session()->forget('member_session_version');
             $request->session()->regenerate(true);
 

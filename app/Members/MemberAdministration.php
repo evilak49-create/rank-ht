@@ -38,7 +38,7 @@ class MemberAdministration
 
                 $previous = $current->phone;
                 $current->forceFill([
-                    'phone' => $phone, 'phone_verified_at' => null, 'session_version' => $current->session_version + 1,
+                    'phone' => $phone, 'phone_verified_at' => null, 'session_version' => $current->session_version + 1, 'remember_token' => null,
                 ])->save();
                 $this->audit($current, $operator, 'member.phone_changed', ['previous_phone' => $previous, 'new_phone' => $phone]);
             }, 3);
@@ -55,7 +55,9 @@ class MemberAdministration
 
         DB::transaction(function () use ($member, $data, $operator): void {
             $current = Member::query()->lockForUpdate()->findOrFail($member->id);
-            $current->forceFill(['password' => $data['password'], 'session_version' => $current->session_version + 1])->save();
+            $current->forceFill([
+                'password' => $data['password'], 'session_version' => $current->session_version + 1, 'remember_token' => null,
+            ])->save();
             $this->audit($current, $operator, 'member.password_reset');
         }, 3);
     }
