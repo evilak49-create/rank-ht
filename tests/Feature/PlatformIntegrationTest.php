@@ -9,7 +9,9 @@ use App\Models\Platform;
 use App\Models\PlatformBinding;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
+use App\Platforms\PlatformQueryFailure;
 use Filament\Actions\Testing\TestAction;
+use Filament\Notifications\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
@@ -22,6 +24,28 @@ use Tests\TestCase;
 class PlatformIntegrationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_panda_admin_query_displays_the_complete_success_or_error_response(): void
+    {
+        [$platform, $operator] = $this->draft();
+        $this->actingAs($operator, 'web');
+        $success = json_encode($this->accountResponse() + ['diagnostic' => str_repeat('trace', 5000)], JSON_THROW_ON_ERROR);
+        $failure = str_repeat('upstream error ', 3500);
+        Http::fake(['*' => Http::sequence()->push($success)->push($failure, 403)->push('', 502)]);
+        $action = TestAction::make('test_query')->table($platform);
+
+        Livewire::test(ListPlatforms::class)->callAction($action)
+            ->assertNotified(Notification::make()->success()->persistent()
+                ->title(PlatformQueryFailure::label('passed'))
+                ->view('filament.platforms.query-response', ['responseBody' => $success]));
+        Livewire::test(ListPlatforms::class)->callAction($action)
+            ->assertNotified(Notification::make()->danger()->persistent()
+                ->title(PlatformQueryFailure::label('authentication'))
+                ->view('filament.platforms.query-response', ['responseBody' => $failure]));
+        Livewire::test(ListPlatforms::class)->callAction($action)
+            ->assertNotified(Notification::make()->danger()->persistent()
+                ->title(PlatformQueryFailure::label('transient'))->body('服务商返回了空响应（HTTP 502）。'));
+    }
 
     public function test_a_draft_only_goes_public_after_the_current_query_config_passes(): void
     {

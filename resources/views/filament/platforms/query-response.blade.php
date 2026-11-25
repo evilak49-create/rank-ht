@@ -5,7 +5,7 @@
     x-transition
     x-on:close-notification.window="if ($event.detail.id === @js($getId())) close()"
     x-on:keydown.escape="handleEscape($event)"
-    wire:key="wg-query-response-{{ $getId() }}"
+    wire:key="platform-query-response-{{ $getId() }}"
 >
     <div class="fi-no-notification-main" style="min-width: 0;">
         <h3 class="fi-no-notification-title">{{ $getTitle() }}</h3>

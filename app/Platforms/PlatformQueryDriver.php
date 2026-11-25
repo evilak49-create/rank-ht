@@ -3,6 +3,7 @@
 namespace App\Platforms;
 
 use Carbon\CarbonImmutable;
+use Closure;
 
 interface PlatformQueryDriver
 {
@@ -11,7 +12,7 @@ interface PlatformQueryDriver
 
     public function formState(?array $saved): array;
 
-    public function lookupTestAccount(array $config): ?PlatformAccount;
+    public function lookupTestAccount(array $config, ?Closure $onResponse = null): ?PlatformAccount;
 
     public function rechargePage(array $config, string $accountId, CarbonImmutable $start, CarbonImmutable $end, int $page): PlatformRechargePage;
 

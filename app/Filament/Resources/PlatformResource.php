@@ -224,7 +224,7 @@ class PlatformResource extends Resource
                 $notice = Notification::make()
                     ->title(PlatformQueryFailure::label($result))
                     ->status($result === 'passed' ? 'success' : 'danger');
-                if ($record->network === PlatformNetwork::Wg && self::hasPermission('platforms.configure-query') && $result !== 'stale') {
+                if (self::hasPermission('platforms.configure-query') && $result !== 'stale') {
                     $notice->persistent();
                     if ($httpStatus === null) {
                         $notice->body('本次测试没有收到服务商的 HTTP 响应。');

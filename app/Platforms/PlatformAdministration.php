@@ -81,9 +81,10 @@ class PlatformAdministration
 
         try {
             $driver = $snapshot->network->queryDriver();
-            $account = $driver instanceof WgPlatformQuery && $operator->hasPermission('platforms.configure-query')
-                ? $driver->lookupTestAccount($configuration, $onResponse)
-                : $driver->lookupTestAccount($configuration);
+            $account = $driver->lookupTestAccount(
+                $configuration,
+                $operator->hasPermission('platforms.configure-query') ? $onResponse : null,
+            );
             $result = $account === null ? 'not_found' : 'passed';
 
             if ($isDraft && $account !== null && isset($configuration['net_profit_field']) && $account->netProfit === null) {

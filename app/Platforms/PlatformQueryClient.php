@@ -4,6 +4,7 @@ namespace App\Platforms;
 
 use Carbon\CarbonImmutable;
 use Carbon\Exceptions\InvalidFormatException;
+use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -79,12 +80,17 @@ class PlatformQueryClient implements PlatformQueryDriver
             && ! array_key_exists('fragment', $parts);
     }
 
-    public function lookupTestAccount(#[SensitiveParameter] array $config): ?PlatformAccount
+    public function lookupTestAccount(#[SensitiveParameter] array $config, ?Closure $onResponse = null): ?PlatformAccount
     {
-        return $this->lookup($config, $config['test_phone']);
+        return $this->queryAccount($config, $config['test_phone'], $onResponse);
     }
 
     public function lookup(#[SensitiveParameter] array $config, string $phone): ?PlatformAccount
+    {
+        return $this->queryAccount($config, $phone);
+    }
+
+    private function queryAccount(#[SensitiveParameter] array $config, string $phone, ?Closure $onResponse = null): ?PlatformAccount
     {
         if (! $this->acceptsEndpoint($config['endpoint'])) {
             throw new PlatformQueryFailure('configuration');
@@ -94,7 +100,7 @@ class PlatformQueryClient implements PlatformQueryDriver
             'queryType' => 'phone', 'queryValue' => $phone,
             'regionId' => (int) $config['region_id'], 'tenantId' => (int) $config['tenant_id'],
             'page' => 1, 'pageSize' => 50, 'order' => [['key' => '', 'type' => 'desc']],
-        ]);
+        ], $onResponse);
 
         $list = $payload['result']['data']['json']['userList'] ?? null;
         $total = $this->integer($list['total'] ?? null);
@@ -174,7 +180,7 @@ class PlatformQueryClient implements PlatformQueryDriver
         });
     }
 
-    private function request(#[SensitiveParameter] array $config, string $endpoint, array $data): array
+    private function request(#[SensitiveParameter] array $config, string $endpoint, array $data, ?Closure $onResponse = null): array
     {
         try {
             $response = Http::acceptJson()->withToken($config['token'])
@@ -191,6 +197,10 @@ class PlatformQueryClient implements PlatformQueryDriver
                 ->get($endpoint, ['input' => json_encode(['json' => $data], JSON_THROW_ON_ERROR)]);
         } catch (ConnectionException) {
             throw new PlatformQueryFailure('transient');
+        }
+
+        if ($onResponse !== null) {
+            $onResponse($response->body(), $response->status());
         }
 
         if (in_array($response->status(), [401, 403], true)) {
