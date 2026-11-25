@@ -55,7 +55,8 @@ class BindPlatformAccount
             throw ValidationException::withMessages(['phone' => PlatformQueryFailure::label('not_found')]);
         }
 
-        return $this->complete($member, $platform, $phone, $account, function (Member $owner) use ($phone, $code, $purpose, $useSms, $mode): void {
+        return $this->complete($member, $platform, $phone, $account, function (Member $owner) use ($member, $phone, $code, $purpose, $useSms, $mode): void {
+            abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
             abort_if($this->verification->mode() !== $mode, 409, '验证方式已更新，请重新获取验证码。');
             if ($useSms && $this->requiresVerification($owner, $phone)) {
                 $this->sms->consume($phone, $purpose, $this->requiredCode($code));
@@ -77,7 +78,6 @@ class BindPlatformAccount
 
                 $owner = Member::query()->lockForUpdate()->findOrFail($member->id);
                 abort_if($owner->disabled_at !== null, 403, '会员账号已禁用。');
-                abort_if($owner->session_version !== $member->session_version, 401, '会员登录会话已失效。');
                 $this->ensureNotBound($owner, $current);
 
                 $authorize($owner, $current);

@@ -194,6 +194,7 @@ class MemberAuthController extends Controller
                 'session_version' => $member->session_version + 1,
                 'remember_token' => null,
             ])->save();
+            $member?->revokePlatformRegistrationIntents();
         }, 3);
 
         return $this->logout($request);

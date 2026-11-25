@@ -44,6 +44,12 @@ class Member extends Authenticatable
         return $this->belongsToMany(Platform::class, 'platform_favorites')->withPivot('created_at');
     }
 
+    public function revokePlatformRegistrationIntents(): void
+    {
+        DB::table('platform_registration_intents')->where('member_id', $this->id)->whereNull('revoked_at')
+            ->update(['revoked_at' => now()]);
+    }
+
     public function changeDisabledStatus(bool $disabled, ?User $operator = null): void
     {
         DB::transaction(function () use ($disabled, $operator): void {
@@ -59,6 +65,7 @@ class Member extends Authenticatable
             ])->save();
 
             if ($disabled) {
+                $member->revokePlatformRegistrationIntents();
                 PlatformFundTask::pauseForMember($member->id);
                 PixTask::pauseForMember($member->id);
             } else {

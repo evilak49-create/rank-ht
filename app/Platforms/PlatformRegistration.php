@@ -33,10 +33,10 @@ class PlatformRegistration
                 DB::table('platform_registration_intents')->upsert([
                     'member_id' => $owner->id,
                     'platform_id' => $platform->id,
-                    'session_version' => $owner->session_version,
                     'expires_at' => now()->addMinutes(30), // Retained for compatibility with the previous deployment.
                     'platform_binding_attempt_id' => $attempt->id,
-                ], ['member_id', 'platform_id'], ['session_version', 'expires_at', 'platform_binding_attempt_id']);
+                    'revoked_at' => null,
+                ], ['member_id', 'platform_id'], ['expires_at', 'platform_binding_attempt_id', 'revoked_at']);
             }
 
             return (string) $url->withQuery(['bd_id' => $owner->phone, 'platform' => $platform->name]);
@@ -52,7 +52,7 @@ class PlatformRegistration
 
         $platforms = Platform::query()->available()->where('name', $platformName)
             ->whereIn('id', DB::table('platform_registration_intents')->select('platform_id')
-                ->where('member_id', $owner->id)->where('session_version', $owner->session_version))->limit(2)->get();
+                ->where('member_id', $owner->id)->whereNull('revoked_at'))->limit(2)->get();
         if ($platforms->count() !== 1) {
             return;
         }
@@ -104,7 +104,7 @@ class PlatformRegistration
     private function activeIntent(Member $member, Platform $platform): Builder
     {
         return DB::table('platform_registration_intents')->where('member_id', $member->id)
-            ->where('platform_id', $platform->id)->where('session_version', $member->session_version);
+            ->where('platform_id', $platform->id)->whereNull('revoked_at');
     }
 
     private function attempt(Member $owner, Platform $platform, ?object $intent = null): PlatformBindingAttempt

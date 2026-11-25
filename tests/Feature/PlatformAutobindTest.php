@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Member;
 use App\Models\Platform;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -53,6 +54,32 @@ class PlatformAutobindTest extends TestCase
 
         $this->accountFound = true;
         $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated();
+    }
+
+    public function test_a_pending_registration_can_bind_after_the_member_signs_in_again(): void
+    {
+        [$member, $platform] = $this->fixture();
+        $this->fakeLookup();
+        $this->launch($member, $platform)->assertOk();
+        DB::table('platform_registration_intents')->where('member_id', $member->id)->update(['session_version' => 0]);
+        $this->postJson('/api/v1/auth/login', ['phone' => $member->phone, 'password' => 'member-password'])->assertOk();
+        $this->assertSame(1, $member->refresh()->session_version);
+
+        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'platform_id' => $platform->id]);
+    }
+
+    public function test_disabling_then_reenabling_an_account_does_not_restore_the_pending_registration(): void
+    {
+        [$member, $platform] = $this->fixture();
+        $this->fakeLookup();
+        $this->launch($member, $platform)->assertOk();
+        $member->changeDisabledStatus(true);
+        $member->changeDisabledStatus(false);
+
+        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        Http::assertNothingSent();
+        $this->assertDatabaseEmpty('platform_bindings');
     }
 
     public function test_an_unverified_member_can_bind_using_their_registration_phone(): void

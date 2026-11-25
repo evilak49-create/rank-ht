@@ -40,6 +40,7 @@ class MemberAdministration
                 $current->forceFill([
                     'phone' => $phone, 'phone_verified_at' => null, 'session_version' => $current->session_version + 1, 'remember_token' => null,
                 ])->save();
+                $current->revokePlatformRegistrationIntents();
                 $this->audit($current, $operator, 'member.phone_changed', ['previous_phone' => $previous, 'new_phone' => $phone]);
             }, 3);
         } catch (UniqueConstraintViolationException) {
@@ -58,6 +59,7 @@ class MemberAdministration
             $current->forceFill([
                 'password' => $data['password'], 'session_version' => $current->session_version + 1, 'remember_token' => null,
             ])->save();
+            $current->revokePlatformRegistrationIntents();
             $this->audit($current, $operator, 'member.password_reset');
         }, 3);
     }
