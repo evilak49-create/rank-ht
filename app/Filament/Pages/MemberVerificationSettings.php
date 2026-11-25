@@ -9,14 +9,15 @@ use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
 
 class MemberVerificationSettings extends Page
 {
-    protected static ?string $title = '注册配置';
+    protected static ?string $title = '会员验证设置';
 
-    protected static string|\UnitEnum|null $navigationGroup = '会员管理';
+    protected static string|\UnitEnum|null $navigationGroup = '系统管理';
 
     protected static ?int $navigationSort = 20;
 
@@ -36,6 +37,8 @@ class MemberVerificationSettings extends Page
         $settings = $verification->settings();
         $this->form->fill([
             'mode' => $settings->mode,
+            'turnstile_site_key' => $settings->turnstile_site_key,
+            'turnstile_hostname' => $settings->turnstile_hostname,
             'ip_registration_limit' => $settings->ip_registration_limit,
             'device_registration_limit' => $settings->device_registration_limit,
         ]);
@@ -49,8 +52,15 @@ class MemberVerificationSettings extends Page
     public function form(Schema $schema): Schema
     {
         return $schema->statePath('data')->components([
-            Radio::make('mode')->label('注册及自助绑定验证')->options(MemberVerification::MODES)->required()
+            Radio::make('mode')->label('注册、自助绑定及登录后修改密码')->options(MemberVerification::MODES)->required()
                 ->helperText('未登录会员找回密码使用独立的短信验证。'),
+            Section::make('Cloudflare Turnstile')->schema([
+                TextInput::make('turnstile_site_key')->label('Site Key')->maxLength(255),
+                TextInput::make('turnstile_secret')->label('Secret Key')->password()->autocomplete('new-password')->maxLength(512)
+                    ->helperText('已保存的密钥不会显示。留空沿用原密钥，更换 Site Key 时请填写新的 Secret Key。'),
+                TextInput::make('turnstile_hostname')->label('前台域名')->maxLength(253)
+                    ->placeholder('rank.example.com')->helperText('填写 Cloudflare 小组件允许的前台域名，无需填写协议或路径。'),
+            ]),
             TextInput::make('ip_registration_limit')->label('同 IP 历史注册上限')->integer()->minValue(1)->maxValue(2147483647)
                 ->helperText('只累计成功注册的会员。留空表示不限制。'),
             TextInput::make('device_registration_limit')->label('同设备历史注册上限')->integer()->minValue(1)->maxValue(2147483647)
@@ -69,8 +79,10 @@ class MemberVerificationSettings extends Page
             }
 
             return;
+        } finally {
+            $this->data['turnstile_secret'] = null;
         }
 
-        Notification::make()->title('注册配置已保存')->success()->send();
+        Notification::make()->title('会员验证设置已保存')->success()->send();
     }
 }

@@ -26,13 +26,14 @@ class MemberAuthController extends Controller
 
     public function verification(Request $request): JsonResponse
     {
-        $mode = $this->verification->mode();
+        $settings = $this->verification->settings();
+        $mode = $settings->mode;
 
         return response()->json(['data' => [
             'mode' => $mode,
             'reset_mode' => $this->resetMode(Auth::guard('member')->user(), $mode),
             'can_reset_password' => true,
-            'turnstile_site_key' => $mode === 'cloudflare' ? config('services.turnstile.site_key') : null,
+            'turnstile_site_key' => $mode === 'cloudflare' ? $this->verification->turnstileSiteKey($settings) : null,
         ]])->header('Cache-Control', 'private, no-store')->withCookie(RegistrationOrigin::fromRequest($request)->cookie());
     }
 
@@ -152,7 +153,9 @@ class MemberAuthController extends Controller
         return response()->noContent();
     }
 
-    public function resetPassword(Request $request, SmsChallenges $sms, ImageCaptcha $captcha): Response
+    public function resetPassword(
+        Request $request, SmsChallenges $sms, ImageCaptcha $captcha, TurnstileVerification $turnstile,
+    ): Response
     {
         $current = Auth::guard('member')->user();
         $mode = $this->resetMode($current, $this->verification->mode());
@@ -166,7 +169,11 @@ class MemberAuthController extends Controller
         if (! $useSms) {
             MemberPassword::validateBytes($data['current_password']);
             $this->validateResetAccount($request, $current->refresh(), $data['phone']);
-            $captcha->consume($request->session()->getId(), 'reset_password', $data['challenge_id'], $data['code']);
+            if ($mode === 'cloudflare') {
+                $turnstile->validate($data['turnstile_token'], 'reset_password', RegistrationOrigin::fromRequest($request)->ip);
+            } else {
+                $captcha->consume($request->session()->getId(), 'reset_password', $data['challenge_id'], $data['code']);
+            }
         }
 
         DB::transaction(function () use ($request, $current, $data, $sms, $useSms, $mode): void {
@@ -204,7 +211,7 @@ class MemberAuthController extends Controller
 
     private function resetMode(?Member $member, string $registrationMode): string
     {
-        return $member !== null && $registrationMode === 'image' ? 'image' : 'sms';
+        return $member === null ? 'sms' : $registrationMode;
     }
 
     private function validateResetAccount(Request $request, Member $member, string $phone): void

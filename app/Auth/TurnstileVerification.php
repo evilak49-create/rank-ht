@@ -11,9 +11,12 @@ class TurnstileVerification
 {
     public const RULES = ['turnstile_token' => ['required', 'string', 'max:2048']];
 
+    public function __construct(private readonly MemberVerification $verification) {}
+
     public function validate(string $token, string $action, ?string $ip): void
     {
-        $secret = config('services.turnstile.secret');
+        $credentials = $this->verification->turnstileCredentials();
+        $secret = $credentials['secret'] ?? null;
         abort_if(blank($secret), 503, 'Cloudflare 验证暂不可用。');
 
         try {
@@ -26,7 +29,7 @@ class TurnstileVerification
         }
 
         abort_unless($result->successful() && is_array($result->json()), 503, 'Cloudflare 验证暂不可用。');
-        $hostname = config('services.turnstile.hostname');
+        $hostname = $credentials['hostname'] ?? null;
         if ($result->json('success') !== true || $result->json('action') !== $action
             || (filled($hostname) && strcasecmp((string) $result->json('hostname'), $hostname) !== 0)
             || ! Cache::add('turnstile.used.'.hash('sha256', $token), true, now()->addMinutes(5))) {
