@@ -141,13 +141,14 @@ class PlatformQueryClient implements PlatformQueryDriver
 
     public function rechargePage(
         #[SensitiveParameter] array $config,
-        string $accountId,
+        string $boundAccount,
+        string $providerUserId,
         CarbonImmutable $start,
         CarbonImmutable $end,
         int $page,
     ): PlatformRechargePage {
         $endpoint = $config['endpoint'] ?? '';
-        $userId = $this->integer($accountId);
+        $userId = $this->integer($providerUserId);
         if (! is_string($endpoint) || ! $this->acceptsEndpoint($endpoint) || $userId === null || $userId === 0) {
             throw new PlatformQueryFailure('configuration');
         }

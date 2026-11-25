@@ -74,14 +74,15 @@ class WgPlatformQuery implements PlatformQueryDriver
 
     public function rechargePage(
         #[SensitiveParameter] array $config,
-        string $accountId,
+        string $boundAccount,
+        string $providerUserId,
         CarbonImmutable $start,
         CarbonImmutable $end,
         int $page,
     ): PlatformRechargePage {
         $data = $this->signedRequest($config, self::RECHARGE_PATH, [
             'condition' => [
-                'userIds' => $accountId, 'startSuccessTime' => $start->timestamp, 'endSuccessTime' => $end->timestamp,
+                'account' => $boundAccount, 'startSuccessTime' => $start->timestamp, 'endSuccessTime' => $end->timestamp,
                 'payOrderType' => 2,
             ],
             'current' => $page, 'size' => PlatformRechargePage::SIZE,
@@ -90,9 +91,12 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('schema');
         }
 
-        return PlatformRechargePage::fromProvider($data['list'] ?? null, $data['total'] ?? null, function (array $row) use ($accountId): ?array {
-            $user = $row['userId'] ?? $row['username'] ?? null;
-            if ((! is_string($user) && ! is_int($user)) || (string) $user !== $accountId) {
+        return PlatformRechargePage::fromProvider($data['list'] ?? null, $data['total'] ?? null, function (array $row) use ($boundAccount, $providerUserId): ?array {
+            $account = $row['account'] ?? null;
+            $userId = $row['userId'] ?? $row['username'] ?? null;
+            if (($account === null && $userId === null)
+                || ($account !== null && $account !== $boundAccount)
+                || ($userId !== null && ((! is_string($userId) && ! is_int($userId)) || (string) $userId !== $providerUserId))) {
                 throw new PlatformQueryFailure('schema');
             }
             if (! in_array($row['orderStatus'] ?? null, [2, '2', 4, '4'], true)) {

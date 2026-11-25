@@ -25,7 +25,7 @@ class PlatformRecharges
         $start = $end->setTimezone($this->clock->current($end))->subMonthNoOverflow()->utc();
         try {
             $result = $platform->network->queryDriver()->rechargePage(
-                $configuration, $binding->platform_account_id, $start, $end, $page,
+                $configuration, $binding->query_phone, $binding->platform_account_id, $start, $end, $page,
             );
         } catch (PlatformQueryFailure) {
             abort(503, '暂时无法获取充值记录，请稍后重试。');
@@ -39,7 +39,9 @@ class PlatformRecharges
                 $current = Platform::query()->available()->lockForUpdate()->findOrFail($platform->id);
                 abort_unless($current->network === $platform->network && $current->active_query_revision === $platform->active_query_revision, 409, '平台配置已变更，请重新查询。');
                 $owned = PlatformBinding::query()->whereBelongsTo($member)->lockForUpdate()->findOrFail($binding->id);
-                abort_unless($owned->platform_id === $platform->id && $owned->platform_account_id === $binding->platform_account_id, 409, '平台账号已变更，请重新查询。');
+                abort_unless($owned->platform_id === $platform->id
+                    && $owned->query_phone === $binding->query_phone
+                    && $owned->platform_account_id === $binding->platform_account_id, 409, '平台账号已变更，请重新查询。');
                 $now = now();
                 DB::table('platform_recharges')->upsert($records->map(fn (array $record): array => $record + [
                     'platform_binding_id' => $binding->id, 'network' => $platform->network->value,

@@ -14,7 +14,9 @@ interface PlatformQueryDriver
 
     public function lookupTestAccount(array $config, ?Closure $onResponse = null): ?PlatformAccount;
 
-    public function rechargePage(array $config, string $accountId, CarbonImmutable $start, CarbonImmutable $end, int $page): PlatformRechargePage;
+    public function rechargePage(
+        array $config, string $boundAccount, string $providerUserId, CarbonImmutable $start, CarbonImmutable $end, int $page,
+    ): PlatformRechargePage;
 
     public function lookup(array $config, string $phone): ?PlatformAccount;
 }

@@ -70,7 +70,7 @@ class PlatformRechargeHistoryTest extends TestCase
             'site_code' => '0025', 'api_key' => 'fixture', 'secret_key' => $secret,
         ]);
         $row = [
-            'username' => 4000000001, 'orderNo' => 'deposit-1', 'orderStatus' => 4, 'amount' => '56.78',
+            'account' => $binding->query_phone, 'username' => 4000000001, 'orderNo' => 'deposit-1', 'orderStatus' => 4, 'amount' => '56.78',
             'payCurrency' => 'BRL', 'notifyTime' => now()->subDay()->getTimestampMs(),
         ];
         $body = fn (array $list) => Http::response([
@@ -82,7 +82,7 @@ class PlatformRechargeHistoryTest extends TestCase
         Http::preventStrayRequests();
         Http::fake(['https://wg.example.test/api/foreign/openApi/proxy/user/finance/payOrder/queryByUser' => Http::sequence()
             ->pushResponse($body([$row, [...$row, 'orderNo' => 'unpaid', 'orderStatus' => 1]]))
-            ->pushResponse($body([[...$row, 'username' => 4000000002]]))]);
+            ->pushResponse($body([[...$row, 'account' => '21912345678', 'username' => 4000000002]]))]);
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $path = "/api/v1/platform-bindings/{$binding->id}/recharges";
         $this->getJson($path.'?page=2')->assertOk()->assertJsonPath('current_page', 2)
@@ -90,11 +90,12 @@ class PlatformRechargeHistoryTest extends TestCase
             ->assertJsonPath('data.0.reference', 'deposit-1');
         $this->getJson($path)->assertServiceUnavailable();
         $this->assertDatabaseCount('platform_recharges', 1);
-        Http::assertSent(function (Request $request) use ($secret): bool {
+        Http::assertSent(function (Request $request) use ($secret, $binding): bool {
             $plain = openssl_decrypt(base64_decode($request['reqData'], true), 'aes-128-ecb', $secret, OPENSSL_RAW_DATA);
             $data = json_decode($plain, true, flags: JSON_THROW_ON_ERROR);
 
-            return $data['siteCode'] === '0025' && $data['condition']['userIds'] === '4000000001'
+            return $data['siteCode'] === '0025' && $data['condition']['account'] === $binding->query_phone
+                && ! array_key_exists('userIds', $data['condition'])
                 && $data['condition']['endSuccessTime'] === now()->timestamp
                 && $data['condition']['payOrderType'] === 2 && $data['current'] === 2;
         });
