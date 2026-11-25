@@ -20,23 +20,30 @@ class PlatformAutobindTest extends TestCase
         [$member, $platform] = $this->fixture();
         $this->fakeLookup();
 
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk();
         Http::assertNothingSent();
 
         $this->launch($member, $platform)->assertOk()
-            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&bd_id=11912345678&platform=777PUB');
-        $this->getJson($this->callbackUrl($member, 'Another'))->assertNoContent();
+            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&db_id=11912345678&bd_id=11912345678&platform=777PUB');
+        $this->getJson($this->callbackUrl($member, 'Another'))->assertOk();
         Http::assertNothingSent();
-        $this->getJson($this->callbackUrl($member))->assertNoContent()->assertHeader('Cache-Control', 'no-store, private');
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $this->getJson($this->callbackUrl($member))->assertOk();
 
         Http::assertSentCount(1);
         $this->assertDatabaseCount('platform_bindings', 1);
         $this->assertDatabaseHas('platform_bindings', [
             'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_account_id' => '4000000001',
-            'query_phone' => $member->phone, 'baseline_deposit_cents' => 1_000, 'baseline_valid_bet_cents' => 2_000,
+            'account_name' => $member->phone, 'query_phone' => $member->phone, 'baseline_deposit_cents' => 1_000, 'baseline_valid_bet_cents' => 2_000,
         ]);
         $this->assertSame(-325, $platform->bindings()->firstOrFail()->rescue_baseline['net_profit_cents']);
+        $this->assertDatabaseHas('platform_binding_attempts', [
+            'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_account_id' => $member->phone,
+            'status' => 'succeeded',
+        ]);
+        $binding = $platform->bindings()->firstOrFail();
+        $this->getJson("/api/v1/platform-bindings/{$binding->id}")->assertOk()
+            ->assertJsonPath('data.platform_account_id', $member->phone);
     }
 
     public function test_unsuccessful_partner_lookup_keeps_manual_binding_available_even_after_a_late_retry(): void
@@ -45,15 +52,37 @@ class PlatformAutobindTest extends TestCase
         $this->accountFound = false;
         $this->fakeLookup();
         $this->launch($member, $platform)->assertOk();
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk();
         $this->assertDatabaseEmpty('platform_bindings');
 
         $this->travel(2)->hours();
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk();
         Http::assertSentCount(2);
 
         $this->accountFound = true;
-        $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated();
+        $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated()
+            ->assertJsonPath('data.platform_account_id', '4000000001');
+    }
+
+    public function test_existing_automatic_bindings_keep_their_provider_id_when_backfilled(): void
+    {
+        [$member, $platform] = $this->fixture();
+        $this->fakeLookup();
+        $this->launch($member, $platform)->assertOk();
+        $this->getJson($this->callbackUrl($member))->assertOk();
+
+        $migration = require database_path('migrations/2026_11_26_000001_store_autobind_account_names.php');
+        $migration->down();
+        $migration->up();
+
+        $this->assertDatabaseHas('platform_bindings', [
+            'platform_id' => $platform->id, 'member_id' => $member->id,
+            'account_name' => $member->phone, 'platform_account_id' => '4000000001',
+        ]);
+        $this->assertDatabaseHas('platform_binding_attempts', [
+            'platform_id' => $platform->id, 'member_id' => $member->id,
+            'platform_account_id' => $member->phone,
+        ]);
     }
 
     public function test_a_pending_registration_can_bind_after_the_member_signs_in_again(): void
@@ -65,7 +94,7 @@ class PlatformAutobindTest extends TestCase
         $this->postJson('/api/v1/auth/login', ['phone' => $member->phone, 'password' => 'member-password'])->assertOk();
         $this->assertSame(1, $member->refresh()->session_version);
 
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk();
         $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'platform_id' => $platform->id]);
     }
 
@@ -77,7 +106,7 @@ class PlatformAutobindTest extends TestCase
         $member->changeDisabledStatus(true);
         $member->changeDisabledStatus(false);
 
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk();
         Http::assertNothingSent();
         $this->assertDatabaseEmpty('platform_bindings');
     }
@@ -88,8 +117,8 @@ class PlatformAutobindTest extends TestCase
         $member->forceFill(['phone_verified_at' => null])->save();
         $this->fakeLookup();
         $this->launch($member, $platform)->assertOk()
-            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&bd_id=11912345678&platform=777PUB');
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&db_id=11912345678&bd_id=11912345678&platform=777PUB');
+        $this->getJson($this->callbackUrl($member))->assertOk();
         Http::assertSentCount(1);
         $this->assertDatabaseHas('platform_bindings', [
             'member_id' => $member->id, 'platform_id' => $platform->id, 'query_phone' => $member->phone,
@@ -107,10 +136,10 @@ class PlatformAutobindTest extends TestCase
         $url = $this->launch($member, $platform)->assertOk()->json('data.url');
         parse_str(parse_url($url, PHP_URL_QUERY), $query);
         $this->assertSame([
-            'pid' => 'example', 'fromPage' => 'affiliate', 'bd_id' => $member->phone, 'platform' => '777PUB',
+            'pid' => 'example', 'fromPage' => 'affiliate', 'db_id' => $member->phone, 'bd_id' => $member->phone, 'platform' => '777PUB',
         ], $query);
         $this->assertDatabaseEmpty('platform_registration_intents');
-        $this->getJson($this->callbackUrl($member))->assertNoContent();
+        $this->getJson($this->callbackUrl($member))->assertOk();
         Http::assertSentCount(1);
         $this->assertDatabaseCount('platform_bindings', 1);
     }
@@ -130,8 +159,8 @@ class PlatformAutobindTest extends TestCase
         $this->launch($member, $firstPlatform)->assertOk();
         $url = $this->launch($member, $second)->assertOk()->json('data.url');
         parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
-        $this->assertSame(['ref' => '42', 'bd_id' => $member->phone, 'platform' => 'Second Site'], $parameters);
-        $this->getJson($this->callbackUrl($member, $second->name))->assertNoContent();
+        $this->assertSame(['ref' => '42', 'db_id' => $member->phone, 'bd_id' => $member->phone, 'platform' => 'Second Site'], $parameters);
+        $this->getJson($this->callbackUrl($member, $second->name))->assertOk();
 
         $this->assertDatabaseCount('platform_bindings', 1);
         $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'platform_id' => $second->id]);

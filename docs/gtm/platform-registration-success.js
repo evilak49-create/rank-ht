@@ -1,6 +1,6 @@
 (function () {
   var query = new URLSearchParams(window.location.search);
-  var phone = query.get('bd_id');
+  var phone = query.get('db_id') || query.get('bd_id');
   var platform = query.get('platform');
   if (!phone || !platform) {
     var cookie = document.cookie.match(/(?:^|;\s*)rank_registration=([^;]*)/);

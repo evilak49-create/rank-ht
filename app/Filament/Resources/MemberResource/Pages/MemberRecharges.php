@@ -52,7 +52,7 @@ class MemberRecharges extends Page
         abort_unless($page >= 1 && $page <= PlatformRecharges::MAX_PAGE, 404);
         $member = Member::query()->findOrFail($this->memberId);
         $binding = PlatformBinding::query()->whereBelongsTo($member)->with('platform')->findOrFail($this->bindingId);
-        $this->accountLabel = $binding->platform->name.' · '.$binding->platform_account_id;
+        $this->accountLabel = $binding->platform->name.' · '.$binding->accountName();
         $this->queryError = null;
         $this->recharges = [];
 

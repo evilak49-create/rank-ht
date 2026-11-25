@@ -74,7 +74,7 @@ class PlatformFunds
 
             $order = PlatformFundOrder::create([
                 'member_id' => $owner->id, 'platform_id' => $platform->id,
-                'platform_binding_id' => $binding->id, 'platform_account_id' => $binding->platform_account_id,
+                'platform_binding_id' => $binding->id, 'platform_account_id' => $binding->accountName(),
                 'request_id' => $request, 'order_number' => (string) Str::uuid(), 'fund_rate_version_id' => $conversion['rate_version'] ?? null,
                 'points' => $conversion['points'] ?? 0, 'cents_per_point' => $conversion['cents_per_point'] ?? 0,
                 'balance_paid_cents' => $cashAmount,

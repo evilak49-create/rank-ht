@@ -35,7 +35,7 @@ class ProtectionTerm extends Model
         $values = [
             $platform->name,
             $amount === null ? '—' : 'R$ '.number_format((float) $amount, 2, ',', '.'),
-            $binding?->platform_account_id ?? '—',
+            $binding?->accountName() ?? '—',
             $status,
         ];
         $legacyPlaceholders = str_replace(['【', '】'], ['{{', '}}'], self::PLACEHOLDERS);

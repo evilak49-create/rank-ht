@@ -45,7 +45,7 @@ class PlatformBindingAttempt extends Model
     {
         $this->update([
             'platform_binding_id' => $binding->id,
-            'platform_account_id' => $binding->platform_account_id,
+            'platform_account_id' => $binding->accountName(),
             'status' => 'succeeded',
             'failure_reason' => null,
         ]);

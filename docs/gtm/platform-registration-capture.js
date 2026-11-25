@@ -1,6 +1,6 @@
 (function () {
   var query = new URLSearchParams(window.location.search);
-  var phone = query.get('bd_id');
+  var phone = query.get('db_id') || query.get('bd_id');
   var platform = query.get('platform');
   if (!/^[1-9][0-9]9[0-9]{8}$/.test(phone || '') || !platform || platform.length > 120) return;
 

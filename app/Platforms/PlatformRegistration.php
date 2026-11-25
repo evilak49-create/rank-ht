@@ -39,7 +39,9 @@ class PlatformRegistration
                 ], ['member_id', 'platform_id'], ['expires_at', 'platform_binding_attempt_id', 'revoked_at']);
             }
 
-            return (string) $url->withQuery(['bd_id' => $owner->phone, 'platform' => $platform->name]);
+            return (string) $url->withQuery([
+                'db_id' => $owner->phone, 'bd_id' => $owner->phone, 'platform' => $platform->name,
+            ]);
         }, 3);
     }
 

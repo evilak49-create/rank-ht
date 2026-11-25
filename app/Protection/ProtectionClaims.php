@@ -66,7 +66,7 @@ class ProtectionClaims
                 $claim = ProtectionClaim::create([
                     'request_id' => $requestId, 'member_id' => $owner->id, 'platform_binding_id' => $binding->id,
                     'platform_id' => $binding->platform_id, 'protection_term_id' => $termId,
-                    'platform_name' => $binding->platform->name, 'platform_account_id' => $binding->platform_account_id,
+                    'platform_name' => $binding->platform->name, 'platform_account_id' => $binding->accountName(),
                     'protection_status' => $binding->currentProtectionStatus(), 'amount_cents' => $cents,
                     'withdrawn_at' => Carbon::parse($data['withdrawn_at'])->utc(), 'description' => $data['description'],
                 ]);

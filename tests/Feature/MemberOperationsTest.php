@@ -146,7 +146,7 @@ class MemberOperationsTest extends TestCase
         $this->assertSame('processing', $attempt->displayStatus());
         $this->travel(45)->minutes();
         $this->assertSame('timed_out', $attempt->displayStatus());
-        $this->getJson('/api/v1/platform-autobind?'.http_build_query(['bd_id' => $member->phone, 'platform' => $platform->name]))->assertNoContent();
+        $this->getJson('/api/v1/platform-autobind?'.http_build_query(['bd_id' => $member->phone, 'platform' => $platform->name]))->assertOk();
         $this->assertDatabaseCount('platform_binding_attempts', 1);
         $this->assertSame('succeeded', $attempt->refresh()->displayStatus());
         $this->assertNotNull($attempt->platform_binding_id);

@@ -28,7 +28,7 @@ class ProtectionController extends Controller
         if ($member instanceof Member && $member->disabled_at === null
             && $request->session()->get('member_session_version') === $member->session_version) {
             $binding = PlatformBinding::query()->whereBelongsTo($member)
-                ->where('platform_id', $record->id)->first(['platform_id', 'platform_account_id']);
+                ->where('platform_id', $record->id)->first(['platform_id', 'platform_account_id', 'account_name']);
             $binding?->setRelation('platform', $record);
         }
 
@@ -48,8 +48,8 @@ class ProtectionController extends Controller
 
         return $this->privateJson($bindings->through(fn (PlatformBinding $binding): array => [
             'id' => $binding->id, 'platform_id' => $binding->platform_id, 'platform_name' => $binding->platform->name,
-            'platform_account_id' => $binding->platform_account_id,
-            'masked_platform_account' => ProtectionClaims::maskAccount($binding->platform_account_id),
+            'platform_account_id' => $binding->accountName(),
+            'masked_platform_account' => ProtectionClaims::maskAccount($binding->accountName()),
             'protection_status' => $binding->currentProtectionStatus(),
         ]));
     }

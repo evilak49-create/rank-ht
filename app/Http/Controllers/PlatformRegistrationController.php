@@ -27,6 +27,6 @@ class PlatformRegistrationController extends Controller
             $registration->received($values['bd_id'], $values['platform']);
         }
 
-        return response()->noContent();
+        return response('');
     }
 }

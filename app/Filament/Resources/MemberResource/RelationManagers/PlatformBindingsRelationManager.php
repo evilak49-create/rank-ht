@@ -27,7 +27,7 @@ class PlatformBindingsRelationManager extends RelationManager
     {
         return $table->modifyQueryUsing(fn ($query) => $query->with('platform'))->defaultSort('id', 'desc')->columns([
             TextColumn::make('platform.name')->label('平台'),
-            TextColumn::make('platform_account_id')->label('平台账号')->searchable(),
+            TextColumn::make('account_name')->state(fn (PlatformBinding $record): string => $record->accountName())->label('平台账号')->searchable(['account_name', 'platform_account_id']),
             TextColumn::make('created_at')->label('绑定时间')->dateTime('Y-m-d H:i')->sortable(),
             TextColumn::make('protection_status')->label('保障资格')->badge()->state(fn (PlatformBinding $record): string => $record->currentProtectionStatus())
                 ->formatStateUsing(fn (string $state): string => PlatformBinding::protectionStatusLabel($state)),

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'member_id', 'platform_id', 'platform_account_id', 'query_phone',
+    'member_id', 'platform_id', 'platform_account_id', 'account_name', 'query_phone',
     'baseline_deposit_cents', 'baseline_valid_bet_cents', 'baseline_observed_at', 'rescue_baseline', 'protection_status',
 ])]
 class PlatformBinding extends Model
@@ -28,6 +28,11 @@ class PlatformBinding extends Model
             'point_remainder' => 'integer', 'rebate_remainder' => 'integer', 'settlement_paused_at' => 'datetime',
             'rescue_baseline' => 'array',
         ];
+    }
+
+    public function accountName(): string
+    {
+        return $this->account_name ?? $this->platform_account_id;
     }
 
     public function platform(): BelongsTo
