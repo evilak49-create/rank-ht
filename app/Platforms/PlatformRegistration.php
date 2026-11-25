@@ -23,9 +23,9 @@ class PlatformRegistration
             abort_if($owner->disabled_at !== null, 403);
             abort_if($owner->session_version !== $member->session_version, 401);
 
-            $url = Uri::of($platform->promotion_url);
+            $url = Uri::of($platform->promotion_url)->withoutQuery('db_id');
             if ($url->scheme() !== 'https') {
-                return $platform->promotion_url;
+                return (string) $url;
             }
 
             if (! $platform->bindings()->whereBelongsTo($owner)->exists()) {
@@ -40,7 +40,7 @@ class PlatformRegistration
             }
 
             return (string) $url->withQuery([
-                'db_id' => $owner->phone, 'bd_id' => $owner->phone, 'platform' => $platform->name,
+                'bd_id' => $owner->phone, 'platform' => $platform->name,
             ]);
         }, 3);
     }

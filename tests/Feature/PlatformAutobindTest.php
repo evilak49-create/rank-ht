@@ -24,7 +24,7 @@ class PlatformAutobindTest extends TestCase
         Http::assertNothingSent();
 
         $this->launch($member, $platform)->assertOk()
-            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&db_id=11912345678&bd_id=11912345678&platform=777PUB');
+            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&bd_id=11912345678&platform=777PUB');
         $this->getJson($this->callbackUrl($member, 'Another'))->assertOk();
         Http::assertNothingSent();
         $this->getJson($this->callbackUrl($member))->assertOk()->assertHeader('Cache-Control', 'no-store, private');
@@ -117,7 +117,7 @@ class PlatformAutobindTest extends TestCase
         $member->forceFill(['phone_verified_at' => null])->save();
         $this->fakeLookup();
         $this->launch($member, $platform)->assertOk()
-            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&db_id=11912345678&bd_id=11912345678&platform=777PUB');
+            ->assertJsonPath('data.url', 'https://777ub.vip/?ch=86614&bd_id=11912345678&platform=777PUB');
         $this->getJson($this->callbackUrl($member))->assertOk();
         Http::assertSentCount(1);
         $this->assertDatabaseHas('platform_bindings', [
@@ -128,15 +128,16 @@ class PlatformAutobindTest extends TestCase
     public function test_a_bound_member_still_gets_the_agreed_parameters_without_a_new_intent(): void
     {
         [$member, $platform] = $this->fixture();
-        $platform->update(['promotion_url' => 'https://777UB.PRO/?pid=example&fromPage=affiliate']);
+        $platform->update(['promotion_url' => 'https://777UB.PRO/?pid=example&fromPage=affiliate&db_id=11900000000#register']);
         $this->fakeLookup();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0])
             ->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated();
 
         $url = $this->launch($member, $platform)->assertOk()->json('data.url');
+        $this->assertSame('register', parse_url($url, PHP_URL_FRAGMENT));
         parse_str(parse_url($url, PHP_URL_QUERY), $query);
         $this->assertSame([
-            'pid' => 'example', 'fromPage' => 'affiliate', 'db_id' => $member->phone, 'bd_id' => $member->phone, 'platform' => '777PUB',
+            'pid' => 'example', 'fromPage' => 'affiliate', 'bd_id' => $member->phone, 'platform' => '777PUB',
         ], $query);
         $this->assertDatabaseEmpty('platform_registration_intents');
         $this->getJson($this->callbackUrl($member))->assertOk();
@@ -159,7 +160,7 @@ class PlatformAutobindTest extends TestCase
         $this->launch($member, $firstPlatform)->assertOk();
         $url = $this->launch($member, $second)->assertOk()->json('data.url');
         parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
-        $this->assertSame(['ref' => '42', 'db_id' => $member->phone, 'bd_id' => $member->phone, 'platform' => 'Second Site'], $parameters);
+        $this->assertSame(['ref' => '42', 'bd_id' => $member->phone, 'platform' => 'Second Site'], $parameters);
         $this->getJson($this->callbackUrl($member, $second->name))->assertOk();
 
         $this->assertDatabaseCount('platform_bindings', 1);
