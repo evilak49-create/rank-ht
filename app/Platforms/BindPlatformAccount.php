@@ -84,7 +84,7 @@ class BindPlatformAccount
 
                 $binding = $current->bindings()->create([
                     'member_id' => $owner->id, 'platform_account_id' => $account->id, 'query_phone' => $phone,
-                    'account_name' => $attempt?->method === 'automatic' ? $phone : null,
+                    'account_name' => $phone,
                     'baseline_deposit_cents' => $account->depositCents, 'baseline_valid_bet_cents' => $account->validBetCents,
                     'baseline_observed_at' => $account->observedAt,
                     'rescue_baseline' => $account->rescueSnapshot(),

@@ -191,7 +191,7 @@ class MemberOperationsTest extends TestCase
         $this->postJson($url, ['phone' => $member->phone, 'turnstile_token' => 'correct-action'])->assertCreated();
         $this->assertDatabaseHas('platform_binding_attempts', ['member_id' => $member->id, 'method' => 'self', 'status' => 'failed']);
         $this->assertDatabaseHas('platform_binding_attempts', [
-            'member_id' => $member->id, 'method' => 'self', 'status' => 'succeeded', 'platform_account_id' => 'PL-11',
+            'member_id' => $member->id, 'method' => 'self', 'status' => 'succeeded', 'platform_account_id' => $member->phone,
         ]);
         $this->assertDatabaseHas('platform_bindings', ['member_id' => $member->id, 'protection_status' => 'inactive']);
     }

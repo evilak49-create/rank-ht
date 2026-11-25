@@ -99,7 +99,7 @@ class WgPlatformQueryTest extends TestCase
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password', 'phone_verified_at' => now()]);
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $bindingId = $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])
-            ->assertCreated()->assertJsonPath('data.platform_account_id', '4000000001')->assertDontSee('ignored@example.test')->json('data.id');
+            ->assertCreated()->assertJsonPath('data.platform_account_id', $member->phone)->assertDontSee('ignored@example.test')->json('data.id');
         $this->assertDatabaseHas('platform_bindings', [
             'platform_id' => $platform->id, 'baseline_deposit_cents' => 123456, 'baseline_valid_bet_cents' => 765432,
         ]);

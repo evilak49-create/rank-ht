@@ -169,7 +169,7 @@ class MemberVerificationTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->postJson($url, [
             'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => strtolower($answer),
-        ])->assertCreated()->assertJsonPath('data.platform_account_id', '123456');
+        ])->assertCreated()->assertJsonPath('data.platform_account_id', $member->phone);
         $this->postJson($url, [
             'phone' => $member->phone, 'challenge_id' => $challenge, 'code' => $answer,
         ])->assertUnprocessable()->assertJsonValidationErrors('code');

@@ -84,11 +84,26 @@ class PlatformIntegrationTest extends TestCase
         $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => '11912345679'])
             ->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => '+55 (11) 91234-5678'])
-            ->assertCreated()->assertJsonPath('data.platform_account_id', '4000000001');
+            ->assertCreated()->assertJsonPath('data.platform_account_id', $first->phone);
         $this->getJson('/api/v1/platform-bindings')->assertOk()->assertJsonCount(1, 'data');
         $this->assertDatabaseHas('platform_bindings', [
             'member_id' => $first->id, 'platform_id' => $platform->id,
+            'account_name' => $first->phone, 'platform_account_id' => '4000000001',
             'baseline_deposit_cents' => 1000, 'baseline_valid_bet_cents' => 2000,
+        ]);
+        $this->assertDatabaseHas('platform_binding_attempts', [
+            'member_id' => $first->id, 'platform_id' => $platform->id,
+            'method' => 'self', 'status' => 'succeeded', 'platform_account_id' => $first->phone,
+        ]);
+
+        DB::table('platform_bindings')->where('member_id', $first->id)->update(['account_name' => null]);
+        DB::table('platform_binding_attempts')->where('member_id', $first->id)->where('status', 'succeeded')
+            ->update(['platform_account_id' => '4000000001']);
+        $migration = require database_path('migrations/2026_11_26_000002_restore_bound_account_names.php');
+        $migration->up();
+        $this->getJson('/api/v1/platform-bindings')->assertOk()->assertJsonPath('data.0.platform_account_id', $first->phone);
+        $this->assertDatabaseHas('platform_binding_attempts', [
+            'member_id' => $first->id, 'status' => 'succeeded', 'platform_account_id' => $first->phone,
         ]);
 
         $this->actingAs($second, 'member');

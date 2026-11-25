@@ -61,7 +61,7 @@ class PlatformAutobindTest extends TestCase
 
         $this->accountFound = true;
         $this->postJson("/api/v1/platforms/{$platform->id}/binding", ['phone' => $member->phone])->assertCreated()
-            ->assertJsonPath('data.platform_account_id', '4000000001');
+            ->assertJsonPath('data.platform_account_id', $member->phone);
     }
 
     public function test_existing_automatic_bindings_keep_their_provider_id_when_backfilled(): void
