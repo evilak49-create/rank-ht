@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 
 class RescueFundConfiguration extends Page
 {
-    protected static ?string $title = '救援金配置';
+    protected static ?string $title = '救援配置';
 
     protected static string|\UnitEnum|null $navigationGroup = '平台管理';
 
@@ -46,6 +46,7 @@ class RescueFundConfiguration extends Page
             'enabled' => $current['enabled'],
             'max_wager_tier' => PointRules::display($current['max_wager_tier_micros']),
             'percent' => PointRules::display($current['percent_micros']),
+            'loss_percent' => PointRules::display($current['loss_percent_micros']),
         ]);
     }
 
@@ -64,6 +65,9 @@ class RescueFundConfiguration extends Page
                 ->helperText('上限包含该档。例如设置 3 倍时，可覆盖已有返利档位中的 1 倍、2 倍和 3 倍档。'),
             TextInput::make('percent')->label('救援金比例')->inputMode('decimal')->suffix('%')
                 ->rules(RescueFundSettings::PERCENT_RULES)->required(),
+            TextInput::make('loss_percent')->label('亏损比例')->inputMode('decimal')->suffix('%')
+                ->rules(RescueFundSettings::PERCENT_RULES)->required()
+                ->helperText('本期净亏损须达到该平台账号累计存款的这个比例。'),
         ]);
     }
 

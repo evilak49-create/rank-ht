@@ -36,12 +36,12 @@ class AdminNavigationTest extends TestCase
         $this->assertContains('出款管理', $groups['资金管理']);
         $this->assertContains('三方渠道', $groups['资金管理']);
         $this->assertContains('对话列表', $groups['客服管理']);
-        foreach (['返利配置', '救援金配置', '商品管理', '商品订单', '积分流水', '保障资格'] as $entry) {
+        foreach (['返利配置', '救援配置', '商品管理', '商品订单', '积分流水', '保障资格'] as $entry) {
             $this->assertNotContains($entry, array_merge(...array_values($groups)));
         }
 
         $this->get('/admin/cashback-settlements')->assertOk()->assertSee('返利配置');
-        $this->get('/admin/rescue-fund-claims')->assertOk()->assertSee('救援金配置');
+        $this->get('/admin/rescue-fund-claims')->assertOk()->assertSee('救援配置');
         $this->get('/admin/products')->assertNotFound();
         $this->get('/admin/shop-orders')->assertNotFound();
     }

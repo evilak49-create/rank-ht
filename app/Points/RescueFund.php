@@ -211,7 +211,9 @@ class RescueFund
             'deposit_cents' => $deposit, 'net_loss_cents' => $netLoss->isNegative() ? 0 : $netLoss->toInt(),
             'wager_tier_micros' => $tier, 'amount_cents' => 0,
         ];
-        if ($deposit === 0 || $netLoss->isLessThan($deposit) || $tier === null || $tier > $settings['max_wager_tier_micros']) {
+        $requiredLossScaled = BigInteger::of($snapshot['deposit_cents'])->multipliedBy($settings['loss_percent_micros']);
+        if ($deposit === 0 || $netLoss->multipliedBy(self::SETTLEMENT_SCALE)->isLessThan($requiredLossScaled)
+            || $tier === null || $tier > $settings['max_wager_tier_micros']) {
             return $details;
         }
 

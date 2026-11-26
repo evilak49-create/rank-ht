@@ -24,6 +24,7 @@ class RescueFundSettings
             'enabled' => (bool) $settings->enabled,
             'max_wager_tier_micros' => (int) $settings->max_wager_tier_micros,
             'percent_micros' => (int) $settings->percent_micros,
+            'loss_percent_micros' => (int) $settings->loss_percent_micros,
         ];
     }
 
@@ -34,6 +35,7 @@ class RescueFundSettings
             'enabled' => ['required', 'boolean'],
             'max_wager_tier' => self::WAGER_RULES,
             'percent' => self::PERCENT_RULES,
+            'loss_percent' => self::PERCENT_RULES,
         ])->validate();
         $tier = PointRules::toUnits((string) $data['max_wager_tier']);
         $percent = PointRules::toUnits((string) $data['percent']);
@@ -45,6 +47,7 @@ class RescueFundSettings
 
         DB::table('rescue_fund_settings')->where('id', 1)->update([
             'enabled' => $data['enabled'], 'max_wager_tier_micros' => $tier, 'percent_micros' => $percent,
+            'loss_percent_micros' => PointRules::toUnits((string) $data['loss_percent']),
             'user_id' => $operator->id, 'updated_at' => now(),
         ]);
     }

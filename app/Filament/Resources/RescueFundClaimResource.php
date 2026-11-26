@@ -66,7 +66,7 @@ class RescueFundClaimResource extends Resource
 
     public static function configurationAction(): Action
     {
-        return Action::make('configure')->label('救援金配置')
+        return Action::make('configure')->label('救援配置')
             ->visible(fn (): bool => RescueFundConfiguration::canAccess())->url(fn (): string => RescueFundConfiguration::getUrl());
     }
 

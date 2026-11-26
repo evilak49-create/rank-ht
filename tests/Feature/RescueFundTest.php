@@ -67,7 +67,7 @@ class RescueFundTest extends TestCase
         $this->travel(1)->minutes();
         $this->deposit += 1_000;
         $this->bet += 1_000;
-        $this->netProfit = -38_655;
+        $this->netProfit = -75_405;
         $this->postJson($claimPath, ['request_id' => (string) Str::uuid()])->assertSuccessful()->assertJsonPath('data.amount_cents', 100);
         $this->assertSame(5_100, $member->refresh()->available_balance_cents);
         $this->assertDatabaseCount('rescue_fund_claims', 2);
@@ -112,6 +112,14 @@ class RescueFundTest extends TestCase
             ->assertJsonPath('unavailable.0.wager_tier_micros', 3_000_000)
             ->assertJsonPath('unavailable.0.amount_cents', 0);
 
+        $this->netProfit = -25_154;
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->netProfit = -25_155;
+        $this->getJson('/api/v1/rescue-fund')->assertOk()
+            ->assertJsonPath('settings.loss_percent_micros', 25_000_000)
+            ->assertJsonPath('data.0.net_loss_cents', 37_500)
+            ->assertJsonPath('data.0.amount_cents', 5_000);
+
         $this->netProfit = null;
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
             ->assertJsonMissingPath('unavailable.0.net_loss_cents');
@@ -143,7 +151,7 @@ class RescueFundTest extends TestCase
         $this->travel(1)->minutes();
         $this->deposit += 1_000;
         $this->bet += 1_000;
-        $this->netProfit = -51_000;
+        $this->netProfit = -87_750;
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonPath('data.0.amount_cents', 100);
     }
 
@@ -153,11 +161,11 @@ class RescueFundTest extends TestCase
         [, $binding] = $this->scenario(usePandaDefaults: true);
         $this->deposit += 1_000;
         $this->bet += 1_000;
-        $this->netProfit = -655;
+        $this->netProfit = -24_905;
 
         $this->getJson('/api/v1/rescue-fund')->assertOk()
             ->assertJsonPath('data.0.binding_id', $binding->id)
-            ->assertJsonPath('data.0.net_loss_cents', 1_000)
+            ->assertJsonPath('data.0.net_loss_cents', 25_250)
             ->assertJsonPath('data.0.amount_cents', 100);
     }
 
@@ -193,11 +201,11 @@ class RescueFundTest extends TestCase
         $this->actingAs($operator, 'web')->get('/admin/rescue-fund-configuration')->assertOk();
 
         Livewire::test(RescueFundConfiguration::class)->set('data', [
-            'enabled' => true, 'max_wager_tier' => '3', 'percent' => '10.25',
+            'enabled' => true, 'max_wager_tier' => '3', 'percent' => '10.25', 'loss_percent' => '25.5',
         ])->call('save')->assertHasNoErrors();
 
         $this->assertDatabaseHas('rescue_fund_settings', [
-            'id' => 1, 'enabled' => true, 'max_wager_tier_micros' => 3_000_000, 'percent_micros' => 10_250_000,
+            'id' => 1, 'enabled' => true, 'max_wager_tier_micros' => 3_000_000, 'percent_micros' => 10_250_000, 'loss_percent_micros' => 25_500_000,
         ]);
 
         config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);
@@ -248,6 +256,7 @@ class RescueFundTest extends TestCase
         ]])->save();
         DB::table('rescue_fund_settings')->where('id', 1)->update([
             'enabled' => true, 'max_wager_tier_micros' => 3_000_000, 'percent_micros' => 10_000_000,
+            'loss_percent_micros' => 25_000_000,
         ]);
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
         $member->forceFill(['phone_verified_at' => now()])->save();
