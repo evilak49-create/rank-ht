@@ -9,6 +9,7 @@ use App\Auth\MemberVerification;
 use App\Auth\RegistrationOrigin;
 use App\Auth\SmsChallenges;
 use App\Auth\TurnstileVerification;
+use App\Jobs\ResolveRegistrationCountry;
 use App\Models\Member;
 use App\RedPackets\InvitationRewards;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -16,9 +17,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class MemberAuthController extends Controller
 {
@@ -105,6 +108,19 @@ class MemberAuthController extends Controller
             }, 3);
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['phone' => '该手机号已注册。']);
+        }
+
+        if ($origin->ip !== null && ($origin->country !== null
+            || filter_var($origin->ip, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE) !== false)) {
+            try {
+                $job = new ResolveRegistrationCountry($member->id, $origin->country);
+                if (in_array(config('queue.default'), ['sync', 'deferred', 'null'], true)) {
+                    $job->onConnection('database');
+                }
+                Bus::dispatch($job);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
         }
 
         return response()->json($this->memberData($member), 201)->withCookie($origin->cookie());

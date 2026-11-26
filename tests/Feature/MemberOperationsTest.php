@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Auth\SmsChallenges;
 use App\Auth\SmsSender;
 use App\Filament\Resources\MemberResource\Pages\ViewMember;
+use App\Jobs\ResolveRegistrationCountry;
 use App\Members\MemberAdministration;
 use App\Models\AdminRole;
 use App\Models\Member;
@@ -20,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -155,6 +157,7 @@ class MemberOperationsTest extends TestCase
 
     public function test_registration_ip_and_country_are_read_only_from_trusted_edges(): void
     {
+        Queue::fake();
         config([
             'services.turnstile.site_key' => 'public', 'services.turnstile.secret' => 'private',
             'services.registration.trusted_edge_proxies' => ['203.0.113.0/24'],
@@ -162,14 +165,43 @@ class MemberOperationsTest extends TestCase
         DB::table('member_verification_settings')->where('id', 1)->update(['mode' => 'cloudflare']);
         Http::fake(['https://challenges.cloudflare.com/turnstile/v0/siteverify' => Http::response(['success' => true, 'action' => 'register'])]);
         $body = ['phone' => '11912345678', 'password' => 'test-password', 'turnstile_token' => 'first'];
-        $headers = ['CF-Connecting-IP' => '198.51.100.5', 'CF-IPCountry' => 'BR'];
+        $headers = ['CF-Connecting-IP' => '8.8.8.8', 'CF-IPCountry' => 'BR'];
         $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.1'])->postJson('/api/v1/auth/register', $body, $headers)->assertCreated();
         $this->assertDatabaseHas('members', ['phone' => $body['phone'], 'registration_ip' => '192.0.2.1', 'registration_country' => null]);
 
-        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.1'])
+        $this->withServerVariables(['REMOTE_ADDR' => '173.245.48.12'])
             ->postJson('/api/v1/auth/register', [...$body, 'phone' => '11912345679', 'turnstile_token' => 'second'], $headers)
             ->assertCreated();
-        $this->assertDatabaseHas('members', ['phone' => '11912345679', 'registration_ip' => '198.51.100.5', 'registration_country' => 'BR']);
+        $this->assertDatabaseHas('members', ['phone' => '11912345679', 'registration_ip' => '8.8.8.8', 'registration_country' => null]);
+        $member = Member::query()->where('phone', '11912345679')->sole();
+        Queue::assertPushed(ResolveRegistrationCountry::class, 1);
+        Queue::assertPushed(ResolveRegistrationCountry::class, fn ($job) => $job->memberId === $member->id && $job->edgeCountry === 'BR');
+        (new ResolveRegistrationCountry($member->id, 'BR'))->handle();
+        $this->assertSame('BR', $member->refresh()->registration_country);
+    }
+
+    public function test_registration_country_lookup_runs_only_in_the_queued_job(): void
+    {
+        Queue::fake();
+        config(['services.turnstile.site_key' => 'public', 'services.turnstile.secret' => 'private']);
+        DB::table('member_verification_settings')->where('id', 1)->update(['mode' => 'cloudflare']);
+        Http::fake([
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify' => Http::response(['success' => true, 'action' => 'register']),
+            'https://api.country.is/8.8.8.8' => Http::response(['ip' => '8.8.8.8', 'country' => 'US']),
+        ]);
+        $this->withServerVariables(['REMOTE_ADDR' => '8.8.8.8'])->postJson('/api/v1/auth/register', [
+            'phone' => '11912345678', 'password' => 'test-password', 'turnstile_token' => 'first',
+        ])->assertCreated();
+
+        $member = Member::query()->sole();
+        $this->assertSame('8.8.8.8', $member->registration_ip);
+        $this->assertNull($member->registration_country);
+        Http::assertSentCount(1);
+        Queue::assertPushed(ResolveRegistrationCountry::class, fn ($job) => $job->memberId === $member->id && $job->edgeCountry === null);
+
+        (new ResolveRegistrationCountry($member->id, null))->handle();
+        $this->assertSame('US', $member->refresh()->registration_country);
+        Http::assertSentCount(2);
     }
 
     public function test_self_binding_uses_cloudflare_mode_and_records_each_valid_submission(): void

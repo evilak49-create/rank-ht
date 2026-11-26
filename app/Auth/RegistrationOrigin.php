@@ -2,6 +2,7 @@
 
 namespace App\Auth;
 
+use App\Http\Cloudflare;
 use App\Models\Member;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -23,12 +24,12 @@ class RegistrationOrigin
     public static function fromRequest(Request $request): self
     {
         $remote = (string) $request->server('REMOTE_ADDR');
-        $trusted = IpUtils::checkIp($remote, config('services.registration.trusted_edge_proxies', []));
-        $ip = $request->ip();
+        $trusted = IpUtils::checkIp($remote, [...Cloudflare::PROXIES, ...config('services.registration.trusted_edge_proxies', [])]);
+        $ip = $remote;
         $country = null;
         if ($trusted) {
             $edgeIp = $request->header('CF-Connecting-IP');
-            $ip = filter_var($edgeIp, FILTER_VALIDATE_IP) !== false ? $edgeIp : $ip;
+            $ip = filter_var($edgeIp, FILTER_VALIDATE_IP) !== false ? $edgeIp : null;
             $edgeCountry = strtoupper((string) $request->header('CF-IPCountry'));
             $country = $edgeCountry !== 'XX' && preg_match('/\A[A-Z]{2}\z/', $edgeCountry) ? $edgeCountry : null;
         }
@@ -56,7 +57,6 @@ class RegistrationOrigin
     {
         return [
             'registration_ip' => $this->ip,
-            'registration_country' => $this->country,
             'registration_device_hash' => hash('sha256', $this->device),
         ];
     }
