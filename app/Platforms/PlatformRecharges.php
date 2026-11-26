@@ -8,6 +8,7 @@ use App\Models\Platform;
 use App\Models\PlatformBinding;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
 class PlatformRecharges
@@ -63,11 +64,7 @@ class PlatformRecharges
 
     public function savedPage(PlatformBinding $binding, int $page): array
     {
-        [$start, $end] = $this->recentPeriod();
-        $query = DB::table('platform_recharges')->where('platform_binding_id', $binding->id)
-            ->where('network', $binding->platform->network->value)
-            ->whereBetween('recharged_at', [$start, $end])
-            ->orderByDesc('recharged_at')->orderByDesc('id');
+        $query = $this->savedQuery($binding)->orderByDesc('recharged_at')->orderByDesc('id');
         $columns = ['external_id', 'amount_cents', 'recharged_at'];
         $records = $query->paginate(PlatformRechargePage::SIZE, $columns, 'page', $page);
         if ($page > $records->lastPage()) {
@@ -85,6 +82,21 @@ class PlatformRecharges
             'last_page' => min(self::MAX_PAGE, $records->lastPage()),
             'has_more' => $records->currentPage() < self::MAX_PAGE && $records->hasMorePages(),
         ];
+    }
+
+    public function savedSummary(PlatformBinding $binding): array
+    {
+        $totals = $this->savedQuery($binding)
+            ->selectRaw('COUNT(*) AS record_count, COALESCE(SUM(amount_cents), 0) AS total_cents')->first();
+
+        return ['count' => (int) $totals->record_count, 'total_cents' => (string) $totals->total_cents];
+    }
+
+    private function savedQuery(PlatformBinding $binding): QueryBuilder
+    {
+        return DB::table('platform_recharges')->where('platform_binding_id', $binding->id)
+            ->where('network', $binding->platform->network->value)
+            ->whereBetween('recharged_at', $this->recentPeriod());
     }
 
     private function recentPeriod(): array

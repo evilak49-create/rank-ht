@@ -122,12 +122,16 @@ class RescueFundTest extends TestCase
             ->assertJsonPath('unavailable.0.deposit_cents', 50_000)
             ->assertJsonPath('unavailable.0.net_loss_cents', 62_345)
             ->assertJsonPath('unavailable.0.wager_multiplier', '4.000000')
+            ->assertJsonPath('unavailable.0.unmet_conditions.0', '本期实际打码倍数超过最高打码倍数。')
             ->assertJsonPath('unavailable.0.amount_cents', 0);
 
         $this->bet -= 50_000;
         $this->netProfit = -20_000;
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
             ->assertJsonPath('unavailable.0.net_loss_cents', 32_345)
+            ->assertJsonPath('unavailable.0.cumulative_deposit_cents', 150_000)
+            ->assertJsonPath('unavailable.0.required_loss_cents', 37_500)
+            ->assertJsonPath('unavailable.0.unmet_conditions.0', '本期净亏损低于最低所需亏损金额。')
             ->assertJsonPath('unavailable.0.wager_multiplier', '3.000000')
             ->assertJsonPath('unavailable.0.amount_cents', 0);
 

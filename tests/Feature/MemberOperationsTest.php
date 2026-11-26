@@ -246,10 +246,13 @@ class MemberOperationsTest extends TestCase
             'data' => [['reference' => 'payment-1', 'amount_cents' => 3900, 'recharged_at' => now()->toISOString()]],
             'current_page' => 1, 'last_page' => 1, 'has_more' => false,
         ]);
+        $service->shouldReceive('savedSummary')->once()
+            ->withArgs(fn (PlatformBinding $owner): bool => $owner->is($binding))->andReturn(['count' => 2, 'total_cents' => '5900']);
 
         $this->actingAs($operator, 'web')->get("/admin/members/{$other->id}/recharges/{$binding->id}")->assertNotFound();
         $this->get("/admin/members/{$member->id}/recharges/{$binding->id}")
-            ->assertOk()->assertSee('payment-1')->assertSee('R$ 39.00');
+            ->assertOk()->assertSee('payment-1')->assertSee('R$ 39.00')
+            ->assertSee('已同步充值次数')->assertSee('2 次')->assertSee('R$ 59.00');
     }
 
     public function test_unhealthy_platform_shows_saved_recharges_instead_of_a_404(): void
@@ -273,7 +276,7 @@ class MemberOperationsTest extends TestCase
 
         $this->actingAs($operator, 'web')->get("/admin/members/{$member->id}/recharges/{$binding->id}")
             ->assertOk()->assertSee('本地记录')->assertSee('saved-recharge')->assertSee('R$ 39.00')
-            ->assertDontSee('old-recharge');
+            ->assertSee('1 次')->assertDontSee('R$ 78.00')->assertDontSee('old-recharge');
         Http::assertNothingSent();
     }
 }

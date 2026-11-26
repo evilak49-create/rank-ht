@@ -16,6 +16,11 @@
             </div>
         @endif
 
+        <dl class="member-recharges-summary" aria-label="最近一个月已同步充值汇总">
+            <div><dt>已同步充值次数</dt><dd>{{ $summary['count'] }} 次</dd></div>
+            <div><dt>已同步充值总额</dt><dd>R$ {{ \Brick\Math\BigDecimal::of($summary['total_cents'])->withPointMovedLeft(2)->toScale(2) }}</dd></div>
+        </dl>
+
         @if (empty($recharges['data']))
             <div class="member-recharges-empty">{{ $queryError ? '最近一个月暂无已同步的充值记录。' : '最近一个月暂无充值记录。' }}</div>
         @else
@@ -58,6 +63,10 @@
         }
 
         .member-recharges-notice p { margin-top: 0.25rem; font-size: 0.875rem; }
+        .member-recharges-summary { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+        .member-recharges-summary > div { flex: 1 1 9rem; padding: 0.75rem 1rem; border: 1px solid rgb(128 128 128 / 20%); border-radius: 0.75rem; }
+        .member-recharges-summary dt { opacity: 0.8; font-size: 0.8125rem; }
+        .member-recharges-summary dd { margin-top: 0.25rem; font-size: 1.1rem; font-weight: 650; font-variant-numeric: tabular-nums; }
         .member-recharges-table { overflow-x: auto; border-radius: 0.75rem; border: 1px solid rgb(128 128 128 / 20%); }
         .member-recharges-table table { width: 100%; min-width: 32rem; border-collapse: collapse; font-size: 0.875rem; }
         .member-recharges-table th,

@@ -121,7 +121,11 @@ class RescueFund
     {
         $settings = $this->settings->current();
         $platform = $binding->platform;
-        $baseline = ['baseline_at' => $binding->rescue_baseline['observed_at'] ?? null];
+        $baseline = [
+            'baseline_at' => $binding->rescue_baseline['observed_at'] ?? null,
+            'loss_percent_micros' => $settings['loss_percent_micros'],
+            'max_wager_tier_micros' => $settings['max_wager_tier_micros'],
+        ];
         if (! $settings['enabled']) {
             return $baseline + ['result' => '救援金未开放'];
         }
@@ -200,19 +204,36 @@ class RescueFund
         }
 
         $wagerMultiplier = $deposit > 0 ? (string) BigDecimal::of($bet)->dividedBy($deposit, 6, RoundingMode::Ceiling) : null;
+        $requiredLoss = BigInteger::of($snapshot['deposit_cents'])->multipliedBy($settings['loss_percent_micros'])
+            ->plus(self::SETTLEMENT_SCALE - 1)->quotient(self::SETTLEMENT_SCALE);
+        $reasons = [];
+        if ($deposit === 0) {
+            $reasons[] = '本期没有新增充值，无法计算本期打码倍数。';
+        }
+        if ($netLoss->isLessThan($requiredLoss)) {
+            $reasons[] = '本期净亏损低于最低所需亏损金额。';
+        }
+        if ($deposit > 0 && BigInteger::of($bet)->multipliedBy(PointRules::SCALE)
+            ->isGreaterThan(BigInteger::of($deposit)->multipliedBy($settings['max_wager_tier_micros']))) {
+            $reasons[] = '本期实际打码倍数超过最高打码倍数。';
+        }
+
         $details = [
             'deposit_cents' => $deposit, 'net_loss_cents' => $netLoss->isNegative() ? 0 : $netLoss->toInt(),
+            'cumulative_deposit_cents' => $snapshot['deposit_cents'], 'required_loss_cents' => $requiredLoss->toInt(),
             'wager_multiplier' => $wagerMultiplier, 'amount_cents' => 0,
+            'unmet_conditions' => $reasons,
         ];
-        $requiredLossScaled = BigInteger::of($snapshot['deposit_cents'])->multipliedBy($settings['loss_percent_micros']);
-        if ($deposit === 0 || $netLoss->multipliedBy(self::SETTLEMENT_SCALE)->isLessThan($requiredLossScaled)
-            || BigInteger::of($bet)->multipliedBy(PointRules::SCALE)
-                ->isGreaterThan(BigInteger::of($deposit)->multipliedBy($settings['max_wager_tier_micros']))) {
+        if ($reasons !== []) {
             return $details;
         }
 
         $amount = BigInteger::of($deposit)->multipliedBy($settings['percent_micros'])->quotient(self::SETTLEMENT_SCALE);
-        if (! $amount->isGreaterThan(CashBalance::MAX_CENTS)) {
+        if ($amount->isZero()) {
+            $details['unmet_conditions'][] = '按比例计算的救援金不足 R$ 0.01。';
+        } elseif ($amount->isGreaterThan(CashBalance::MAX_CENTS)) {
+            $details['unmet_conditions'][] = '计算金额超出可入账范围。';
+        } else {
             $details['amount_cents'] = $amount->toInt();
         }
 

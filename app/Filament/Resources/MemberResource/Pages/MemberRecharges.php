@@ -31,6 +31,9 @@ class MemberRecharges extends Page
     public array $recharges = [];
 
     #[Locked]
+    public array $summary = [];
+
+    #[Locked]
     public string $accountLabel;
 
     #[Locked]
@@ -80,6 +83,7 @@ class MemberRecharges extends Page
         if ($this->queryError !== null) {
             $this->recharges = $recharges->savedPage($binding, $page);
         }
+        $this->summary = $recharges->savedSummary($binding);
     }
 
     protected function getHeaderActions(): array

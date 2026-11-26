@@ -22,13 +22,37 @@
         </div>
     </div>
 
+    @if (!empty($assessment['unmet_conditions']))
+        <div class="member-rescue-unmet">
+            <strong>未达标项目</strong>
+            <ul>
+                @foreach ($assessment['unmet_conditions'] as $reason)
+                    <li>{{ $reason }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <dl class="member-rescue-metrics">
-        @foreach (['deposit_cents' => '本期充值', 'net_loss_cents' => '本期净亏损'] as $key => $label)
+        @foreach ([
+            'cumulative_deposit_cents' => '累计存款',
+            'deposit_cents' => '本期充值',
+            'net_loss_cents' => '本期净亏损',
+            'required_loss_cents' => '最低所需亏损金额',
+        ] as $key => $label)
             <div>
                 <dt>{{ $label }}</dt>
                 <dd>{{ isset($assessment[$key]) ? 'R$ '.\App\Points\PointRules::display($assessment[$key], 2) : '—' }}</dd>
             </div>
         @endforeach
+        <div>
+            <dt>配置的亏损比例</dt>
+            <dd>{{ rtrim(rtrim(\App\Points\PointRules::display($assessment['loss_percent_micros']), '0'), '.') }}%</dd>
+        </div>
+        <div>
+            <dt>最高打码倍数</dt>
+            <dd>{{ rtrim(rtrim(\App\Points\PointRules::display($assessment['max_wager_tier_micros']), '0'), '.') }} 倍</dd>
+        </div>
         <div>
             <dt>本期实际打码倍数</dt>
             <dd>{{ isset($assessment['wager_multiplier']) ? $assessment['wager_multiplier'].' 倍' : '—' }}</dd>
@@ -69,6 +93,14 @@
         }
         .member-rescue-approved { color: #047857; }
         .dark .member-rescue-approved { color: #6ee7b7; }
+        .member-rescue-unmet {
+            padding: 0.8rem 1rem;
+            border: 1px solid rgb(202 138 4 / 30%);
+            border-radius: 0.75rem;
+            background: rgb(234 179 8 / 9%);
+            font-size: 0.875rem;
+        }
+        .member-rescue-unmet ul { margin-top: 0.35rem; padding-inline-start: 1.15rem; list-style: disc; }
         .member-rescue-metrics {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
