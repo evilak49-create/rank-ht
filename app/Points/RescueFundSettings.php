@@ -39,9 +39,9 @@ class RescueFundSettings
         ])->validate();
         $tier = PointRules::toUnits((string) $data['max_wager_tier']);
         $percent = PointRules::toUnits((string) $data['percent']);
-        if ($data['enabled'] && ($tier === 0 || $percent === 0)) {
+        if ($data['enabled'] && $percent === 0) {
             throw ValidationException::withMessages([
-                $tier === 0 ? 'max_wager_tier' : 'percent' => '启用救援金时，最高可领档位和救援金比例须大于零。',
+                'percent' => '启用救援金时，救援金比例须大于零。',
             ]);
         }
 

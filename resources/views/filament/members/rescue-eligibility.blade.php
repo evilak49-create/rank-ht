@@ -6,7 +6,7 @@
             <div><dt class="font-medium">{{ $label }}</dt><dd>R$ {{ \App\Points\PointRules::display($assessment[$key], 2) }}</dd></div>
         @endif
     @endforeach
-    @isset($assessment['wager_tier_micros'])
-        <div><dt class="font-medium">匹配返利档位</dt><dd>{{ \App\Points\PointRules::display($assessment['wager_tier_micros']) }} 倍</dd></div>
+    @isset($assessment['wager_multiplier'])
+        <div><dt class="font-medium">本期实际打码倍数</dt><dd>{{ $assessment['wager_multiplier'] }} 倍</dd></div>
     @endisset
 </dl>

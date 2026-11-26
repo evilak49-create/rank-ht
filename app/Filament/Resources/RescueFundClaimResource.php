@@ -46,7 +46,7 @@ class RescueFundClaimResource extends Resource
             TextColumn::make('member.phone')->label('会员手机号')->searchable(),
             TextColumn::make('platform_name')->label('平台')->searchable(),
             TextColumn::make('platform_binding_id')->label('绑定编号'),
-            TextColumn::make('amount_cents')->label('领取金额')->formatStateUsing(fn (int $cents): string => 'R$ '.PointRules::display($cents, 2)),
+            TextColumn::make('amount_cents')->label('领取金额')->formatStateUsing(fn (int $state): string => 'R$ '.PointRules::display($state, 2)),
             TextColumn::make('credited_at')->label('领取时间')->dateTime()->sortable(),
         ])->filters([
             Filter::make('record')->label('记录编号')->schema([TextInput::make('id')->label('记录编号')->integer()])

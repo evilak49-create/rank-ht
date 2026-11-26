@@ -5,12 +5,13 @@ namespace App\Points;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
-use App\Models\PointRule;
 use App\Models\RescueFundClaim;
 use App\Platforms\PlatformAccount;
 use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
+use Brick\Math\BigDecimal;
 use Brick\Math\BigInteger;
+use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
 
 class RescueFund
@@ -29,12 +30,11 @@ class RescueFund
         $settings = $this->settings->current();
         $data = [];
         $unavailable = [];
-        $tiers = $settings['enabled'] ? PlatformRebateTiers::effective(PointRule::query()->latest('id')->first()) : [];
         $bindings = PlatformBinding::query()->whereBelongsTo($member)->with('platform')->orderBy('id')->get();
         foreach ($bindings as $binding) {
             $platform = $binding->platform;
             $entry = ['binding_id' => $binding->id, 'platform_name' => $platform->name, 'logo_url' => $platform->logo_url];
-            if ($tiers === [] || ! $this->canQuery($platform)) {
+            if (! $settings['enabled'] || ! $this->canQuery($platform)) {
                 $unavailable[] = $entry;
 
                 continue;
@@ -50,7 +50,7 @@ class RescueFund
             if ($binding->rescue_baseline === null && $snapshot !== null) {
                 $this->initializeBaseline($binding, $platform, $snapshot);
             }
-            $assessment = $this->assess($binding, $snapshot, $settings, $tiers);
+            $assessment = $this->assess($binding, $snapshot, $settings);
             if (($assessment['amount_cents'] ?? 0) === 0) {
                 $unavailable[] = $entry + $assessment;
             } else {
@@ -97,10 +97,7 @@ class RescueFund
                 && $currentPlatform->network === $platform->network
                 && $currentPlatform->active_query_revision === $platform->active_query_revision, 409, self::INELIGIBLE);
 
-            // Rebate rule updates also lock the first rule before publishing a new version.
-            PointRule::query()->oldest('id')->lockForUpdate()->firstOrFail();
-            $rule = PointRule::query()->latest('id')->lockForUpdate()->firstOrFail();
-            $quote = $this->assess($current, $snapshot, $settings, PlatformRebateTiers::effective($rule));
+            $quote = $this->assess($current, $snapshot, $settings);
             abort_if(($quote['amount_cents'] ?? 0) === 0, 409, self::INELIGIBLE);
 
             $claim = RescueFundClaim::create([
@@ -108,7 +105,7 @@ class RescueFund
                 'platform_binding_id' => $current->id, 'platform_name' => $currentPlatform->name,
                 'request_id' => $requestId, 'amount_cents' => $quote['amount_cents'],
                 'calculation' => $quote + [
-                    'rebate_rule_id' => $rule->id, 'settings' => $settings,
+                    'settings' => $settings,
                     'period_start_snapshot' => $current->rescue_baseline, 'period_end_snapshot' => $snapshot,
                 ],
                 'credited_at' => now(),
@@ -134,16 +131,12 @@ class RescueFund
         if ($binding->rescue_baseline === null) {
             return $baseline + ['result' => '等待建立有效基线'];
         }
-        $tiers = PlatformRebateTiers::effective(PointRule::query()->latest('id')->first());
-        if ($tiers === []) {
-            return $baseline + ['result' => '暂无返利档位'];
-        }
         try {
             $snapshot = $this->lookup($binding, $platform)?->rescueSnapshot();
         } catch (PlatformQueryFailure) {
             return $baseline + ['result' => '合作平台查询暂不可用'];
         }
-        $assessment = $this->assess($binding, $snapshot, $settings, $tiers);
+        $assessment = $this->assess($binding, $snapshot, $settings);
         if ($assessment === []) {
             return $baseline + ['result' => '未取得可与基线比较的有效数据'];
         }
@@ -190,7 +183,7 @@ class RescueFund
         return $claim;
     }
 
-    private function assess(PlatformBinding $binding, ?array $snapshot, array $settings, array $tiers): array
+    private function assess(PlatformBinding $binding, ?array $snapshot, array $settings): array
     {
         $baseline = $binding->rescue_baseline;
         // Snapshots store UTC ISO timestamps with the same precision and amount source.
@@ -202,18 +195,19 @@ class RescueFund
         $deposit = $snapshot['deposit_cents'] - $baseline['deposit_cents'];
         $bet = $snapshot['valid_bet_cents'] - $baseline['valid_bet_cents'];
         $netLoss = BigInteger::of($baseline['net_profit_cents'])->minus($snapshot['net_profit_cents']);
-        if ($deposit < 0 || $deposit > CashBalance::MAX_CENTS || $netLoss->isGreaterThan(CashBalance::MAX_CENTS)) {
+        if ($deposit < 0 || $bet < 0 || $deposit > CashBalance::MAX_CENTS || $netLoss->isGreaterThan(CashBalance::MAX_CENTS)) {
             return [];
         }
 
-        $tier = PlatformRebateTiers::matchWager($tiers, $deposit, $bet)['multiplier_micros'] ?? null;
+        $wagerMultiplier = $deposit > 0 ? (string) BigDecimal::of($bet)->dividedBy($deposit, 6, RoundingMode::Ceiling) : null;
         $details = [
             'deposit_cents' => $deposit, 'net_loss_cents' => $netLoss->isNegative() ? 0 : $netLoss->toInt(),
-            'wager_tier_micros' => $tier, 'amount_cents' => 0,
+            'wager_multiplier' => $wagerMultiplier, 'amount_cents' => 0,
         ];
         $requiredLossScaled = BigInteger::of($snapshot['deposit_cents'])->multipliedBy($settings['loss_percent_micros']);
         if ($deposit === 0 || $netLoss->multipliedBy(self::SETTLEMENT_SCALE)->isLessThan($requiredLossScaled)
-            || $tier === null || $tier > $settings['max_wager_tier_micros']) {
+            || BigInteger::of($bet)->multipliedBy(PointRules::SCALE)
+                ->isGreaterThan(BigInteger::of($deposit)->multipliedBy($settings['max_wager_tier_micros']))) {
             return $details;
         }
 

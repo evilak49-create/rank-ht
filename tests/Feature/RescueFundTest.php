@@ -31,11 +31,11 @@ class RescueFundTest extends TestCase
 
     private string|int|null $netProfit = 12_345;
 
-    public function test_claim_at_the_maximum_rebate_tier_credits_once_and_starts_a_new_independent_period(): void
+    public function test_claim_at_the_maximum_wager_multiplier_credits_once_and_starts_a_new_independent_period(): void
     {
         [$member, $binding] = $this->scenario();
         $this->deposit += 50_000;
-        $this->bet += 175_000;
+        $this->bet += 150_000;
         $this->netProfit = -37_655;
 
         $this->getJson('/api/v1/rescue-fund')->assertOk()
@@ -44,7 +44,7 @@ class RescueFundTest extends TestCase
             ->assertJsonPath('data.0.logo_url', 'https://example.test/logo.png')
             ->assertJsonPath('data.0.deposit_cents', 50_000)
             ->assertJsonPath('data.0.net_loss_cents', 50_000)
-            ->assertJsonPath('data.0.wager_tier_micros', 3_000_000)
+            ->assertJsonPath('data.0.wager_multiplier', '3.000000')
             ->assertJsonPath('data.0.amount_cents', 5_000);
 
         // Regular cashback settlement can move its own baseline without consuming rescue eligibility.
@@ -71,6 +71,25 @@ class RescueFundTest extends TestCase
         $this->postJson($claimPath, ['request_id' => (string) Str::uuid()])->assertSuccessful()->assertJsonPath('data.amount_cents', 100);
         $this->assertSame(5_100, $member->refresh()->available_balance_cents);
         $this->assertDatabaseCount('rescue_fund_claims', 2);
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => '救援金运营', 'permissions' => ['points.view']]));
+        $this->actingAs($operator, 'web')->get('/admin/rescue-fund-claims')->assertOk()->assertSee('R$ 50.00');
+    }
+
+    public function test_actual_wager_limit_includes_zero_fractional_values_and_the_exact_maximum(): void
+    {
+        [$member, $binding] = $this->scenario();
+        PointRule::query()->latest('id')->firstOrFail()->forceFill(['rebate_tiers' => []])->save();
+        DB::table('rescue_fund_settings')->where('id', 1)->update(['max_wager_tier_micros' => 2_000_000]);
+        $this->deposit += 50_000;
+        $this->netProfit = -37_655;
+        foreach ([200_000 => '0.000000', 275_000 => '1.500000', 300_000 => '2.000000'] as $bet => $multiplier) {
+            $this->bet = $bet;
+            $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonPath('data.0.wager_multiplier', $multiplier);
+        }
+        $this->bet++;
+        $this->postJson("/api/v1/rescue-fund/{$binding->id}/claim", ['request_id' => (string) Str::uuid()])->assertConflict();
+        $this->assertSame(0, $member->refresh()->available_balance_cents);
     }
 
     public function test_list_shows_owned_bindings_even_when_the_feature_is_disabled(): void
@@ -102,14 +121,14 @@ class RescueFundTest extends TestCase
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
             ->assertJsonPath('unavailable.0.deposit_cents', 50_000)
             ->assertJsonPath('unavailable.0.net_loss_cents', 62_345)
-            ->assertJsonPath('unavailable.0.wager_tier_micros', 4_000_000)
+            ->assertJsonPath('unavailable.0.wager_multiplier', '4.000000')
             ->assertJsonPath('unavailable.0.amount_cents', 0);
 
         $this->bet -= 50_000;
         $this->netProfit = -20_000;
         $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data')
             ->assertJsonPath('unavailable.0.net_loss_cents', 32_345)
-            ->assertJsonPath('unavailable.0.wager_tier_micros', 3_000_000)
+            ->assertJsonPath('unavailable.0.wager_multiplier', '3.000000')
             ->assertJsonPath('unavailable.0.amount_cents', 0);
 
         $this->netProfit = -25_154;

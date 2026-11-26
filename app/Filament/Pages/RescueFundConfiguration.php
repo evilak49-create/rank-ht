@@ -60,9 +60,9 @@ class RescueFundConfiguration extends Page
         return $schema->statePath('data')->components([
             Toggle::make('enabled')->label('开放救援金')
                 ->helperText('所有担保平台统一使用以下设置。熊猫默认读取 historyWinsLoses。旧绑定缺少净盈亏快照时，从会员首次取得有效快照起算。'),
-            TextInput::make('max_wager_tier')->label('最高可领取的返利档位')->inputMode('decimal')->suffix('倍')
+            TextInput::make('max_wager_tier')->label('最高打码倍数')->inputMode('decimal')->suffix('倍')
                 ->rules(RescueFundSettings::WAGER_RULES)->required()
-                ->helperText('上限包含该档。例如设置 3 倍时，可覆盖已有返利档位中的 1 倍、2 倍和 3 倍档。'),
+                ->helperText('按本期有效投注除以本期充值计算。设置 2 倍时，0 至 2 倍均满足打码条件。'),
             TextInput::make('percent')->label('救援金比例')->inputMode('decimal')->suffix('%')
                 ->rules(RescueFundSettings::PERCENT_RULES)->required(),
             TextInput::make('loss_percent')->label('亏损比例')->inputMode('decimal')->suffix('%')
