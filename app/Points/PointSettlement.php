@@ -61,7 +61,7 @@ class PointSettlement
 
         $binding = PlatformBinding::query()->with('member')->find($bindingId);
         $platform = $binding ? Platform::query()->available()->find($binding->platform_id) : null;
-        if (! $platform || ! $binding->member || $binding->member->disabled_at !== null) {
+        if (! $platform || ! $binding->member || $binding->member->disabled_at !== null || $binding->created_at->gt($noon)) {
             return;
         }
         $account = $this->lookupBoundAccount($binding, $platform);

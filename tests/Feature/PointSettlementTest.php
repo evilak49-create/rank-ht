@@ -243,6 +243,41 @@ class PointSettlementTest extends TestCase
         $this->getJson('/api/v1/cashback/history')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_daily_cashback_catches_up_an_unavailable_platform_after_noon(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-24 11:55:00', 'America/Sao_Paulo'));
+        [$member, $binding] = $this->scenario(11000);
+        PointRule::query()->firstOrFail()->forceFill(['rebate_tiers' => [
+            ['multiplier_micros' => 1_000_000, 'percent_micros' => 2_000_000],
+        ]])->save();
+        Queue::fake();
+        $event = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())
+            ->first(fn ($event) => str_contains($event->command ?? '', 'cashback:dispatch'));
+        $this->assertFalse($event->filtersPass($this->app));
+        $binding->platform->forceFill(['query_unhealthy_at' => now()])->save();
+
+        $this->travel(5)->minutes();
+        $this->artisan('cashback:dispatch')->assertSuccessful();
+        Queue::assertNothingPushed();
+
+        $binding->platform->forceFill(['query_unhealthy_at' => null])->save();
+        $this->travel(5)->minutes();
+        $this->assertTrue($event->isDue($this->app));
+        $this->assertTrue($event->filtersPass($this->app));
+        $this->artisan('cashback:dispatch')->assertSuccessful();
+        Queue::assertPushed(DispatchDailyCashback::class, fn ($job) => $job->bindingId === $binding->id && $job->day === '2026-11-24');
+
+        $job = Queue::pushed(DispatchDailyCashback::class)->sole();
+        $settlement = app(\App\Points\PointSettlement::class);
+        $job->handle($settlement);
+        $job->handle($settlement);
+        $this->travel(5)->minutes();
+        $this->artisan('cashback:dispatch')->assertSuccessful();
+        Queue::assertPushedTimes(DispatchDailyCashback::class, 1);
+        $this->assertSame(200, $member->refresh()->available_balance_cents);
+        $this->assertDatabaseCount('cash_balance_entries', 1);
+    }
+
     private function scenario(int $deposit = 16000): array
     {
         config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);
