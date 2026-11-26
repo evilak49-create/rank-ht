@@ -32,6 +32,7 @@ class CashbackController extends Controller
                 'current_cents', 'estimated_cents', 'rebate_percent', 'max_rebate_percent', 'observed_at',
                 'observed_deposit_cents', 'observed_valid_bet_cents', 'deposit_cents', 'valid_bet_cents',
                 'matched_rebate_wager_multiplier',
+                'estimated_wager_multiplier', 'estimated_rebate_percent',
             ])],
             ...CashbackSchedule::information(),
         ]);

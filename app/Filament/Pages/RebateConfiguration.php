@@ -5,12 +5,15 @@ namespace App\Filament\Pages;
 use App\Filament\Resources\CashbackSettlementResource;
 use App\Models\PointRule;
 use App\Models\User;
+use App\Points\PointRules;
 use App\Points\PlatformRebateTiers;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -52,14 +55,24 @@ class RebateConfiguration extends Page
     public function form(Schema $schema): Schema
     {
         return $schema->statePath('data')->components([
-            Repeater::make('tiers')->label('返利档位')->defaultItems(0)->columns(2)
-                ->addActionLabel('添加档位')->reorderable(false)
-                ->helperText('所有平台共用这套档位，按达到的最高倍数档结算。清空并保存会关闭所有平台的返利。')
+            Section::make('前台返利预估')
                 ->schema([
-                    TextInput::make('wager_multiplier')->label('最低打码倍数')->inputMode('decimal')->required()
-                        ->rules(PlatformRebateTiers::MULTIPLIER_RULES)->suffix('倍'),
-                    TextInput::make('rebate_percent')->label('返利比例')->inputMode('decimal')->required()
-                        ->rules(PlatformRebateTiers::PERCENT_RULES)->suffix('%'),
+                    TextInput::make('virtual_max_wager_multiplier')->label('虚拟最高倍数')->inputMode('decimal')->suffix('倍')
+                        ->rules(PlatformRebateTiers::VIRTUAL_MULTIPLIER_RULES)
+                        ->helperText('前台按此倍数能达到的最高档位预估返利。留空时，使用已配置的最高返利比例。'),
+                ]),
+            Section::make('实际结算档位')
+                ->description('所有平台共用这套档位，按实际打码达到的最高倍数档结算。清空并保存会关闭返利。')
+                ->schema([
+                    Repeater::make('tiers')->hiddenLabel()->defaultItems(0)
+                        ->addActionLabel('添加档位')->reorderable(false)
+                        ->table([TableColumn::make('最低打码倍数'), TableColumn::make('返利比例')])
+                        ->schema([
+                            TextInput::make('wager_multiplier')->label('最低打码倍数')->inputMode('decimal')->required()
+                                ->rules(PlatformRebateTiers::MULTIPLIER_RULES)->suffix('倍'),
+                            TextInput::make('rebate_percent')->label('返利比例')->inputMode('decimal')->required()
+                                ->rules(PlatformRebateTiers::PERCENT_RULES)->suffix('%'),
+                        ]),
                 ]),
         ]);
     }
@@ -83,6 +96,10 @@ class RebateConfiguration extends Page
 
     private function fillTiers(PointRule $rule): void
     {
-        $this->form->fill(['tiers' => PlatformRebateTiers::decimals(PlatformRebateTiers::effective($rule))]);
+        $virtualMultiplier = $rule->virtual_max_wager_multiplier_micros;
+        $this->form->fill([
+            'virtual_max_wager_multiplier' => $virtualMultiplier === null ? null : PointRules::display($virtualMultiplier),
+            'tiers' => PlatformRebateTiers::decimals(PlatformRebateTiers::effective($rule)),
+        ]);
     }
 }

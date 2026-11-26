@@ -243,6 +243,35 @@ class PointSettlementTest extends TestCase
         $this->getJson('/api/v1/cashback/history')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_virtual_multiplier_only_changes_the_preview(): void
+    {
+        [$member, $binding] = $this->scenario(11000);
+        $this->fakeTotals(11000, 42000);
+        $tiers = [
+            ['wager_multiplier' => '1', 'rebate_percent' => '1'],
+            ['wager_multiplier' => '3', 'rebate_percent' => '3'],
+        ];
+        PointRule::query()->latest('id')->firstOrFail()->forceFill(['rebate_tiers' => [
+            ['multiplier_micros' => 1_000_000, 'percent_micros' => 1_000_000],
+            ['multiplier_micros' => 3_000_000, 'percent_micros' => 3_000_000],
+        ]])->save();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $url = "/api/v1/cashback/{$binding->id}";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.current_cents', 300)->assertJsonPath('data.estimated_cents', 300);
+
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => '返利配置', 'permissions' => ['points.manage-rules']]));
+        app(\App\Points\PlatformRebateTiers::class)->save(['tiers' => $tiers, 'virtual_max_wager_multiplier' => '2.5'], $operator);
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath('data.current_cents', 300)->assertJsonPath('data.estimated_cents', 100)
+            ->assertJsonPath('data.estimated_wager_multiplier', '2.500000')->assertJsonPath('data.estimated_rebate_percent', '1.000000');
+
+        $quote = app(\App\Points\PointSettlement::class)->quote($member, (string) $binding->id);
+        $posted = app(\App\Points\PointSettlement::class)->confirm($member, (string) $quote->id);
+        $this->assertSame(300, $posted->rebate_cents);
+        $this->assertSame(300, $member->refresh()->available_balance_cents);
+    }
+
     public function test_daily_cashback_catches_up_an_unavailable_platform_after_noon(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-24 11:55:00', 'America/Sao_Paulo'));

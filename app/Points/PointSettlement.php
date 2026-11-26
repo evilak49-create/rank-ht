@@ -37,10 +37,11 @@ class PointSettlement
 
     public function preview(PlatformBinding $binding): array
     {
-        return Cache::remember("cashback-preview:{$binding->id}:{$binding->baseline_version}", 120, function () use ($binding): array {
+        $rule = PointRule::query()->latest('id')->firstOrFail();
+        return Cache::remember("cashback-preview:{$binding->id}:{$binding->baseline_version}:{$rule->id}", 120, function () use ($binding, $rule): array {
             $platform = Platform::query()->available()->findOrFail($binding->platform_id);
             $account = $this->lookupBoundAccount($binding, $platform);
-            $values = $this->quoteValues($binding, $account, pauseOnRegression: false);
+            $values = $this->quoteValues($binding, $account, pauseOnRegression: false, rule: $rule);
 
             return [
                 'current_cents' => $values['rebate_cents'],
@@ -204,9 +205,9 @@ class PointSettlement
         return $owner;
     }
 
-    private function quoteValues(PlatformBinding $binding, PlatformAccount $account, bool $pauseOnRegression = true): array
+    private function quoteValues(PlatformBinding $binding, PlatformAccount $account, bool $pauseOnRegression = true, ?PointRule $rule = null): array
     {
-        $rule = PointRule::query()->latest('id')->firstOrFail();
+        $rule ??= PointRule::query()->latest('id')->firstOrFail();
         $tiers = PlatformRebateTiers::effective($rule);
         $deposit = $account->depositCents - $binding->baseline_deposit_cents;
         $bet = $account->validBetCents - $binding->baseline_valid_bet_cents;
@@ -215,6 +216,7 @@ class PointSettlement
         $required = $this->wagerRequired($depositBase, $minimumMultiplier ?? 0);
         $matched = PlatformRebateTiers::matchWager($tiers, $deposit, $bet);
         $percent = $matched['percent_micros'] ?? 0;
+        $estimate = PlatformRebateTiers::estimate($tiers, $rule->virtual_max_wager_multiplier_micros);
         $rebate = $depositBase->multipliedBy($percent)->quotient(self::SETTLEMENT_SCALE);
 
         $eligibility = match (true) {
@@ -251,8 +253,10 @@ class PointSettlement
                 'cash_only' => true,
                 'rebate_enabled' => $tiers !== [],
                 'estimated_rebate_cents' => $this->amount($depositBase
-                    ->multipliedBy($tiers === [] ? 0 : max(array_column($tiers, 'percent_micros')))
+                    ->multipliedBy($estimate['percent_micros'])
                     ->quotient(self::SETTLEMENT_SCALE)),
+                'estimated_wager_multiplier' => $estimate['multiplier_micros'] === null ? null : PointRules::display($estimate['multiplier_micros']),
+                'estimated_rebate_percent' => PointRules::display($estimate['percent_micros']),
                 'rebate_percent' => PointRules::display($percent),
                 'rebate_wager_multiplier' => $minimumMultiplier === null ? null : PointRules::display($minimumMultiplier),
                 'matched_rebate_wager_multiplier' => $matched === null ? null : PointRules::display($matched['multiplier_micros']),
