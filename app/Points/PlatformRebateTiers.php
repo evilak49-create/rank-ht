@@ -17,6 +17,8 @@ class PlatformRebateTiers
 
     public const VIRTUAL_MULTIPLIER_RULES = ['nullable', 'numeric', 'min:0.000001', 'regex:/\A[0-9]{1,5}(?:\.[0-9]{1,6})?\z/'];
 
+    public const VIRTUAL_PERCENT_RULES = ['nullable', 'numeric', 'between:0.000001,100', 'regex:/\A[0-9]{1,3}(?:\.[0-9]{1,6})?\z/'];
+
     public static function effective(?PointRule $rule): array
     {
         if ($rule?->rebate_tiers !== null) {
@@ -65,8 +67,15 @@ class PlatformRebateTiers
         ], $tiers);
     }
 
-    public static function estimate(array $tiers, ?int $virtualMultiplier): array
+    public static function estimate(array $tiers, ?int $virtualMultiplier, ?int $virtualPercent = null): array
     {
+        if ($tiers === []) {
+            return ['multiplier_micros' => null, 'percent_micros' => 0];
+        }
+        if ($virtualMultiplier !== null && $virtualPercent !== null) {
+            return ['multiplier_micros' => $virtualMultiplier, 'percent_micros' => $virtualPercent];
+        }
+
         if ($virtualMultiplier !== null) {
             foreach (array_reverse($tiers) as $tier) {
                 if ($tier['multiplier_micros'] <= $virtualMultiplier) {
@@ -77,7 +86,7 @@ class PlatformRebateTiers
             return ['multiplier_micros' => $virtualMultiplier, 'percent_micros' => 0];
         }
 
-        $percent = $tiers === [] ? 0 : max(array_column($tiers, 'percent_micros'));
+        $percent = max(array_column($tiers, 'percent_micros'));
         foreach (array_reverse($tiers) as $tier) {
             if ($tier['percent_micros'] === $percent) {
                 return $tier;
@@ -92,7 +101,8 @@ class PlatformRebateTiers
         abort_unless($operator->hasPermission('points.manage-rules'), 403);
         $fields = Validator::make($data, [
             'tiers' => ['present', 'array'],
-            'virtual_max_wager_multiplier' => self::VIRTUAL_MULTIPLIER_RULES,
+            'virtual_max_wager_multiplier' => [...self::VIRTUAL_MULTIPLIER_RULES, 'required_with:virtual_max_rebate_percent'],
+            'virtual_max_rebate_percent' => [...self::VIRTUAL_PERCENT_RULES, 'required_with:virtual_max_wager_multiplier'],
             'tiers.*' => ['array:wager_multiplier,rebate_percent'],
             'tiers.*.wager_multiplier' => self::MULTIPLIER_RULES,
             'tiers.*.rebate_percent' => self::PERCENT_RULES,
@@ -118,6 +128,8 @@ class PlatformRebateTiers
                 'rebate_tiers' => $tiers, 'user_id' => $operator->id,
                 'virtual_max_wager_multiplier_micros' => isset($fields['virtual_max_wager_multiplier'])
                     ? PointRules::toUnits((string) $fields['virtual_max_wager_multiplier']) : null,
+                'virtual_max_rebate_percent_micros' => isset($fields['virtual_max_rebate_percent'])
+                    ? PointRules::toUnits((string) $fields['virtual_max_rebate_percent']) : null,
                 'rebate_percent_micros' => $tiers[0]['percent_micros'] ?? 0,
                 'rebate_wager_multiplier_micros' => $tiers[0]['multiplier_micros'] ?? null,
             ]);

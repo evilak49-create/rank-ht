@@ -6,7 +6,10 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['points_per_brl_micros', 'wager_multiplier_micros', 'rebate_percent_micros', 'rebate_wager_multiplier_micros', 'rebate_tiers', 'virtual_max_wager_multiplier_micros', 'user_id'])]
+#[Fillable([
+    'points_per_brl_micros', 'wager_multiplier_micros', 'rebate_percent_micros', 'rebate_wager_multiplier_micros',
+    'rebate_tiers', 'virtual_max_wager_multiplier_micros', 'virtual_max_rebate_percent_micros', 'user_id',
+])]
 class PointRule extends Model
 {
     protected function casts(): array
@@ -16,6 +19,7 @@ class PointRule extends Model
             'rebate_percent_micros' => 'integer', 'rebate_wager_multiplier_micros' => 'integer',
             'rebate_tiers' => 'array',
             'virtual_max_wager_multiplier_micros' => 'integer',
+            'virtual_max_rebate_percent_micros' => 'integer',
         ];
     }
 

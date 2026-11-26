@@ -55,11 +55,14 @@ class RebateConfiguration extends Page
     public function form(Schema $schema): Schema
     {
         return $schema->statePath('data')->components([
-            Section::make('前台返利预估')
+            Section::make('虚拟档位')
+                ->description('最高可领取返利按本期待结算存款乘以虚拟返利比例计算。两个字段可同时留空。')
+                ->columns(2)
                 ->schema([
                     TextInput::make('virtual_max_wager_multiplier')->label('虚拟最高倍数')->inputMode('decimal')->suffix('倍')
-                        ->rules(PlatformRebateTiers::VIRTUAL_MULTIPLIER_RULES)
-                        ->helperText('前台按此倍数能达到的最高档位预估返利。留空时，使用已配置的最高返利比例。'),
+                        ->rules(PlatformRebateTiers::VIRTUAL_MULTIPLIER_RULES),
+                    TextInput::make('virtual_max_rebate_percent')->label('虚拟返利比例')->inputMode('decimal')->suffix('%')
+                        ->rules(PlatformRebateTiers::VIRTUAL_PERCENT_RULES),
                 ]),
             Section::make('实际结算档位')
                 ->description('所有平台共用这套档位，按实际打码达到的最高倍数档结算。清空并保存会关闭返利。')
@@ -97,8 +100,10 @@ class RebateConfiguration extends Page
     private function fillTiers(PointRule $rule): void
     {
         $virtualMultiplier = $rule->virtual_max_wager_multiplier_micros;
+        $virtualPercent = $rule->virtual_max_rebate_percent_micros;
         $this->form->fill([
             'virtual_max_wager_multiplier' => $virtualMultiplier === null ? null : PointRules::display($virtualMultiplier),
+            'virtual_max_rebate_percent' => $virtualPercent === null ? null : PointRules::display($virtualPercent),
             'tiers' => PlatformRebateTiers::decimals(PlatformRebateTiers::effective($rule)),
         ]);
     }

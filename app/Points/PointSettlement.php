@@ -216,7 +216,9 @@ class PointSettlement
         $required = $this->wagerRequired($depositBase, $minimumMultiplier ?? 0);
         $matched = PlatformRebateTiers::matchWager($tiers, $deposit, $bet);
         $percent = $matched['percent_micros'] ?? 0;
-        $estimate = PlatformRebateTiers::estimate($tiers, $rule->virtual_max_wager_multiplier_micros);
+        $estimate = PlatformRebateTiers::estimate(
+            $tiers, $rule->virtual_max_wager_multiplier_micros, $rule->virtual_max_rebate_percent_micros,
+        );
         $rebate = $depositBase->multipliedBy($percent)->quotient(self::SETTLEMENT_SCALE);
 
         $eligibility = match (true) {

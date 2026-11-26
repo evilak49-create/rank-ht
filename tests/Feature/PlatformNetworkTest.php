@@ -139,11 +139,16 @@ class PlatformNetworkTest extends TestCase
         $this->getJson('/api/v1/platforms/'.$second->id)->assertOk()
             ->assertJsonPath('data.max_rebate_percent', '0.500000');
 
-        Livewire::test(RebateConfiguration::class)->set('data.virtual_max_wager_multiplier', '2.5')->set('data.tiers', [
+        Livewire::test(RebateConfiguration::class)->set('data.virtual_max_wager_multiplier', '100')
+            ->call('save')->assertHasErrors(['data.virtual_max_rebate_percent']);
+        Livewire::test(RebateConfiguration::class)->set('data.virtual_max_wager_multiplier', '100')
+            ->set('data.virtual_max_rebate_percent', '100')->set('data.tiers', [
             ['wager_multiplier' => '4', 'rebate_percent' => '3'],
             ['wager_multiplier' => '2', 'rebate_percent' => '1'],
         ])->call('save')->assertHasNoErrors();
-        $this->assertDatabaseHas('point_rules', ['virtual_max_wager_multiplier_micros' => 2_500_000]);
+        $this->assertDatabaseHas('point_rules', [
+            'virtual_max_wager_multiplier_micros' => 100_000_000, 'virtual_max_rebate_percent_micros' => 100_000_000,
+        ]);
         Livewire::test(RebateConfiguration::class)->set('data.tiers', [
             ['wager_multiplier' => '2.0', 'rebate_percent' => '1'],
             ['wager_multiplier' => '2.00', 'rebate_percent' => '3'],

@@ -261,10 +261,12 @@ class PointSettlementTest extends TestCase
 
         $operator = User::factory()->create(['panel_enabled' => true]);
         $operator->roles()->attach(AdminRole::create(['name' => '返利配置', 'permissions' => ['points.manage-rules']]));
-        app(\App\Points\PlatformRebateTiers::class)->save(['tiers' => $tiers, 'virtual_max_wager_multiplier' => '2.5'], $operator);
+        app(\App\Points\PlatformRebateTiers::class)->save([
+            'tiers' => $tiers, 'virtual_max_wager_multiplier' => '100', 'virtual_max_rebate_percent' => '100',
+        ], $operator);
         $this->getJson($url)->assertOk()
-            ->assertJsonPath('data.current_cents', 300)->assertJsonPath('data.estimated_cents', 100)
-            ->assertJsonPath('data.estimated_wager_multiplier', '2.500000')->assertJsonPath('data.estimated_rebate_percent', '1.000000');
+            ->assertJsonPath('data.current_cents', 300)->assertJsonPath('data.estimated_cents', 10_000)
+            ->assertJsonPath('data.estimated_wager_multiplier', '100.000000')->assertJsonPath('data.estimated_rebate_percent', '100.000000');
 
         $quote = app(\App\Points\PointSettlement::class)->quote($member, (string) $binding->id);
         $posted = app(\App\Points\PointSettlement::class)->confirm($member, (string) $quote->id);
