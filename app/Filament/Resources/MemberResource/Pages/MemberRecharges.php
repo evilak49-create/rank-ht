@@ -4,10 +4,12 @@ namespace App\Filament\Resources\MemberResource\Pages;
 
 use App\Filament\Resources\MemberResource;
 use App\Models\Member;
+use App\Models\Platform;
 use App\Models\PlatformBinding;
 use App\Platforms\PlatformRecharges;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Livewire\Attributes\Locked;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
@@ -56,13 +58,27 @@ class MemberRecharges extends Page
         $this->queryError = null;
         $this->recharges = [];
 
+        $recharges = app(PlatformRecharges::class);
         try {
-            $this->recharges = app(PlatformRecharges::class)->list($member, (string) $binding->id, $page);
+            $this->recharges = $recharges->list($member, (string) $binding->id, $page, allowUnhealthy: true);
+        } catch (ModelNotFoundException $exception) {
+            if ($exception->getModel() !== Platform::class) {
+                throw $exception;
+            }
+            $this->queryError = match ($binding->platform->status()) {
+                'disabled' => '该平台已停用。',
+                'pending' => '该平台尚未启用查询配置。',
+                default => '平台充值查询当前不可用。',
+            };
         } catch (HttpExceptionInterface $exception) {
             if (! in_array($exception->getStatusCode(), [404, 409, 503], true)) {
                 throw $exception;
             }
             $this->queryError = '暂时无法获取充值记录，请稍后重试。';
+        }
+
+        if ($this->queryError !== null) {
+            $this->recharges = $recharges->savedPage($binding, $page);
         }
     }
 

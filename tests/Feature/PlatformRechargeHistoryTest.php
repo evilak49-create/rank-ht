@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
+use App\Platforms\PlatformRecharges;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -38,6 +39,10 @@ class PlatformRechargeHistoryTest extends TestCase
             ->assertJsonPath('data.0.reference', '5000000000')->assertJsonPath('has_more', true)
             ->assertDontSee('private metadata');
         $this->getJson($path)->assertOk();
+        $binding->platform->forceFill(['query_unhealthy_at' => now()])->save();
+        $this->getJson($path)->assertNotFound();
+        $adminPage = app(PlatformRecharges::class)->list($member, (string) $binding->id, 1, allowUnhealthy: true);
+        $this->assertSame('5000000000', $adminPage['data'][0]['reference']);
         $this->assertDatabaseCount('platform_recharges', 1);
         Http::assertSent(function (Request $request): bool {
             parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
@@ -47,7 +52,7 @@ class PlatformRechargeHistoryTest extends TestCase
                 && $data['tenantId'] === 17 && $data['changeTypes'] === ['recharge']
                 && $data['startTime'] === '2026-10-22T10:30:00.000Z' && $data['endTime'] === '2026-11-22T10:30:00.000Z';
         });
-        Http::assertSentCount(2);
+        Http::assertSentCount(3);
     }
 
     public function test_a_member_cannot_access_another_binding_or_query_the_provider_for_it(): void

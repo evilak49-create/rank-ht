@@ -251,4 +251,29 @@ class MemberOperationsTest extends TestCase
         $this->get("/admin/members/{$member->id}/recharges/{$binding->id}")
             ->assertOk()->assertSee('payment-1')->assertSee('R$ 39.00');
     }
+
+    public function test_unhealthy_platform_shows_saved_recharges_instead_of_a_404(): void
+    {
+        Http::fake();
+        $operator = User::factory()->create(['panel_enabled' => true]);
+        $operator->roles()->attach(AdminRole::create(['name' => '充值记录运营', 'permissions' => ['members.view']]));
+        $member = Member::create(['phone' => '11912345678', 'password' => 'test-password']);
+        $platform = Platform::create(['name' => 'Existing Site', 'promotion_url' => 'https://site.example.test', 'rating' => 5]);
+        $platform->forceFill(['active_query_revision' => 1, 'query_unhealthy_at' => now()])->save();
+        $binding = PlatformBinding::create([
+            'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_account_id' => 'PL-1024',
+            'query_phone' => $member->phone, 'baseline_deposit_cents' => 0,
+            'baseline_valid_bet_cents' => 0, 'baseline_observed_at' => now(),
+        ]);
+        $record = ['platform_binding_id' => $binding->id, 'network' => 'panda', 'amount_cents' => 3900];
+        DB::table('platform_recharges')->insert([
+            $record + ['external_id' => 'saved-recharge', 'recharged_at' => now()->subDay()],
+            $record + ['external_id' => 'old-recharge', 'recharged_at' => now()->subMonths(2)],
+        ]);
+
+        $this->actingAs($operator, 'web')->get("/admin/members/{$member->id}/recharges/{$binding->id}")
+            ->assertOk()->assertSee('本地记录')->assertSee('saved-recharge')->assertSee('R$ 39.00')
+            ->assertDontSee('old-recharge');
+        Http::assertNothingSent();
+    }
 }
