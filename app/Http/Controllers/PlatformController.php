@@ -78,10 +78,14 @@ class PlatformController extends Controller
             ->available()->withPublicReviewCount()->findOrFail($platform);
         $rule = PointRule::query()->latest('id')->first();
         $tiers = PlatformRebateTiers::effective($rule);
+        $estimate = PlatformRebateTiers::estimate(
+            $tiers, $rule?->virtual_max_wager_multiplier_micros, $rule?->virtual_max_rebate_percent_micros,
+        );
 
         return response()->json(['data' => [
             ...$this->platformData($record, PlatformRebateTiers::summary($tiers)),
             ...$record->only(self::INTRODUCTION_FIELDS),
+            'estimated_rebate_percent' => $tiers === [] ? null : PointRules::display($estimate['percent_micros']),
             'point_rule' => $this->pointRuleData($rule, $tiers),
             'rebate_tiers' => PlatformRebateTiers::decimals($tiers),
         ]]);

@@ -137,7 +137,8 @@ class PlatformNetworkTest extends TestCase
         $this->get('/admin/point-rules')->assertNotFound();
         $this->get('/admin/rebate-configuration')->assertOk()->assertSee('返利配置');
         $this->getJson('/api/v1/platforms/'.$second->id)->assertOk()
-            ->assertJsonPath('data.max_rebate_percent', '0.500000');
+            ->assertJsonPath('data.max_rebate_percent', '0.500000')
+            ->assertJsonPath('data.estimated_rebate_percent', '0.500000');
 
         Livewire::test(RebateConfiguration::class)->set('data.virtual_max_wager_multiplier', '100')
             ->call('save')->assertHasErrors(['data.virtual_max_rebate_percent']);
@@ -158,12 +159,15 @@ class PlatformNetworkTest extends TestCase
             $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
                 ->assertJsonPath('data.min_rebate_wager_multiplier', '2.000000')
                 ->assertJsonPath('data.max_rebate_percent', '3.000000')
+                ->assertJsonPath('data.estimated_rebate_percent', '100.000000')
                 ->assertJsonPath('data.rebate_tiers.1.wager_multiplier', '4.000000');
         }
         Livewire::test(RebateConfiguration::class)->set('data.tiers', [])->call('save')->assertHasNoErrors();
         $this->getJson('/api/v1/platforms/'.$second->id)->assertOk()
             ->assertJsonPath('data.min_rebate_wager_multiplier', null)
             ->assertJsonPath('data.max_rebate_percent', null)
+            ->assertJsonStructure(['data' => ['estimated_rebate_percent']])
+            ->assertJsonPath('data.estimated_rebate_percent', null)
             ->assertJsonPath('data.rebate_tiers', []);
     }
 
