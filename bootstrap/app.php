@@ -18,6 +18,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
         then: function (): void {
+            require __DIR__.'/../routes/pwa.php';
+
             // Installation is restricted before Laravel sessions become available.
             Route::get('/', [SiteInstallController::class, 'home']);
             Route::get('/install', [SiteInstallController::class, 'show'])->name('site-install.show');

@@ -7,6 +7,7 @@ use App\Filament\Pages\AiSettings;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MemberVerificationSettings;
 use App\Filament\Pages\OssSettings;
+use App\Filament\Pages\PwaSettingsPage;
 use App\Filament\Pages\RebateConfiguration;
 use App\Filament\Pages\RescueFundConfiguration;
 use App\Filament\Pages\SupportSettings;
@@ -73,7 +74,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('客服管理'),
                 NavigationGroup::make('系统管理'),
             ])
-            ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class, RebateConfiguration::class, RescueFundConfiguration::class])
+            ->pages([Dashboard::class, OssSettings::class, PwaSettingsPage::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class, RebateConfiguration::class, RescueFundConfiguration::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PromotionChannelResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class,

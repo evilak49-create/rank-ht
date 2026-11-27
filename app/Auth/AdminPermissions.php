@@ -45,6 +45,7 @@ class AdminPermissions
         'support.manage' => '管理客服和常见问题',
         'system.manage-business-timezone' => '管理业务时区',
         'system.manage-oss' => '管理 OSS 配置',
+        'system.manage-pwa' => '管理 PWA 配置',
         'system.manage-ai' => '管理 AI 渠道',
         'system.manage-member-verification' => '管理会员验证码',
         'system.manage-admins' => '管理后台账号',
