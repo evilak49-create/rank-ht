@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\DispatchDailyCashback;
+use App\Jobs\SyncPromotionRecharges;
 use App\Models\PlatformBinding;
 use App\Points\CashbackSchedule;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,6 +35,19 @@ Schedule::command('cashback:dispatch')->everyFiveMinutes()
     ->timezone(CashbackSchedule::TIMEZONE)
     ->when(fn (): bool => ! CashbackSchedule::noon()->isFuture())
     ->withoutOverlapping();
+
+Artisan::command('promotion-recharges:dispatch', function (): void {
+    PlatformBinding::query()
+        ->whereHas('platform', fn (Builder $platform) => $platform->available())
+        ->whereHas('member', fn (Builder $member) => $member->whereNotNull('promotion_channel_id'))
+        ->select('id')->chunkById(200, function ($bindings): void {
+            foreach ($bindings as $binding) {
+                SyncPromotionRecharges::dispatch($binding->id);
+            }
+        });
+})->purpose('Sync partner deposits for promotion channel reporting');
+
+Schedule::command('promotion-recharges:dispatch')->cron('11 */6 * * *')->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

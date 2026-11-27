@@ -6,6 +6,7 @@ class AdminPermissions
 {
     public const LABELS = [
         'members.view' => '查看会员',
+        'members.manage-promotion-channels' => '创建渠道及录入推广费用',
         'members.change-status' => '禁用或恢复会员',
         'members.change-phone' => '修改会员手机号',
         'members.reset-password' => '重置会员密码',

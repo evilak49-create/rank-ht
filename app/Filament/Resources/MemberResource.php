@@ -26,6 +26,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ViewColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
@@ -60,11 +61,14 @@ class MemberResource extends Resource
     {
         return $table
             ->defaultSort('id', 'desc')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['promotionChannel', 'promotionInvitation.inviter']))
             ->columns([
                 TextColumn::make('id')->label('ID')->sortable()
                     ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('id', ctype_digit($search) ? $search : 0)),
                 TextColumn::make('phone')->label('手机号')
                     ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('phone', $search)),
+                ViewColumn::make('promotion_source')->label('渠道 / 代理')
+                    ->view('filament.tables.member-promotion-source'),
                 TextColumn::make('created_at')->label('注册时间')->dateTime()->sortable(),
                 TextColumn::make('last_login_at')->label('最后登录时间')->dateTime()->sortable(),
                 TextColumn::make('platforms.name')->label('绑定平台')->badge(),

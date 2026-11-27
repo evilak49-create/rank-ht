@@ -4,12 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\DB;
 
-#[Fillable(['phone', 'password', 'phone_verified_at', 'registration_ip', 'registration_country', 'registration_device_hash'])]
+#[Fillable(['phone', 'password', 'phone_verified_at', 'promotion_channel_id', 'registration_ip', 'registration_country', 'registration_device_hash'])]
 #[Hidden(['password', 'remember_token', 'session_version', 'pix_cpf', 'pix_recipient_name', 'invite_code', 'registration_ip', 'registration_country', 'registration_device_hash'])]
 class Member extends Authenticatable
 {
@@ -27,6 +29,16 @@ class Member extends Authenticatable
             'pix_cpf' => 'encrypted',
             'pix_recipient_name' => 'encrypted',
         ];
+    }
+
+    public function promotionChannel(): BelongsTo
+    {
+        return $this->belongsTo(PromotionChannel::class);
+    }
+
+    public function promotionInvitation(): HasOne
+    {
+        return $this->hasOne(RedPacketInvite::class, 'invitee_id');
     }
 
     public function platforms(): BelongsToMany

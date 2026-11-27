@@ -11,6 +11,7 @@ use App\Auth\SmsChallenges;
 use App\Auth\TurnstileVerification;
 use App\Jobs\ResolveRegistrationCountry;
 use App\Models\Member;
+use App\Promotion\PromotionAttribution;
 use App\RedPackets\InvitationRewards;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -69,7 +70,7 @@ class MemberAuthController extends Controller
     }
 
     public function register(
-        Request $request, SmsChallenges $sms, InvitationRewards $invitations, ImageCaptcha $captcha, TurnstileVerification $turnstile,
+        Request $request, SmsChallenges $sms, InvitationRewards $invitations, ImageCaptcha $captcha, TurnstileVerification $turnstile, PromotionAttribution $attribution,
     ): JsonResponse {
         $mode = $this->verification->mode();
         $origin = RegistrationOrigin::fromRequest($request);
@@ -86,7 +87,7 @@ class MemberAuthController extends Controller
         }
 
         try {
-            $member = DB::transaction(function () use ($data, $sms, $invitations, $mode, $origin): Member {
+            $member = DB::transaction(function () use ($data, $sms, $invitations, $mode, $origin, $request, $attribution): Member {
                 $settings = $this->verification->settings(lock: true);
                 abort_if($settings->mode !== $mode, 409, '验证方式已更新，请重新获取验证码。');
                 $origin->enforceLimits($settings);
@@ -98,6 +99,7 @@ class MemberAuthController extends Controller
                     'phone' => $data['phone'],
                     'password' => $data['password'],
                     'phone_verified_at' => $mode === 'sms' ? now() : null,
+                    'promotion_channel_id' => $attribution->channelId($request),
                     ...$origin->attributes(),
                 ]);
                 if (filled($data['invite_code'] ?? null)) {
@@ -169,7 +171,7 @@ class MemberAuthController extends Controller
     }
 
     public function resetPassword(
-        Request $request, SmsChallenges $sms, ImageCaptcha $captcha, TurnstileVerification $turnstile,
+        Request $request, SmsChallenges $sms, ImageCaptcha $captcha, TurnstileVerification $turnstile, PromotionAttribution $attribution,
     ): Response {
         $current = Auth::guard('member')->user();
         $mode = $this->resetMode($current, $this->verification->mode());

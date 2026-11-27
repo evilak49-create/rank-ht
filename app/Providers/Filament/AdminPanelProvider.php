@@ -24,6 +24,7 @@ use App\Filament\Resources\CashbackSettlementResource;
 use App\Filament\Resources\HelpArticleResource;
 use App\Filament\Resources\MemberCheckinResource;
 use App\Filament\Resources\MemberResource;
+use App\Filament\Resources\PromotionChannelResource;
 use App\Filament\Resources\PixWithdrawalResource;
 use App\Filament\Resources\PlatformFundOrderResource;
 use App\Filament\Resources\PlatformResource;
@@ -75,7 +76,7 @@ class AdminPanelProvider extends PanelProvider
             ->pages([Dashboard::class, OssSettings::class, AiSettings::class, SupportSettings::class, MemberVerificationSettings::class, RebateConfiguration::class, RescueFundConfiguration::class])
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
-                MemberResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class,
+                MemberResource::class, PromotionChannelResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class,
                 CashBalanceEntryResource::class, PixPayoutResource::class, PixPayoutChannelResource::class,
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,
