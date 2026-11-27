@@ -36,11 +36,17 @@ class RedPacketTest extends TestCase
     {
         config(['services.pix.driver' => 'simulator']);
         $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        $this->getJson('/api/v1/red-packets/summary')->assertUnauthorized();
         $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson('/api/v1/red-packets/summary')->assertOk()->assertExactJson(['data' => null]);
+        $this->assertNull($member->fresh()->invite_code);
         $open = ['request_id' => (string) Str::uuid()];
         $round = $this->postJson('/api/v1/red-packets/open', $open)->assertOk()->json('data');
         $this->assertGreaterThanOrEqual(8500, $round['initial_cents']);
         $this->assertLessThanOrEqual(9500, $round['initial_cents']);
+        $this->getJson('/api/v1/red-packets/summary')->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertExactJson(['data' => ['balance_cents' => $round['initial_cents']]]);
         $this->postJson('/api/v1/red-packets/open', $open)->assertOk()->assertJsonPath('data.id', $round['id']);
 
         $request = ['request_id' => (string) Str::uuid()];
@@ -58,6 +64,11 @@ class RedPacketTest extends TestCase
         }
         $pending = DB::table('red_packet_invites')->whereNull('settled_at')->oldest('id')->first();
         $this->assertNotNull($pending);
+        $latestCredit = RedPacketInvite::query()->where('red_packet_round_id', $round['id'])
+            ->latest('settled_at')->latest('id')->value('reward_cents');
+        $this->assertGreaterThan(0, $latestCredit);
+        $this->getJson('/api/v1/red-packets')->assertOk()
+            ->assertJsonPath('data.round.latest_invite_reward_cents', $latestCredit);
         $withdrawal = $this->postJson('/api/v1/pix-withdrawals', $request)->assertCreated()->assertJsonPath('data.amount_cents', 10000)->json('data.id');
         $this->postJson('/api/v1/pix-withdrawals', $request)->assertCreated()->assertJsonPath('data.id', $withdrawal);
         $this->putJson('/api/v1/pix-account', ['cpf' => '11144477735', 'recipient_name' => 'Outro Nome'])->assertOk();
@@ -79,6 +90,7 @@ class RedPacketTest extends TestCase
         $this->assertDatabaseHas('red_packet_rounds', ['id' => $round['id'], 'balance_cents' => 0, 'frozen_cents' => 0]);
         $this->assertDatabaseCount('pix_tasks', 1);
         $this->assertDatabaseCount('point_entries', 0);
+        $this->getJson('/api/v1/red-packets/summary')->assertOk()->assertExactJson(['data' => null]);
 
         $this->postJson('/api/v1/red-packets/open', $open)->assertOk()->assertJsonPath('data.id', $round['id']);
         $nextRound = $this->postJson('/api/v1/red-packets/open', ['request_id' => (string) Str::uuid()])->assertOk()->json('data.id');

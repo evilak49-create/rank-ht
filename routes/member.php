@@ -76,6 +76,7 @@ Route::prefix('api/v1')->middleware(PreventClientApiCaching::class)->group(funct
                 ->middleware('signed:relative')->name('claim-evidence.member');
         });
         Route::get('red-packets', [RedPacketController::class, 'index']);
+        Route::get('red-packets/summary', [RedPacketController::class, 'summary']);
         Route::get('red-packets/invites', [RedPacketController::class, 'invites']);
         Route::post('red-packets/open', [RedPacketController::class, 'open'])->middleware('throttle:20,1');
         Route::get('pix-account', [PixController::class, 'account']);

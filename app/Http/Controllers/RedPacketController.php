@@ -23,6 +23,15 @@ class RedPacketController extends Controller
         ]])->header('Cache-Control', 'private, no-store');
     }
 
+    public function summary(Request $request): JsonResponse
+    {
+        $balance = RedPacketRound::query()->whereBelongsTo($request->user())
+            ->whereNull('closed_at')->value('balance_cents');
+
+        return response()->json(['data' => $balance === null ? null : ['balance_cents' => $balance]])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     public function open(Request $request, RedPackets $packets): JsonResponse
     {
         $data = $request->validate(['request_id' => ['required', 'uuid']]);
@@ -47,7 +56,10 @@ class RedPacketController extends Controller
     {
         return [
             'id' => $round->id, 'currency' => 'BRL', 'threshold_cents' => $round->threshold_cents,
-            'initial_cents' => $round->initial_cents, 'balance_cents' => $round->balance_cents,
+            'initial_cents' => $round->initial_cents,
+            'latest_invite_reward_cents' => RedPacketInvite::query()
+                ->where('red_packet_round_id', $round->id)->whereNotNull('settled_at')
+                ->latest('settled_at')->latest('id')->value('reward_cents'), 'balance_cents' => $round->balance_cents,
             'frozen_cents' => $round->frozen_cents, 'available_cents' => $round->balance_cents - $round->frozen_cents,
             'remaining_cents' => $round->closed_at === null ? $round->threshold_cents - $round->balance_cents : 0,
             'closed_at' => $round->closed_at,
