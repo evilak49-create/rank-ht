@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\Member;
 use App\Models\PixWithdrawal;
 use App\Points\CashBalance;
@@ -43,7 +44,9 @@ class PixController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNotNull('red_packet_round_id')->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNotNull('red_packet_round_id');
+        $orders = $dates->apply($query)->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($orders->through($this->data(...)))->header('Cache-Control', 'private, no-store');
     }
@@ -57,9 +60,10 @@ class PixController extends Controller
 
     public function history(Request $request): JsonResponse
     {
-        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())
-            ->select(['id', 'order_number', 'red_packet_round_id', 'amount_cents', 'status', 'review_reason', 'rejection_deducted', 'created_at', 'paid_at'])
-            ->latest('created_at')->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = PixWithdrawal::query()->whereBelongsTo($request->user())
+            ->select(['id', 'order_number', 'red_packet_round_id', 'amount_cents', 'status', 'review_reason', 'rejection_deducted', 'created_at', 'paid_at']);
+        $orders = $dates->apply($query)->latest('created_at')->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($orders->through(fn (PixWithdrawal $order): array => [
             'id' => $order->id, 'order_number' => $order->order_number, 'amount_cents' => $order->amount_cents,
@@ -89,7 +93,9 @@ class PixController extends Controller
 
     public function cashWithdrawals(Request $request): JsonResponse
     {
-        $orders = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNull('red_packet_round_id')->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = PixWithdrawal::query()->whereBelongsTo($request->user())->whereNull('red_packet_round_id');
+        $orders = $dates->apply($query)->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($orders->through($this->data(...)));
     }

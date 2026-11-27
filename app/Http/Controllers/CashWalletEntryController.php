@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,8 @@ class CashWalletEntryController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         $filters = $request->validate(['source' => ['nullable', 'string', 'max:24', 'regex:/^[a-z][a-z0-9_]*$/D']]);
-        $entries = DB::table('cash_balance_entries as entries')
+        $dates = RecordDateRange::fromRequest($request);
+        $query = DB::table('cash_balance_entries as entries')
             ->where('entries.member_id', $request->user()->id)
             ->when(isset($filters['source']), fn ($query) => $query->where('entries.source', $filters['source']))
             ->leftJoin('point_quotes as quotes', fn (JoinClause $join) => $join
@@ -23,11 +25,12 @@ class CashWalletEntryController extends Controller
                 ->on('orders.id', 'entries.source_id')->on('orders.member_id', 'entries.member_id')
                 ->whereIn('entries.source', ['platform_payment', 'platform_refund']))
             ->leftJoin('platforms as rebate_platforms', 'rebate_platforms.id', '=', 'quotes.platform_id')
-            ->leftJoin('platforms as fund_platforms', 'fund_platforms.id', '=', 'orders.platform_id')
-            ->latest('entries.created_at')->orderByDesc('entries.id')->paginate(20, [
-                'entries.id', 'entries.source', 'entries.source_id', 'entries.amount_cents', 'entries.balance_after_cents',
-                'entries.created_at', 'rebate_platforms.name as rebate_platform', 'fund_platforms.name as fund_platform',
-            ])->withQueryString();
+            ->leftJoin('platforms as fund_platforms', 'fund_platforms.id', '=', 'orders.platform_id');
+
+        $entries = $dates->apply($query, 'entries.created_at')->latest('entries.created_at')->orderByDesc('entries.id')->paginate(20, [
+            'entries.id', 'entries.source', 'entries.source_id', 'entries.amount_cents', 'entries.balance_after_cents',
+            'entries.created_at', 'rebate_platforms.name as rebate_platform', 'fund_platforms.name as fund_platform',
+        ])->withQueryString();
 
         $claimIds = $entries->getCollection()->where('source', 'rescue_fund')->pluck('source_id')->all();
         $claimPlatforms = $claimIds === [] ? collect() : DB::table('rescue_fund_claims')

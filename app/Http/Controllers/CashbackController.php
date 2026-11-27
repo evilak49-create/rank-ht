@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\PlatformBinding;
 use App\Models\PointQuote;
 use App\Points\CashbackSchedule;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 class CashbackController extends Controller
 {
@@ -40,9 +42,11 @@ class CashbackController extends Controller
 
     public function history(Request $request): JsonResponse
     {
-        $records = PointQuote::query()->whereBelongsTo($request->user())
-            ->whereNotNull('dispatch_day')->with('platform:id,name')
-            ->orderByDesc('dispatch_day')->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = PointQuote::query()->whereBelongsTo($request->user())
+            ->whereNotNull('dispatch_day')->with('platform:id,name');
+        $records = $dates->apply($query, DB::raw('COALESCE(confirmed_at, created_at)'))
+            ->orderByDesc('dispatch_day')->latest('id')->paginate(20)->appends($dates->filters);
 
         return $this->response($records->through(fn (PointQuote $record): array => [
             'id' => $record->id,

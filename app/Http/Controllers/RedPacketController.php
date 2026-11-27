@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\RedPacketInvite;
 use App\Models\RedPacketRound;
 use App\RedPackets\RedPackets;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RedPacketController extends Controller
 {
@@ -41,8 +43,14 @@ class RedPacketController extends Controller
 
     public function invites(Request $request): JsonResponse
     {
-        $list = RedPacketInvite::query()->where('inviter_id', $request->user()->id)
-            ->with('invitee:id,phone,created_at')->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = RedPacketInvite::query()->where('red_packet_invites.inviter_id', $request->user()->id)
+            ->select('red_packet_invites.*')->with('invitee:id,phone,created_at');
+        if ($dates->filters !== []) {
+            $query->leftJoin('members as invitees', 'invitees.id', '=', 'red_packet_invites.invitee_id');
+            $dates->apply($query, DB::raw('COALESCE(invitees.created_at, red_packet_invites.created_at)'));
+        }
+        $list = $query->latest('red_packet_invites.id')->paginate(20)->appends($dates->filters);
 
         return response()->json($list->through(fn (RedPacketInvite $invite): array => [
             'id' => $invite->id, 'round_id' => $invite->red_packet_round_id,

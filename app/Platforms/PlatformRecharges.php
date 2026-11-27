@@ -3,6 +3,7 @@
 namespace App\Platforms;
 
 use App\Activities\BusinessClock;
+use App\Activities\RecordDateRange;
 use App\Models\Member;
 use App\Models\Platform;
 use App\Models\PlatformBinding;
@@ -17,13 +18,22 @@ class PlatformRecharges
 
     public function __construct(private readonly BusinessClock $clock) {}
 
-    public function list(Member $member, string $bindingId, int $page, bool $allowUnhealthy = false): array
+    public function list(Member $member, string $bindingId, int $page, bool $allowUnhealthy = false, ?RecordDateRange $dates = null): array
     {
         $binding = PlatformBinding::query()->whereBelongsTo($member)->findOrFail($bindingId);
         $platform = $this->queryablePlatforms($allowUnhealthy)->findOrFail($binding->platform_id);
         $configuration = $platform->active_query;
         abort_unless(is_array($configuration), 503, '暂时无法获取充值记录，请稍后重试。');
-        [$start, $end] = $this->recentPeriod();
+        [$defaultStart, $now] = $this->recentPeriod();
+        // The upstream end timestamp is inclusive and its finest precision is milliseconds.
+        $selectedEnd = $dates?->until()?->subMillisecond();
+        $end = $selectedEnd ?? $now;
+        $start = $dates?->from() ?? ($selectedEnd === null ? $defaultStart
+            : $selectedEnd->setTimezone('America/Sao_Paulo')->subMonthNoOverflow()->startOfDay()->utc());
+        if ($start->greaterThan($end)) {
+            return ['data' => [], 'current_page' => $page, 'last_page' => 1, 'has_more' => false];
+        }
+
         try {
             $result = $platform->network->queryDriver()->rechargePage(
                 $configuration, $binding->query_phone, $binding->platform_account_id, $start, $end, $page,

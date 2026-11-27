@@ -119,6 +119,12 @@ class RedPacketTest extends TestCase
             ->assertJsonPath('data.0.registered_at', $registration->toJSON())
             ->assertJsonPath('data.0.reward_cents', 139);
 
+        $date = $registration->copy()->setTimezone('America/Sao_Paulo')->toDateString();
+        $this->getJson('/api/v1/red-packets/invites?date_from='.$date.'&date_to='.$date)
+            ->assertOk()->assertJsonPath('total', 1)->assertJsonPath('data.0.id', $invite->id);
+        $this->getJson('/api/v1/red-packets/invites?date_from='.$registration->copy()->setTimezone('America/Sao_Paulo')->addDay()->toDateString())
+            ->assertOk()->assertJsonPath('total', 0);
+
         Auth::forgetGuards();
         $this->actingAs($other, 'member')->withSession(['member_session_version' => 0]);
         $this->getJson('/api/v1/red-packets/invites')->assertOk()

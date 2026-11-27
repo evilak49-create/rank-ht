@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\Product;
 use App\Models\ShopOrder;
 use App\Shop\PhysicalShop;
@@ -48,7 +49,9 @@ class ShopController extends Controller
 
     public function orders(Request $request): JsonResponse
     {
-        $orders = ShopOrder::query()->where('member_id', $request->user()->id)->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = ShopOrder::query()->where('member_id', $request->user()->id);
+        $orders = $dates->apply($query)->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($orders->through($this->orderData(...)))->header('Cache-Control', 'private, no-store');
     }

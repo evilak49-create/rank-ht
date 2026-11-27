@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\PlatformFundOrder;
 use App\Protection\ProtectionClaims;
 use App\Shop\Funds\PlatformFunds;
@@ -36,8 +37,9 @@ class PlatformFundsController extends Controller
 
     public function orders(Request $request): JsonResponse
     {
-        $orders = PlatformFundOrder::query()->where('member_id', $request->user()->id)
-            ->with(['task', 'platform:id,name'])->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = PlatformFundOrder::query()->where('member_id', $request->user()->id)->with(['task', 'platform:id,name']);
+        $orders = $dates->apply($query)->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($orders->through($this->data(...)));
     }

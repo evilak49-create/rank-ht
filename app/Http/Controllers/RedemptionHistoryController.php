@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\PlatformFundOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +15,7 @@ class RedemptionHistoryController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         $filters = $request->validate(['type' => 'sometimes|required|in:all,goods,funds', 'page' => 'sometimes|required|integer|min:1']);
+        $dates = RecordDateRange::fromRequest($request);
         $member = $request->user();
 
         $goods = DB::table('shop_orders')->where('member_id', $member->id)
@@ -24,6 +26,9 @@ class RedemptionHistoryController extends Controller
             ->select(['orders.id', 'orders.order_number', 'platforms.name', 'orders.points', 'orders.balance_paid_cents', 'orders.status', 'orders.created_at'])
             ->selectRaw('? as type, orders.rejection_deducted as rejection_deducted', ['funds']);
 
+        $dates->apply($goods, 'shop_orders.created_at');
+        $dates->apply($funds, 'orders.created_at');
+
         $orders = match ($filters['type'] ?? 'all') {
             'goods' => $goods,
             'funds' => $funds,
@@ -32,7 +37,7 @@ class RedemptionHistoryController extends Controller
 
         $page = DB::query()->fromSub($orders, 'redemptions')
             ->orderByDesc('created_at')->orderBy('type')->orderByDesc('id')
-            ->paginate(20)->appends($request->only('type'));
+            ->paginate(20)->appends($request->only('type') + $dates->filters);
 
         return response()->json($page->through(fn (stdClass $order): array => [
             'id' => (int) $order->id,

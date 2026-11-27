@@ -142,6 +142,18 @@ class ClientApiTest extends TestCase
             ->assertJsonPath('data.observed_deposit_cents', 12000)->assertJsonPath('data.observed_valid_bet_cents', 24000)
             ->assertJsonMissingPath('data.remainder_units');
 
+        $fundsId = $response->json('data.0.id');
+        PlatformFundOrder::findOrFail($fundsId)->forceFill(['created_at' => '2026-11-23 02:59:59'])->save();
+        ShopOrder::query()->whereBelongsTo($member)->firstOrFail()
+            ->forceFill(['created_at' => '2026-11-23 03:00:00'])->save();
+        $date = 'date_from=2026-11-22&date_to=2026-11-22';
+        $this->getJson($url.'?'.$date)->assertOk()->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.type', 'funds');
+        $this->getJson($url.'?type=goods&'.$date)->assertOk()->assertJsonPath('total', 0);
+        $this->getJson('/api/v1/platform-funds/orders?'.$date)->assertOk()
+            ->assertJsonPath('total', 1)->assertJsonPath('data.0.id', $fundsId);
+        $this->getJson('/api/v1/platform-funds/orders?date_from=2026-11-23')->assertOk()->assertJsonPath('total', 0);
+
         Auth::forgetGuards();
         $this->actingAs($other, 'member')->getJson('/api/v1/platform-bindings/'.$binding->id)->assertNotFound();
         $this->getJson('/api/v1/platform-funds/orders/'.$response->json('data.0.id'))->assertNotFound();

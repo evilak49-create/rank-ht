@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Auth\ImageCaptcha;
 use App\Auth\MemberPhone;
 use App\Auth\MemberVerification;
@@ -149,7 +150,8 @@ class PlatformController extends Controller
 
     public function bindings(Request $request): JsonResponse
     {
-        $bindings = $this->ownedBindings($request)->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $bindings = $dates->apply($this->ownedBindings($request))->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($bindings->through(fn (PlatformBinding $binding): array => $this->bindingData($binding)));
     }
@@ -163,7 +165,9 @@ class PlatformController extends Controller
     {
         $request->validate(['page' => ['sometimes', 'integer', 'min:1', 'max:'.PlatformRecharges::MAX_PAGE]]);
 
-        return response()->json($recharges->list($request->user(), $binding, $request->integer('page', 1)))
+        $dates = RecordDateRange::fromRequest($request);
+
+        return response()->json($recharges->list($request->user(), $binding, $request->integer('page', 1), dates: $dates))
             ->header('Cache-Control', 'private, no-store');
     }
 

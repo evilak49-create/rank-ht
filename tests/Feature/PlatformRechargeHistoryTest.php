@@ -55,6 +55,36 @@ class PlatformRechargeHistoryTest extends TestCase
         Http::assertSentCount(3);
     }
 
+    public function test_selected_dates_are_sent_to_the_provider_before_pagination(): void
+    {
+        ['member' => $member, 'binding' => $binding] = $this->binding('panda', [
+            'endpoint' => 'https://partner.example.test/api/backend/trpc/user.list',
+            'admin_host' => 'admin.example.test', 'token' => 'fixture', 'account' => 'fixture',
+            'fingerprint' => 'fixture', 'region_id' => 1, 'tenant_id' => 17,
+        ]);
+        config(['services.platform_query.allowed_hosts' => ['partner.example.test']]);
+        Http::preventStrayRequests();
+        Http::fake(['https://partner.example.test/api/backend/trpc/assetsChange.list*' => Http::response([
+            'result' => ['data' => ['json' => ['total' => 0, 'pageData' => []]]],
+        ])]);
+
+        $path = "/api/v1/platform-bindings/{$binding->id}/recharges";
+        $this->getJson($path.'?date_from=2026-11-21')->assertUnauthorized();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson($path.'?date_from=2026-11-21&date_to=2026-11-20')
+            ->assertUnprocessable()->assertJsonValidationErrors('date_to');
+        $this->getJson($path.'?date_from=2026-11-21&date_to=2026-11-21&page=2')
+            ->assertOk()->assertJsonPath('current_page', 2);
+        Http::assertSent(function (Request $request): bool {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
+            $data = json_decode($query['input'], true, flags: JSON_THROW_ON_ERROR)['json'];
+
+            return $data['startTime'] === '2026-11-21T03:00:00.000Z'
+                && $data['endTime'] === '2026-11-22T02:59:59.999Z';
+        });
+        Http::assertSentCount(1);
+    }
+
     public function test_a_member_cannot_access_another_binding_or_query_the_provider_for_it(): void
     {
         ['binding' => $binding] = $this->binding('panda', []);

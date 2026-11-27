@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\ClaimEvidence;
 use App\Models\Member;
 use App\Models\Platform;
@@ -56,7 +57,9 @@ class ProtectionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $claims = ProtectionClaim::query()->whereBelongsTo($request->user())->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = ProtectionClaim::query()->whereBelongsTo($request->user());
+        $claims = $dates->apply($query)->latest('id')->paginate(20)->appends($dates->filters);
 
         return $this->privateJson($claims->through(fn (ProtectionClaim $claim): array => $this->claimData($claim, detail: false)));
     }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Auth\MemberPhone;
 use App\Models\Platform;
 use App\Models\PlatformReview;
@@ -12,10 +13,12 @@ use Illuminate\Support\Str;
 
 class PlatformReviewController extends Controller
 {
-    public function index(int $platform): JsonResponse
+    public function index(Request $request, int $platform): JsonResponse
     {
         $record = Platform::query()->available()->findOrFail($platform);
-        $reviews = $record->reviews()->published()->with('member:id,phone')->latest('published_at')->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = $record->reviews()->published()->with('member:id,phone')->getQuery();
+        $reviews = $dates->apply($query, 'published_at')->latest('published_at')->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($reviews->through(fn (PlatformReview $review): array => [
             'id' => $review->id,
@@ -42,8 +45,10 @@ class PlatformReviewController extends Controller
 
     public function mine(Request $request, int $platform): JsonResponse
     {
-        $records = PlatformReview::query()->whereBelongsTo($request->user())
-            ->where('platform_id', $platform)->latest('id')->paginate(20);
+        $dates = RecordDateRange::fromRequest($request);
+        $query = PlatformReview::query()->whereBelongsTo($request->user())
+            ->where('platform_id', $platform);
+        $records = $dates->apply($query)->latest('id')->paginate(20)->appends($dates->filters);
 
         return response()->json($records->through($this->submission(...)))->header('Cache-Control', 'private, no-store');
     }

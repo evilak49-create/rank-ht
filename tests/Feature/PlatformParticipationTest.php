@@ -56,6 +56,14 @@ class PlatformParticipationTest extends TestCase
         $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
             ->assertJsonPath('data.review_count', 1)->assertJsonPath('data.rating', '4.8');
 
+        PlatformReview::findOrFail($id)->forceFill([
+            'created_at' => '2026-11-21 03:00:00', 'published_at' => '2026-11-22 02:59:59',
+        ])->save();
+        PlatformReview::findOrFail($second)->forceFill(['published_at' => '2026-11-22 02:59:59'])->save();
+        $this->getJson($path.'?date_from=2026-11-21&date_to=2026-11-21')->assertOk()
+            ->assertJsonPath('total', 1)->assertJsonPath('data.0.id', $id);
+        $this->getJson($path.'?date_from=2026-11-22')->assertOk()->assertJsonPath('total', 0);
+
         $platform->forceFill(['manually_disabled' => true])->save();
         $this->getJson($path)->assertNotFound();
         $this->assertDatabaseHas('platform_reviews', ['id' => $second, 'status' => 'rejected', 'reviewer_id' => $operator->id]);

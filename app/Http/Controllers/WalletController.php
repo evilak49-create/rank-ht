@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Activities\RecordDateRange;
 use App\Models\PointEntry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -17,7 +18,7 @@ class WalletController extends Controller
     public function entries(Request $request): JsonResponse
     {
         $filters = $request->validate(['direction' => 'nullable|in:credit,debit', 'platform_id' => 'nullable|integer|min:1']);
-        $query = $this->owned($request);
+        $query = RecordDateRange::fromRequest($request)->apply($this->owned($request));
         if (isset($filters['direction'])) {
             $query->where('direction', $filters['direction']);
         }
