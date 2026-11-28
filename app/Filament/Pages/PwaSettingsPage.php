@@ -58,7 +58,8 @@ class PwaSettingsPage extends Page
             ])->columns(2),
             Section::make('桌面应用')->schema([
                 Select::make('host')->label('安装域名')->required()
-                    ->options(fn (): array => array_combine($domains = app(PwaConfiguration::class)->domains(), $domains)),
+                    ->options(fn (): array => array_combine($domains = app(PwaConfiguration::class)->domains(), $domains))
+                    ->helperText('从域名管理中选择用途为「PWA」的域名。'),
                 Select::make('start_path')->label('启动页面')->options(PwaConfiguration::PAGES)->required(),
                 TextInput::make('name')->label('桌面名称')->required()->maxLength(40),
                 TextInput::make('short_name')->label('桌面简称')->required()->maxLength(12),

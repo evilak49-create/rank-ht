@@ -30,7 +30,8 @@ class AdminNavigationTest extends TestCase
         $this->get('/admin')->assertOk();
 
         $groups = $this->groupedItems();
-        $this->assertSame(['会员管理', '平台管理', '资金管理', '活动管理', '内容管理', '客服管理', '系统管理'], array_keys($groups));
+        $this->assertSame(['会员管理', '平台管理', '域名管理', '资金管理', '活动管理', '内容管理', '客服管理', '系统管理'], array_keys($groups));
+        $this->assertSame(['域名列表'], $groups['域名管理']);
         $this->assertContains('返利管理', $groups['平台管理']);
         $this->assertContains('救援管理', $groups['平台管理']);
         $this->assertContains('出款管理', $groups['资金管理']);
@@ -97,6 +98,10 @@ class AdminNavigationTest extends TestCase
             $this->assertInstanceOf(ActionGroup::class, $menu);
             $this->assertSame('操作', $menu->getLabel());
             $this->assertArrayHasKey($entry, $menu->getFlatActions());
+            if ($page === ListPlatforms::class) {
+                $names = array_keys($menu->getFlatActions());
+                $this->assertGreaterThan(array_search('disable', $names, true), array_search('delete', $names, true));
+            }
         }
     }
 

@@ -48,6 +48,11 @@ class PlatformResource extends Resource
         return self::hasPermission('platforms.view');
     }
 
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->whereNull('archived_at');
+    }
+
     public static function table(Table $table): Table
     {
         return $table->defaultSort('id', 'desc')->columns([
@@ -103,6 +108,10 @@ class PlatformResource extends Resource
                 self::testQueryAction(),
                 self::statusAction(true),
                 self::statusAction(false),
+                Action::make('delete')->label('删除')->color('danger')->requiresConfirmation()
+                    ->modalDescription('删除后平台将下线，历史绑定、订单和流水仍可查询。')
+                    ->authorize(fn (): bool => self::hasPermission('platforms.delete'))
+                    ->action(fn (Platform $record) => app(PlatformAdministration::class)->archive($record, self::operator())),
             ])->label('操作')->button()->color('gray'),
         ]);
     }

@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['name', 'notes'])]
+#[Fillable(['name', 'notes', 'promotion_host'])]
 class PromotionChannel extends Model
 {
     protected static function booted(): void
@@ -17,6 +17,8 @@ class PromotionChannel extends Model
 
     public function promotionUrl(): string
     {
-        return rtrim(config('app.url'), '/').route('promotion.visit', ['channel' => $this->code], absolute: false);
+        $origin = $this->promotion_host === null ? rtrim(config('app.url'), '/') : 'https://'.$this->promotion_host;
+
+        return $origin.route('promotion.visit', ['channel' => $this->code], absolute: false);
     }
 }

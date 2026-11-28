@@ -14,6 +14,7 @@ class PromotionChannelTest extends TestCase
 
     public function test_channel_list_can_create_a_channel_and_save_daily_expenses(): void
     {
+        \App\Models\SiteDomain::create(['host' => 'promo.example.test', 'purpose' => 'channel']);
         $admin = \App\Models\User::factory()->create();
         $admin->forceFill(['panel_enabled' => true])->save();
         $admin->roles()->attach(\App\Models\AdminRole::create([

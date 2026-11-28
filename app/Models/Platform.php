@@ -32,6 +32,7 @@ class Platform extends Model
             'max_rebate_percent' => 'decimal:6',
             'network' => PlatformNetwork::class,
             'manually_disabled' => 'boolean',
+            'archived_at' => 'datetime',
             'active_query' => 'encrypted:array',
             'draft_query' => 'encrypted:array',
             'query_revision' => 'integer',

@@ -36,6 +36,7 @@ use App\Filament\Resources\ProtectionTermResource;
 use App\Filament\Resources\RedPacketInviteResource;
 use App\Filament\Resources\RedPacketRoundResource;
 use App\Filament\Resources\SiteBannerResource;
+use App\Filament\Resources\SiteDomainResource;
 use App\Filament\Resources\SupportConversationResource;
 use App\Filament\Resources\SupportFaqResource;
 use App\Filament\Widgets\OperationsOverview;
@@ -68,6 +69,7 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 NavigationGroup::make('会员管理'),
                 NavigationGroup::make('平台管理'),
+                NavigationGroup::make('域名管理'),
                 NavigationGroup::make('资金管理'),
                 NavigationGroup::make('活动管理'),
                 NavigationGroup::make('内容管理'),
@@ -78,6 +80,7 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([OperationsOverview::class, OperationsQueue::class])
             ->resources([
                 MemberResource::class, PromotionChannelResource::class, PlatformResource::class, PlatformReviewResource::class, PlatformReviewBatchResource::class,
+                SiteDomainResource::class,
                 CashBalanceEntryResource::class, PixPayoutResource::class, PixPayoutChannelResource::class,
                 MemberCheckinResource::class, BusinessTimezoneResource::class, PlatformFundOrderResource::class,
                 SiteBannerResource::class, AnnouncementResource::class, HelpArticleResource::class,

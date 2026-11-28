@@ -129,6 +129,7 @@ class PlatformAdministration
 
         DB::transaction(function () use ($platform, $disabled, $operator): void {
             $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
+            abort_if($current->archived_at !== null, 404);
             if ($current->manually_disabled === $disabled) {
                 return;
             }
@@ -138,6 +139,23 @@ class PlatformAdministration
                 PlatformFundTask::pauseForPlatform($current->id);
             }
             $this->audit($current, $operator, $disabled ? 'disabled' : 'restored');
+        }, 3);
+    }
+
+    public function archive(Platform $platform, User $operator): void
+    {
+        abort_unless($operator->hasPermission('platforms.delete'), 403);
+        DB::transaction(function () use ($platform, $operator): void {
+            $current = Platform::query()->lockForUpdate()->findOrFail($platform->id);
+            if ($current->archived_at !== null) {
+                return;
+            }
+
+            $current->forceFill([
+                'archived_at' => now(), 'manually_disabled' => true, 'featured_position' => null,
+            ])->save();
+            PlatformFundTask::pauseForPlatform($current->id);
+            $this->audit($current, $operator, 'deleted');
         }, 3);
     }
 

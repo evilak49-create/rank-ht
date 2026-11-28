@@ -2,6 +2,7 @@
 
 namespace App\Pwa;
 
+use App\Models\SiteDomain;
 use GdImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -38,12 +39,7 @@ class PwaConfiguration
 
     public function domains(): array
     {
-        $domains = array_map(fn (string $host): string => strtolower(trim($host)), explode(',', (string) config('pwa.install_domains')));
-        $domains = array_unique(array_filter($domains, fn (string $host): bool => filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            || (preg_match('/(?:^|\.)[a-z][a-z0-9-]*$/D', $host)
-                && filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false)));
-
-        return array_values($domains ?: ['qvip.com']);
+        return SiteDomain::query()->where('purpose', SiteDomain::PWA)->orderBy('id')->pluck('host')->all();
     }
 
     public function read(): array
@@ -52,7 +48,10 @@ class PwaConfiguration
         $allowed = $this->domains();
         $settings = array_replace(self::DEFAULTS, $stored ? json_decode($stored, true, flags: JSON_THROW_ON_ERROR) : []);
         if (! in_array($settings['host'], $allowed, true)) {
-            $settings['host'] = $allowed[0];
+            $settings['host'] = $allowed[0] ?? null;
+        }
+        if ($settings['host'] === null) {
+            $settings['enabled'] = false;
         }
 
         return $settings;
