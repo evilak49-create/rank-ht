@@ -12,6 +12,7 @@ final readonly class PlatformAccount
         public int $validBetCents,
         public CarbonInterface $observedAt,
         public ?PlatformNetProfit $netProfit = null,
+        public ?CarbonInterface $registeredAt = null,
     ) {}
 
     public function rescueSnapshot(): ?array

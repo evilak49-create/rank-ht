@@ -178,19 +178,30 @@ class WgPlatformQueryTest extends TestCase
         ]);
 
         $start = now()->setTime(3, 0)->timestamp;
-        $afterBaseline = false;
         $envelope = static fn (array $data) => Http::response([
             'code' => 0, 'success' => true,
             'data' => base64_encode(openssl_encrypt(json_encode($data, JSON_THROW_ON_ERROR), 'aes-128-ecb', self::KEY, OPENSSL_RAW_DATA)),
         ]);
         Http::fake([
-            self::ENDPOINT => function () use ($envelope, &$afterBaseline) {
+            self::ENDPOINT => function () use ($envelope) {
                 return $envelope(['result' => 0, 'accountDetailInfo' => [
                     'userIdx' => 4000000001, 'siteCode' => '0025', 'registerTime' => now()->setDate(2026, 11, 28)->setTime(4, 0)->timestamp,
-                    'totalPayAmount' => $afterBaseline ? '100' : '0', 'validBet' => $afterBaseline ? '100' : '0',
+                    'totalPayAmount' => '100', 'validBet' => '125',
                 ]]);
             },
-            'https://wg.example.test/api/foreign/openApi/proxy/site/statistics/memberDaily' => function (Request $request) use ($envelope, $start, &$afterBaseline) {
+            'https://wg.example.test/api/foreign/openApi/site/user/betRecords/queryAccountBetRecord' => function (Request $request) use ($envelope, $binding) {
+                $parameters = json_decode(openssl_decrypt(base64_decode($request['reqData']), 'aes-128-ecb', self::KEY, OPENSSL_RAW_DATA), true);
+                $this->assertSame('4000000001', (string) $parameters['account']);
+                $this->assertSame($binding->created_at->getTimestampMs() - 1, $parameters['endTime']);
+
+                return $envelope(['total' => 2, 'currentPage' => 1, 'ownerBetRecordDTOList' => [
+                    ['account' => '4000000001', 'currency' => 'BRL', 'settleStatus' => 2, 'settleTime' => '2026-11-28 14:00:00',
+                        'netProfit' => '-10.25', 'validBet' => '25'],
+                    ['account' => '4000000001', 'currency' => 'BRL', 'settleStatus' => 2, 'settleTime' => '2026-11-28 16:00:00',
+                        'netProfit' => '-10', 'validBet' => '10'],
+                ]]);
+            },
+            'https://wg.example.test/api/foreign/openApi/proxy/site/statistics/memberDaily' => function (Request $request) use ($envelope, $start) {
                 $parameters = json_decode(openssl_decrypt(base64_decode($request['reqData']), 'aes-128-ecb', self::KEY, OPENSSL_RAW_DATA), true);
                 $this->assertSame(4000000001, $parameters['userIdx']);
                 $this->assertSame($start, $parameters['startTime']);
@@ -202,20 +213,29 @@ class WgPlatformQueryTest extends TestCase
                         'userIdx' => 4000000001, 'currency' => 'BRL',
                         'createTime' => $nextPage ? $start + 86400 : $start, 'profitLose' => $nextPage ? '-100.50' : '-10.25',
                     ]],
-                    'hasMore' => $afterBaseline && ! $nextPage, 'cursor' => $afterBaseline && ! $nextPage ? 'next' : '',
+                    'hasMore' => ! $nextPage, 'cursor' => $nextPage ? '' : 'next',
                 ]);
             },
         ]);
-        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
-        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
-        $this->assertSame(-1025, $binding->refresh()->rescue_baseline['net_profit_cents']);
-
-        $afterBaseline = true;
         $this->travel(1)->days();
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
         $this->getJson('/api/v1/rescue-fund')->assertOk()
             ->assertJsonPath('data.0.net_loss_cents', 10_050)->assertJsonPath('data.0.amount_cents', 300);
+        $baseline = $binding->refresh()->rescue_baseline;
+        $this->assertSame(-1025, $baseline['net_profit_cents']);
+        $this->assertSame(2500, $baseline['valid_bet_cents']);
+        $this->assertTrue($baseline['starts_at_binding']);
+        $this->assertSame($binding->created_at->toISOString(), $baseline['observed_at']);
+
+        $binding->forceFill(['rescue_baseline' => [
+            'observed_at' => now()->toISOString(), 'net_profit_cents' => -11_075,
+        ]])->save();
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonPath('data.0.amount_cents', 300);
         $this->postJson("/api/v1/rescue-fund/{$binding->id}/claim", ['request_id' => (string) Str::uuid()])
             ->assertOk()->assertJsonPath('data.amount_cents', 300);
+        $this->travel(1)->minutes();
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->assertSame(-11_075, $binding->refresh()->rescue_baseline['net_profit_cents']);
     }
 
     public function test_wg_reports_ip_allowlist_rejection_for_the_live_gateway_code(): void

@@ -42,6 +42,7 @@ class RescueFund
             }
             try {
                 $account = $this->lookup($binding, $platform);
+                $binding = $this->prepareWgBaseline($binding, $platform, $account, persist: true);
             } catch (PlatformQueryFailure) {
                 $unavailable[] = $entry + ['query_unavailable' => true];
 
@@ -72,9 +73,11 @@ class RescueFund
 
         $platform = $binding->platform;
         abort_unless($this->settings->current()['enabled'] && $this->canQuery($platform)
-            && $binding->rescue_baseline !== null, 409, self::INELIGIBLE);
+            && ($binding->rescue_baseline !== null || $this->usesWgReport($platform)), 409, self::INELIGIBLE);
         try {
-            $snapshot = $this->lookup($binding, $platform)?->rescueSnapshot();
+            $account = $this->lookup($binding, $platform);
+            $binding = $this->prepareWgBaseline($binding, $platform, $account, persist: true);
+            $snapshot = $account?->rescueSnapshot();
         } catch (PlatformQueryFailure) {
             abort(503, '合作平台查询暂不可用。');
         }
@@ -133,14 +136,17 @@ class RescueFund
         if (! $this->canQuery($platform)) {
             return $baseline + ['result' => '平台或绑定当前不支持救援金'];
         }
-        if ($binding->rescue_baseline === null) {
+        if ($binding->rescue_baseline === null && ! $this->usesWgReport($platform)) {
             return $baseline + ['result' => '等待建立有效基线'];
         }
         try {
-            $snapshot = $this->lookup($binding, $platform)?->rescueSnapshot();
+            $account = $this->lookup($binding, $platform);
+            $binding = $this->prepareWgBaseline($binding, $platform, $account, persist: false);
+            $snapshot = $account?->rescueSnapshot();
         } catch (PlatformQueryFailure) {
             return $baseline + ['result' => '合作平台查询暂不可用'];
         }
+        $baseline['baseline_at'] = $binding->rescue_baseline['observed_at'] ?? null;
         $assessment = $this->assess($binding, $snapshot, $settings);
         if ($assessment === []) {
             return $baseline + ['result' => '未取得可与基线比较的有效数据'];
@@ -181,6 +187,75 @@ class RescueFund
             : $driver->lookup($platform->active_query, $binding->query_phone);
 
         return $account?->id === $binding->platform_account_id ? $account : null;
+    }
+
+    private function usesWgReport(Platform $platform): bool
+    {
+        return $platform->network === PlatformNetwork::Wg && ! isset($platform->active_query['net_profit_field']);
+    }
+
+    private function prepareWgBaseline(PlatformBinding $binding, Platform $platform, ?PlatformAccount $account, bool $persist): PlatformBinding
+    {
+        if ($account?->netProfit === null || ! $this->usesWgReport($platform) || ! $this->needsWgBaseline($binding)) {
+            return $binding;
+        }
+
+        $boundAt = $binding->created_at->toImmutable();
+        $original = $this->originalBindingTotals($binding);
+        /** @var WgPlatformQuery $driver */
+        $driver = $platform->network->queryDriver();
+        $prior = $driver->totalsAtBinding($platform->active_query, $account, $boundAt);
+        $baseline = [
+            'deposit_cents' => $original['deposit_cents'],
+            'valid_bet_cents' => max($original['valid_bet_cents'], $prior['valid_bet_cents']),
+            'net_profit_cents' => $prior['net_profit_cents'],
+            'source' => $account->netProfit->source,
+            'observed_at' => $boundAt->toISOString(),
+            'starts_at_binding' => true,
+        ];
+
+        if (! $persist) {
+            $copy = clone $binding;
+
+            return $copy->forceFill(['rescue_baseline' => $baseline]);
+        }
+
+        return DB::transaction(function () use ($binding, $platform, $baseline): PlatformBinding {
+            $currentPlatform = Platform::query()->lockForUpdate()->findOrFail($platform->id);
+            $current = PlatformBinding::query()->lockForUpdate()->findOrFail($binding->id);
+            abort_unless($currentPlatform->active_query_revision === $platform->active_query_revision
+                && $currentPlatform->network === $platform->network && $this->canQuery($currentPlatform)
+                && $current->platform_id === $platform->id && $current->platform_account_id === $binding->platform_account_id
+                && $current->query_phone === $binding->query_phone, 409, self::INELIGIBLE);
+            if ($this->needsWgBaseline($current)) {
+                $current->forceFill(['rescue_baseline' => $baseline])->save();
+            }
+
+            return $current;
+        }, 3);
+    }
+
+    private function needsWgBaseline(PlatformBinding $binding): bool
+    {
+        return ! ($binding->rescue_baseline['starts_at_binding'] ?? false)
+            && ! RescueFundClaim::query()->where('platform_binding_id', $binding->id)->exists();
+    }
+
+    private function originalBindingTotals(PlatformBinding $binding): array
+    {
+        if ($binding->baseline_version === 1) {
+            return ['deposit_cents' => $binding->baseline_deposit_cents, 'valid_bet_cents' => $binding->baseline_valid_bet_cents];
+        }
+
+        $first = $binding->pointQuotes()->where('baseline_version', 1)->whereNotNull('confirmed_at')->oldest('id')->first()?->snapshot ?? [];
+        if (! isset($first['observed_deposit_cents'], $first['deposit_cents'], $first['observed_valid_bet_cents'], $first['valid_bet_cents'])) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
+
+        return [
+            'deposit_cents' => $first['observed_deposit_cents'] - $first['deposit_cents'],
+            'valid_bet_cents' => $first['observed_valid_bet_cents'] - $first['valid_bet_cents'],
+        ];
     }
 
     private function existingClaim(Member $member, PlatformBinding $binding, string $requestId): ?RescueFundClaim

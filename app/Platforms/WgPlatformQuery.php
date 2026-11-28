@@ -27,6 +27,8 @@ class WgPlatformQuery implements PlatformQueryDriver
 
     private const MEMBER_DAILY_PATH = '/api/foreign/openApi/proxy/site/statistics/memberDaily';
 
+    private const BET_RECORDS_PATH = '/api/foreign/openApi/site/user/betRecords/queryAccountBetRecord';
+
     private const CIPHER = 'aes-128-ecb';
 
     public function validateConfiguration(#[SensitiveParameter] array $data): array
@@ -107,7 +109,68 @@ class WgPlatformQuery implements PlatformQueryDriver
             throw new PlatformQueryFailure('net_profit_schema');
         }
 
-        return new PlatformAccount($account->id, $account->depositCents, $account->validBetCents, $account->observedAt, $profit);
+        return new PlatformAccount($account->id, $account->depositCents, $account->validBetCents, $account->observedAt, $profit,
+            CarbonImmutable::createFromTimestampUTC($registeredAt));
+    }
+
+    public function totalsAtBinding(#[SensitiveParameter] array $config, PlatformAccount $account, CarbonImmutable $boundAt): array
+    {
+        $from = $account->registeredAt?->toImmutable();
+        if ($from === null || $from->gt($boundAt)) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
+        $profit = BigDecimal::zero();
+        $bet = BigDecimal::zero();
+        $untilMs = $boundAt->getTimestampMs();
+        for ($fromMs = $from->getTimestampMs(); $fromMs < $untilMs; $fromMs = $endMs + 1) {
+            $endMs = min($untilMs - 1, $fromMs + 30 * 86_400_000 - 1);
+            for ($page = 1, $seen = 0; ; $page++) {
+                $data = $this->signedRequest($config, self::BET_RECORDS_PATH, [
+                    'account' => $account->id, 'startTime' => $fromMs, 'endTime' => $endMs,
+                    'current' => $page, 'size' => 500,
+                ]);
+                $total = filter_var($data['total'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+                $rows = $data['ownerBetRecordDTOList'] ?? null;
+                if ($total === false || ! is_array($rows) || ! array_is_list($rows)
+                    || $seen + count($rows) > $total || ($rows === [] && $seen < $total)
+                    || (int) ($data['currentPage'] ?? 0) !== $page) {
+                    throw new PlatformQueryFailure('net_profit_schema');
+                }
+                foreach ($rows as $row) {
+                    if ((string) ($row['account'] ?? '') !== $account->id || ($row['currency'] ?? null) !== 'BRL'
+                        || ! in_array((string) ($row['settleStatus'] ?? ''), ['1', '2', '3'], true)) {
+                        throw new PlatformQueryFailure('net_profit_schema');
+                    }
+                    if ((string) $row['settleStatus'] !== '2') {
+                        continue;
+                    }
+                    $settledAt = $row['settleTime'] ?? '';
+                    if (! is_string($settledAt) || ! preg_match('/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/', $settledAt)) {
+                        throw new PlatformQueryFailure('net_profit_schema');
+                    }
+                    if (CarbonImmutable::parse($settledAt, 'Asia/Shanghai')->lt($boundAt)) {
+                        $profit = $profit->plus($this->reportAmount($row['netProfit'] ?? null));
+                        $bet = $bet->plus($this->reportAmount($row['validBet'] ?? null));
+                    }
+                }
+                $seen += count($rows);
+                if ($seen === $total) {
+                    break;
+                }
+                if ($page === 50) {
+                    throw new PlatformQueryFailure('net_profit_schema');
+                }
+            }
+        }
+
+        try {
+            return [
+                'net_profit_cents' => $profit->multipliedBy(100)->toScale(0, RoundingMode::Down)->toInt(),
+                'valid_bet_cents' => $bet->multipliedBy(100)->toScale(0, RoundingMode::Down)->toInt(),
+            ];
+        } catch (MathException) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
     }
 
     private function memberDailyProfit(
@@ -129,17 +192,12 @@ class WgPlatformQuery implements PlatformQueryDriver
             }
             foreach ($rows as $row) {
                 $day = filter_var($row['createTime'] ?? null, FILTER_VALIDATE_INT);
-                $profit = $row['profitLose'] ?? null;
-                if (is_int($profit) || (is_float($profit) && is_finite($profit) && abs($profit) < 1_000_000_000_000)) {
-                    $profit = (string) $profit;
-                }
                 if ((string) ($row['userIdx'] ?? '') !== (string) $userId || ($row['currency'] ?? null) !== 'BRL'
-                    || $day === false || $day < $from->timestamp || $day > $until->timestamp || isset($days[$day])
-                    || ! is_string($profit) || ! preg_match('/\A-?[0-9]{1,24}(?:\.[0-9]{1,32})?\z/', $profit)) {
+                    || $day === false || $day < $from->timestamp || $day > $until->timestamp || isset($days[$day])) {
                     throw new PlatformQueryFailure('net_profit_schema');
                 }
                 $days[$day] = true;
-                $amount = $amount->plus($profit);
+                $amount = $amount->plus($this->reportAmount($row['profitLose'] ?? null));
             }
             if ($hasMore) {
                 $cursor = $response['cursor'] ?? null;
@@ -152,6 +210,18 @@ class WgPlatformQuery implements PlatformQueryDriver
         } while ($hasMore);
 
         return $amount;
+    }
+
+    private function reportAmount(mixed $amount): BigDecimal
+    {
+        if (is_int($amount) || (is_float($amount) && is_finite($amount) && abs($amount) < 1_000_000_000_000)) {
+            $amount = (string) $amount;
+        }
+        if (! is_string($amount) || ! preg_match('/\A-?[0-9]{1,24}(?:\.[0-9]{1,32})?\z/', $amount)) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
+
+        return BigDecimal::of($amount);
     }
 
     public function rechargePage(
