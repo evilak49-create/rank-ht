@@ -79,14 +79,9 @@ class PlatformController extends Controller
             ->available()->withPublicReviewCount()->findOrFail($platform);
         $rule = PointRule::query()->latest('id')->first();
         $tiers = PlatformRebateTiers::effective($rule);
-        $estimate = PlatformRebateTiers::estimate(
-            $tiers, $rule?->virtual_max_wager_multiplier_micros, $rule?->virtual_max_rebate_percent_micros,
-        );
-
         return response()->json(['data' => [
-            ...$this->platformData($record, PlatformRebateTiers::summary($tiers)),
+            ...$this->platformData($record, $this->rebateSummary($rule, $tiers)),
             ...$record->only(self::INTRODUCTION_FIELDS),
-            'estimated_rebate_percent' => $tiers === [] ? null : PointRules::display($estimate['percent_micros']),
             'point_rule' => $this->pointRuleData($rule, $tiers),
             'rebate_tiers' => PlatformRebateTiers::decimals($tiers),
         ]]);
@@ -112,9 +107,21 @@ class PlatformController extends Controller
         ];
     }
 
-    private function rebateSummary(): array
+    private function rebateSummary(?PointRule $rule = null, ?array $tiers = null): array
     {
-        return PlatformRebateTiers::summary(PlatformRebateTiers::effective(PointRule::query()->latest('id')->first()));
+        if ($tiers === null) {
+            $rule = PointRule::query()->latest('id')->first();
+            $tiers = PlatformRebateTiers::effective($rule);
+        }
+
+        $estimate = PlatformRebateTiers::estimate(
+            $tiers, $rule?->virtual_max_wager_multiplier_micros, $rule?->virtual_max_rebate_percent_micros,
+        );
+
+        return [
+            ...PlatformRebateTiers::summary($tiers),
+            'estimated_rebate_percent' => $tiers === [] ? null : PointRules::display($estimate['percent_micros']),
+        ];
     }
 
     public function favorites(Request $request): JsonResponse

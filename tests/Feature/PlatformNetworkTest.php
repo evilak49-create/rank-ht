@@ -124,7 +124,7 @@ class PlatformNetworkTest extends TestCase
         $second = app(PlatformAdministration::class)->create([
             'name' => 'Second', 'promotion_url' => 'https://example.test/second',
         ], $operator);
-        $first->forceFill(['active_query_revision' => 1])->save();
+        $first->forceFill(['active_query_revision' => 1, 'featured_position' => 1])->save();
         $second->forceFill(['active_query_revision' => 1])->save();
         DB::table('platforms')->where('id', $second->id)->update([
             'rebate_tiers' => json_encode([['multiplier_micros' => 1000000, 'percent_micros' => 9000000]]),
@@ -162,7 +162,15 @@ class PlatformNetworkTest extends TestCase
                 ->assertJsonPath('data.estimated_rebate_percent', '100.000000')
                 ->assertJsonPath('data.rebate_tiers.1.wager_multiplier', '4.000000');
         }
+        foreach (['/api/v1/platforms', '/api/v1/platforms/featured'] as $path) {
+            $this->getJson($path)->assertOk()
+                ->assertJsonPath('data.0.id', $first->id)
+                ->assertJsonPath('data.0.max_rebate_percent', '3.000000')
+                ->assertJsonPath('data.0.estimated_rebate_percent', '100.000000');
+        }
+
         Livewire::test(RebateConfiguration::class)->set('data.tiers', [])->call('save')->assertHasNoErrors();
+        $this->getJson('/api/v1/platforms/featured')->assertOk()->assertJsonPath('data.0.estimated_rebate_percent', null);
         $this->getJson('/api/v1/platforms/'.$second->id)->assertOk()
             ->assertJsonPath('data.min_rebate_wager_multiplier', null)
             ->assertJsonPath('data.max_rebate_percent', null)
