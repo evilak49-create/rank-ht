@@ -65,6 +65,10 @@ class PlatformReviewResource extends Resource
                 ->authorize(fn (): bool => self::canModerate())->visible(fn (PlatformReview $record): bool => $record->status === 'pending')
                 ->schema([Textarea::make('reason')->label('驳回原因')->maxLength(300)->required()])
                 ->action(fn (PlatformReview $record, array $data) => app(PlatformParticipation::class)->moderate($record, false, Filament::auth()->user(), $data['reason'])),
+            Action::make('delete')->label('删除')->color('danger')->requiresConfirmation()
+                ->modalDescription('删除后，这条评价将从后台列表和前台移除。')
+                ->authorize(fn (): bool => self::canModerate())
+                ->action(fn (PlatformReview $record) => app(PlatformParticipation::class)->deleteReview($record, Filament::auth()->user())),
         ]);
     }
 

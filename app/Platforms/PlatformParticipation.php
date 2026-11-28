@@ -33,9 +33,10 @@ class PlatformParticipation
             $account = $this->lockMember($member);
             Platform::query()->available()->lockForUpdate()->findOrFail($platform);
             $request = strtolower($data['request_id']);
-            $existing = PlatformReview::query()->whereBelongsTo($account)->where('request_id', $request)->first();
+            $existing = PlatformReview::withTrashed()->whereBelongsTo($account)->where('request_id', $request)->first();
             if ($existing !== null) {
                 abort_unless((int) $existing->platform_id === $platform, 409, '该提交编号已用于其他平台。');
+                abort_if($existing->trashed(), 409, '该评价已删除。');
 
                 return $existing;
             }
@@ -71,6 +72,13 @@ class PlatformParticipation
                 'review_reason' => $approved ? null : $reason,
             ])->save();
         }, 3);
+    }
+
+    public function deleteReview(PlatformReview $review, User $operator): void
+    {
+        abort_unless($operator->hasPermission('platforms.view-reviews') && $operator->hasPermission('platforms.moderate-reviews'), 403);
+
+        PlatformReview::query()->whereKey($review->getKey())->delete();
     }
 
     private function lockMember(Member $member): Member

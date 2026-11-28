@@ -7,10 +7,13 @@ use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable(['platform_id', 'member_id', 'request_id', 'display_name', 'rating', 'body', 'status'])]
 class PlatformReview extends Model
 {
+    use SoftDeletes;
+
     protected function casts(): array
     {
         return ['rating' => 'integer', 'reviewed_at' => 'datetime', 'published_at' => 'datetime'];

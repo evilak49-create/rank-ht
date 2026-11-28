@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
+use App\Filament\Resources\PlatformReviewResource\Pages\ListPlatformReviews;
 use App\Jobs\GeneratePlatformReviewBatch;
 use App\Models\AdminRole;
 use App\Models\Platform;
@@ -22,6 +23,28 @@ use Tests\TestCase;
 class PlatformReviewBatchTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_review_moderator_can_remove_a_published_review_from_the_list_and_count(): void
+    {
+        [$operator, $platform, $service] = $this->fixture();
+        $operator->roles()->attach(AdminRole::create(['name' => 'Review viewer', 'permissions' => ['platforms.view-reviews']]));
+        $platform->forceFill(['active_query_revision' => 1])->save();
+        $service->process($service->submit($platform, $operator, 10, (string) Str::uuid())->id);
+        $review = PlatformReview::query()->latest('id')->firstOrFail();
+        $delete = TestAction::make('delete')->table($review);
+
+        $this->actingAs($operator, 'web');
+        Livewire::test(ListPlatformReviews::class)->assertActionHidden($delete);
+        $operator->roles()->attach(AdminRole::create(['name' => 'Review moderator', 'permissions' => ['platforms.moderate-reviews']]));
+        Livewire::test(ListPlatformReviews::class)->assertActionVisible($delete)
+            ->callAction($delete)->assertHasNoErrors()->assertCanNotSeeTableRecords([$review]);
+
+        $this->assertSoftDeleted($review);
+        $this->getJson('/api/v1/platforms/'.$platform->id.'/reviews')->assertOk()
+            ->assertJsonCount(9, 'data')->assertJsonMissing(['id' => $review->id]);
+        $this->getJson('/api/v1/platforms/'.$platform->id)->assertOk()
+            ->assertJsonPath('data.review_count', 9)->assertJsonPath('data.rating', '4.8');
+    }
 
     public function test_batches_append_once_and_publish_disclosed_reviews_without_ratings(): void
     {
