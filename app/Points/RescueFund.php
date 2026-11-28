@@ -9,6 +9,7 @@ use App\Models\RescueFundClaim;
 use App\Platforms\PlatformAccount;
 use App\Platforms\PlatformNetwork;
 use App\Platforms\PlatformQueryFailure;
+use App\Platforms\WgPlatformQuery;
 use Brick\Math\BigDecimal;
 use Brick\Math\BigInteger;
 use Brick\Math\RoundingMode;
@@ -151,7 +152,7 @@ class RescueFund
     private function canQuery(Platform $platform): bool
     {
         return $platform->status() === 'available' && $platform->guarantee_amount_brl > 0
-            && ($platform->network === PlatformNetwork::Panda || isset($platform->active_query['net_profit_field']));
+            && in_array($platform->network, [PlatformNetwork::Panda, PlatformNetwork::Wg], true);
     }
 
     private function initializeBaseline(PlatformBinding $binding, Platform $platform, array $snapshot): void
@@ -174,7 +175,10 @@ class RescueFund
 
     private function lookup(PlatformBinding $binding, Platform $platform): ?PlatformAccount
     {
-        $account = $platform->network->queryDriver()->lookup($platform->active_query, $binding->query_phone);
+        $driver = $platform->network->queryDriver();
+        $account = $driver instanceof WgPlatformQuery
+            ? $driver->lookupForRescue($platform->active_query, $binding->query_phone, $binding->platform_account_id)
+            : $driver->lookup($platform->active_query, $binding->query_phone);
 
         return $account?->id === $binding->platform_account_id ? $account : null;
     }

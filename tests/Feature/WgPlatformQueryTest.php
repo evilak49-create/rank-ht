@@ -6,6 +6,7 @@ use App\Filament\Resources\PlatformResource\Pages\ListPlatforms;
 use App\Models\AdminRole;
 use App\Models\Member;
 use App\Models\Platform;
+use App\Models\PlatformBinding;
 use App\Models\User;
 use App\Platforms\PlatformAdministration;
 use App\Platforms\PlatformNetwork;
@@ -14,7 +15,9 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -152,6 +155,67 @@ class WgPlatformQueryTest extends TestCase
 
         $this->assertSame(-50_125, $driver->lookup($configuration, '11912345678')?->netProfit?->cents);
         $this->assertNull($driver->lookup($driver->validateConfiguration($this->configuration()), '11912345678')?->netProfit);
+    }
+
+    public function test_wg_rescue_uses_cumulative_daily_profit_and_establishes_a_baseline(): void
+    {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-11-28T08:00:00Z'));
+        $driver = PlatformNetwork::Wg->queryDriver();
+        $platform = Platform::create([
+            'name' => 'WG Rescue', 'promotion_url' => 'https://wg.example.test', 'rating' => 5,
+            'network' => 'wg', 'guarantee_amount_brl' => 1000,
+        ]);
+        $platform->forceFill(['active_query_revision' => 1, 'active_query' => $driver->validateConfiguration($this->configuration())])->save();
+        $member = Member::create(['phone' => '11912345678', 'password' => 'member-password']);
+        $binding = PlatformBinding::create([
+            'member_id' => $member->id, 'platform_id' => $platform->id, 'platform_account_id' => '4000000001',
+            'query_phone' => $member->phone, 'baseline_deposit_cents' => 0, 'baseline_valid_bet_cents' => 0,
+            'baseline_observed_at' => now(),
+        ]);
+        DB::table('rescue_fund_settings')->where('id', 1)->update([
+            'enabled' => true, 'loss_percent_micros' => 98_000_000,
+            'max_wager_tier_micros' => 2_000_000, 'percent_micros' => 3_000_000,
+        ]);
+
+        $start = now()->setTime(3, 0)->timestamp;
+        $afterBaseline = false;
+        $envelope = static fn (array $data) => Http::response([
+            'code' => 0, 'success' => true,
+            'data' => base64_encode(openssl_encrypt(json_encode($data, JSON_THROW_ON_ERROR), 'aes-128-ecb', self::KEY, OPENSSL_RAW_DATA)),
+        ]);
+        Http::fake([
+            self::ENDPOINT => function () use ($envelope, &$afterBaseline) {
+                return $envelope(['result' => 0, 'accountDetailInfo' => [
+                    'userIdx' => 4000000001, 'siteCode' => '0025', 'registerTime' => now()->setDate(2026, 11, 28)->setTime(4, 0)->timestamp,
+                    'totalPayAmount' => $afterBaseline ? '100' : '0', 'validBet' => $afterBaseline ? '100' : '0',
+                ]]);
+            },
+            'https://wg.example.test/api/foreign/openApi/proxy/site/statistics/memberDaily' => function (Request $request) use ($envelope, $start, &$afterBaseline) {
+                $parameters = json_decode(openssl_decrypt(base64_decode($request['reqData']), 'aes-128-ecb', self::KEY, OPENSSL_RAW_DATA), true);
+                $this->assertSame(4000000001, $parameters['userIdx']);
+                $this->assertSame($start, $parameters['startTime']);
+                $this->assertSame('BRL', $parameters['currency']);
+                $nextPage = isset($parameters['cursor']);
+
+                return $envelope([
+                    'list' => [[
+                        'userIdx' => 4000000001, 'currency' => 'BRL',
+                        'createTime' => $nextPage ? $start + 86400 : $start, 'profitLose' => $nextPage ? '-100.50' : '-10.25',
+                    ]],
+                    'hasMore' => $afterBaseline && ! $nextPage, 'cursor' => $afterBaseline && ! $nextPage ? 'next' : '',
+                ]);
+            },
+        ]);
+        $this->actingAs($member, 'member')->withSession(['member_session_version' => 0]);
+        $this->getJson('/api/v1/rescue-fund')->assertOk()->assertJsonCount(0, 'data');
+        $this->assertSame(-1025, $binding->refresh()->rescue_baseline['net_profit_cents']);
+
+        $afterBaseline = true;
+        $this->travel(1)->days();
+        $this->getJson('/api/v1/rescue-fund')->assertOk()
+            ->assertJsonPath('data.0.net_loss_cents', 10_050)->assertJsonPath('data.0.amount_cents', 300);
+        $this->postJson("/api/v1/rescue-fund/{$binding->id}/claim", ['request_id' => (string) Str::uuid()])
+            ->assertOk()->assertJsonPath('data.amount_cents', 300);
     }
 
     public function test_wg_reports_ip_allowlist_rejection_for_the_live_gateway_code(): void

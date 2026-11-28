@@ -3,6 +3,7 @@
 namespace App\Platforms;
 
 use App\Auth\MemberPhone;
+use App\Points\CashbackSchedule;
 use App\Storage\PublicHttps;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
@@ -23,6 +24,8 @@ class WgPlatformQuery implements PlatformQueryDriver
     private const PATH = '/api/foreign/openApi/site/user/memberApi/getAccountDetail';
 
     private const RECHARGE_PATH = '/api/foreign/openApi/proxy/user/finance/payOrder/queryByUser';
+
+    private const MEMBER_DAILY_PATH = '/api/foreign/openApi/proxy/site/statistics/memberDaily';
 
     private const CIPHER = 'aes-128-ecb';
 
@@ -70,6 +73,85 @@ class WgPlatformQuery implements PlatformQueryDriver
     public function lookup(#[SensitiveParameter] array $config, string $phone): ?PlatformAccount
     {
         return $this->query($config, ['mobilePhone' => $phone]);
+    }
+
+    public function lookupForRescue(#[SensitiveParameter] array $config, string $phone, string $boundId): ?PlatformAccount
+    {
+        $data = $this->signedRequest($config, self::PATH, ['mobilePhone' => $phone]);
+        $account = $this->account($data, $config);
+        if ($account === null || $account->id !== $boundId || $account->netProfit !== null) {
+            return $account;
+        }
+        if (isset($config['net_profit_field'])) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
+
+        $registeredAt = filter_var($data['accountDetailInfo']['registerTime'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $userId = filter_var($account->id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $end = $account->observedAt->toImmutable()->setTimezone(CashbackSchedule::TIMEZONE);
+        if ($registeredAt === false || $userId === false || $registeredAt > $end->timestamp) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
+
+        $start = CarbonImmutable::createFromTimestamp($registeredAt, $end->getTimezone())->startOfDay();
+        $amount = BigDecimal::zero();
+        for ($from = $start; $from->lte($end); $from = $from->addDays(90)) {
+            $until = $from->addDays(89)->endOfDay()->min($end);
+            $amount = $amount->plus($this->memberDailyProfit($config, $userId, $from, $until));
+        }
+
+        $profit = PlatformNetProfit::fromAccountRow(['profitLose' => (string) $amount->toScale(2, RoundingMode::Down)], [
+            'net_profit_field' => 'profitLose', 'net_profit_unit' => 'brl', 'net_profit_direction' => 'profit_positive',
+        ], ['wg-member-daily', $config['endpoint'], $config['site_code'], $start->timestamp]);
+        if ($profit === null) {
+            throw new PlatformQueryFailure('net_profit_schema');
+        }
+
+        return new PlatformAccount($account->id, $account->depositCents, $account->validBetCents, $account->observedAt, $profit);
+    }
+
+    private function memberDailyProfit(
+        #[SensitiveParameter] array $config, int $userId, CarbonImmutable $from, CarbonImmutable $until,
+    ): BigDecimal {
+        $filter = [
+            'userIdx' => $userId, 'currency' => 'BRL', 'startTime' => $from->timestamp,
+            'endTime' => $until->timestamp, 'pageSize' => 100,
+        ];
+        $amount = BigDecimal::zero();
+        $days = [];
+        $cursors = [];
+        do {
+            $response = $this->signedRequest($config, self::MEMBER_DAILY_PATH, $filter);
+            $rows = $response['list'] ?? null;
+            $hasMore = $response['hasMore'] ?? null;
+            if (! is_array($rows) || ! array_is_list($rows) || ! is_bool($hasMore)) {
+                throw new PlatformQueryFailure('net_profit_schema');
+            }
+            foreach ($rows as $row) {
+                $day = filter_var($row['createTime'] ?? null, FILTER_VALIDATE_INT);
+                $profit = $row['profitLose'] ?? null;
+                if (is_int($profit) || (is_float($profit) && is_finite($profit) && abs($profit) < 1_000_000_000_000)) {
+                    $profit = (string) $profit;
+                }
+                if ((string) ($row['userIdx'] ?? '') !== (string) $userId || ($row['currency'] ?? null) !== 'BRL'
+                    || $day === false || $day < $from->timestamp || $day > $until->timestamp || isset($days[$day])
+                    || ! is_string($profit) || ! preg_match('/\A-?[0-9]{1,24}(?:\.[0-9]{1,32})?\z/', $profit)) {
+                    throw new PlatformQueryFailure('net_profit_schema');
+                }
+                $days[$day] = true;
+                $amount = $amount->plus($profit);
+            }
+            if ($hasMore) {
+                $cursor = $response['cursor'] ?? null;
+                if ($rows === [] || ! is_string($cursor) || $cursor === '' || isset($cursors[$cursor])) {
+                    throw new PlatformQueryFailure('net_profit_schema');
+                }
+                $cursors[$cursor] = true;
+                $filter['cursor'] = $cursor;
+            }
+        } while ($hasMore);
+
+        return $amount;
     }
 
     public function rechargePage(
